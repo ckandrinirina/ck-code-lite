@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "ck-code-lite",
+  "displayName": "CK Code Lite",
+  "description": "Minimal three-skill workflow: start -> build -> ship. One architecture doc, one flat plan file, no generators. Keeps the guarantees that matter — a failing test before the code, an isolated QA pass, and manual sign-off before anything is marked done.",
+  "version": "0.1.0",
+  "author": {
+    "name": "ckandrinirina",
+    "email": "ckandrinirina@gmail.com"
+  },
+  "homepage": "https://github.com/ckandrinirina/ck-code-lite",
+  "repository": "https://github.com/ckandrinirina/ck-code-lite.git",
+  "keywords": [
+    "lite",
+    "workflow",
+    "tdd",
+    "start",
+    "build",
+    "ship",
+    "minimal"
+  ],
+  "license": "MIT"
+}
