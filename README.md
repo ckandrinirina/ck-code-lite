@@ -94,6 +94,21 @@ and `ship`, and running a project through both layouts will not end well.
 Start here. Move to `ck-code` when the task list outgrows one file or more than one
 person is planning work.
 
+### Moving up
+
+Nothing is stranded — install `ck-code` and run this inside the project:
+
+```bash
+/ck-code:migrate
+```
+
+It turns `tasks/PLAN.md` into epics and stories (proposing a grouping you confirm first)
+and splits `docs/ARCHITECTURE.md` into `docs/architecture/`. Statuses, acceptance criteria
+and ticked boxes carry over, so finished work stays finished. The lite files are marked
+superseded rather than deleted, the whole conversion lands in one revertable commit, and
+you are offered the `enabledPlugins` swap at the end. There is no path back — decide with
+the table above.
+
 ## Design principles
 
 - **Two files, hand-editable.** If you can't fix the plan with an editor, the format is wrong.
