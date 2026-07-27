@@ -71,6 +71,10 @@ A task is **ready** when its status is `todo` and every ID in its `needs` list h
 status `done`. `blocked` is set by a human to park a task for a reason outside the plan;
 it is never inferred from `needs`.
 
+`needs` and `files` carry a second job in a parallel run: `needs` orders the waves, and
+two tasks whose `files` lists share a path are never dispatched in the same wave. Neither
+field changes shape for it — an accurate `files` line simply buys more parallelism.
+
 ## Appending
 
 New tasks always go at the end of the table and the end of the file.

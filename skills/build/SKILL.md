@@ -1,27 +1,36 @@
 ---
 name: build
-description: Use when a task from tasks/PLAN.md needs implementing end-to-end with tests, or when a task left in progress needs finishing. Argument is an optional task ID such as T-03; with no argument, picks the next ready task interactively.
-argument-hint: "[T-NN]"
+description: Use when a task from tasks/PLAN.md needs implementing end-to-end with tests, when a task left in progress needs finishing, when several independent tasks can be built at once in isolated worktrees, or when the remaining plan should run in dependency-ordered waves. Argument is an optional task ID such as T-03, several IDs, or `--waves`; with no argument, picks interactively.
+argument-hint: "[T-NN | T-NN T-NN … | --waves]"
 disable-model-invocation: false
 effort: high
 ---
 
 # Build — One Task, Test First
 
-Implements a single task from `tasks/PLAN.md`: failing test, minimum code, cleanup,
-isolated QA, manual sign-off, done. Four gates are non-negotiable and appear below in
-bold: **clarify**, **RED**, **QA**, **manual test**.
+Implements a task from `tasks/PLAN.md`: failing test, minimum code, cleanup, isolated QA,
+manual sign-off, done. Four gates are non-negotiable and appear below in bold:
+**clarify**, **RED**, **QA**, **manual test**.
+
+Two or more tasks at once run through [PARALLEL MODE](#parallel-mode) — one worktree per
+task, dependency-ordered waves — and every gate above still applies.
 
 Format contract: [plan-format.md](../../references/plan-format.md).
 Command resolution: [stack-commands.md](../../references/stack-commands.md).
 
 ## INPUT
 
-`$ARGUMENTS` is an optional task ID such as `T-03`.
+`$ARGUMENTS` is empty, one task ID, several task IDs, or `--waves`.
 
-- **Provided** — build that task. Validate it is ready; if it is blocked, name the
-  blocking task and stop.
-- **Empty** — list ready tasks and ask which one.
+- **One `T-NN`** — build that task through Phases 1–7. Validate it is ready; if it is
+  blocked, name the blocking task and stop.
+- **Two or more IDs** (`T-02 T-05`) — PARALLEL MODE, one wave.
+- **`--waves`** — PARALLEL MODE over every non-`done` task, in dependency-ordered waves.
+- **Empty** — list ready tasks and ask which one, offering the batch options when two or
+  more are ready.
+
+A dispatch prompt beginning `MODE: delegated` means this run **is** a worktree agent
+inside someone else's parallel run — read DELEGATED MODE before Phase 2.
 
 ## PHASE 1: TASK SELECTION
 
@@ -36,12 +45,16 @@ No `tasks/PLAN.md` at all → stop and point at `/ck-code-lite:start`.
 A task is **ready** when its status is `todo` and every ID in its `needs` list has status
 `done`. Statuses come from the table rows just read — no other source.
 
-- **Explicit `T-NN`** — skip the menu. If it is not ready, report which `needs` entries
-  are outstanding and stop.
+- **Explicit IDs** — skip the menu. A single ID that is not ready → report which `needs`
+  entries are outstanding and stop. Two or more IDs → PARALLEL MODE.
 - **No argument, one ready task** — announce it and continue, no prompt.
-- **No argument, several ready** — one `AskUserQuestion` listing them with size and title.
+- **No argument, several ready** — one `AskUserQuestion` listing each ready task with its
+  size and title, plus two batch options: **build all N ready tasks in parallel** and
+  **build the whole plan in waves**. Either batch answer enters PARALLEL MODE.
 - **None ready** — report each `todo` task with its unfinished `needs`, and if every task
   is `done`, say so and suggest `/ck-code-lite:start` to add more.
+
+One task in scope is never orchestrated — it takes Phases 2–7 below, inline.
 
 ## PHASE 2: CONTEXT AND THE PLAN/BRANCH GATE
 
@@ -218,6 +231,115 @@ Print a short summary: what was built, files changed, tests added, QA verdict.
 Then apply the Phase 6 ship answer without asking again — `SHIP` invokes
 `/ck-code-lite:ship T-NN`, `SKIP` prints that command as the next step.
 
+## PARALLEL MODE
+
+Several tasks at once, each in its own git worktree. This context **decides, verifies and
+merges** — it never writes code, never runs a suite, and never opens a source file. The
+expensive work happens in agents whose contexts are discarded; this one is re-paid every
+turn.
+
+Planning algorithm, dispatch prompt, verdict schema and report shapes:
+[parallel-dispatch.md](references/parallel-dispatch.md).
+
+### P1 Freeze the target
+
+```bash
+git status --porcelain && git branch --show-current
+```
+
+A dirty tree or a detached HEAD stops the run. The current branch becomes `$TARGET`, the
+one branch every worktree is cut from and merged back into — never a hardcoded `main`.
+
+If `$TARGET` would be `main`, `master`, `develop` or `release/*`, ask first
+(`AskUserQuestion`): `New branch: batch/<slug>` (recommended) or a user-named branch.
+Create it and use it as `$TARGET`. Merged worktrees land there, never on a protected branch.
+
+### P2 Plan the waves
+
+Resolve the scope set, order it into waves by `needs`, then split each wave so no two
+tasks in it share a declared `files:` path. Print the wave plan and the unschedulable
+tasks with the reason each was excluded.
+
+### P3 Confirm — ONE question call
+
+**Exactly one `AskUserQuestion`, at most 4 questions**, covering the wave plan
+(`PROCEED` / `DROP A TASK` / `ABORT`) and any genuine ambiguity in the scheduled tasks'
+acceptance criteria. The dispatched agents have no user to ask, so ambiguity is resolved
+here or not at all.
+
+### P4 Mark and dispatch
+
+Flip `todo → doing` for this wave's tasks — table rows and meta lines, one Edit — then
+`grep -n` each ID to confirm three hits with agreeing statuses. **This context is the only
+writer of `tasks/PLAN.md` for the whole run.**
+
+Then dispatch every task of the wave in a **single message**, one `Agent` call each, so
+they run concurrently. Per call: `isolation: "worktree"`, `subagent_type:
+"general-purpose"`, name `task-T-NN`, and the dispatch prompt from
+[parallel-dispatch.md](references/parallel-dispatch.md) carrying the acceptance criteria
+and the `## Commands` values inline.
+
+Model tier by reasoning difficulty, never by `size`: inherit by default, `haiku` for a
+mechanical change, `opus` for novel algorithms, concurrency, or a security-critical path.
+
+### P5 Integrity — derive done from git
+
+The failure to catch is an agent that did nothing and reported success. Per returned
+branch, run the integrity gate and classify:
+
+- **✓ complete** — non-empty diff, no unexpected deletion, verdict `done`. QA-eligible.
+- **◐ partial** — real commits, criteria outstanding. Resume the same agent with
+  `SendMessage`; **cap 2 rounds**, then keep the branch and report it as too large.
+- **🚫 blocked** — empty diff or an unexpected deletion. Excluded, branch kept, reported.
+
+### P6 QA — one validator per branch
+
+Dispatch one `ck-code-lite:qa-validator` per ✓ branch, all in a single message, each with
+the task's criteria, its returned `files:` list, the ordered `## Commands`, and the
+branch's worktree path from `git worktree list` as the working directory. A branch without
+`QA: PASS` is held back from the merge, never merged and fixed later.
+
+### P7 Merge, sign off, complete
+
+Dry-run each eligible branch onto `$TARGET`, merge the clean ones in that order:
+
+```bash
+git merge --no-ff "<branch>" -m "feat(T-NN): <task title>"
+```
+
+A conflicting branch is reported and kept, never force-merged. Then run the **Phase 6
+manual gate once for the wave** on `$TARGET` — the only place the merged work sits
+together. `ISSUES` records what was seen in the offending task's `### Notes`, leaves that
+task `doing`, and names `/ck-code-lite:build T-NN` as the way to finish it.
+
+For every merged, signed-off task: tick the satisfied checkboxes, append the agent's
+reported paths to `files:`, and flip `doing → done` in both places — one Edit per task,
+`grep -n` verified. A held or reverted task stays `doing` and holds its dependents.
+
+### P8 Next wave
+
+Re-resolve the following wave from the freshly updated table and loop from P3. When none
+remain: `git worktree prune`, print the batch report, and point at `/ck-code-lite:ship`
+for the merged work.
+
+## DELEGATED MODE
+
+Active only when the dispatch prompt begins `MODE: delegated`. The harness has already
+placed this run in its own worktree on its own branch, and there is no user to ask.
+
+| Phase | Change |
+|---|---|
+| 1 | Skipped — the task ID is given. |
+| 2.2 | No branch question, no clarify question — the orchestrator asked both. An ambiguity that blocks progress returns `status: blocked`, it never guesses. |
+| 2.3 | No `tasks/PLAN.md` edit — the orchestrator owns every status change. |
+| 3–4 | Unchanged. RED still gates GREEN. Touched paths are reported in the verdict instead of appended to the plan. |
+| 5 | Run the `## Commands` inline in this context; never delegate to `qa-validator` — the orchestrator runs it per branch. |
+| 6 | Skipped — manual sign-off happens once on the target after merge. |
+| 7 | No status flip, no ship. Commit inside this worktree after RED and again after GREEN, then return the verdict block. |
+
+Uncommitted work cannot be merged and cannot be resumed. Commit messages are conventional
+(`test(T-NN):`, `feat(T-NN):`) with no AI references.
+
 ## RULES
 
 - **Never edit or create an implementation file before a test run has been observed
@@ -235,4 +357,21 @@ Then apply the Phase 6 ship answer without asking again — `SHIP` invokes
 - **Never run the full test suite in this context once QA is delegated** — the subagent
   absorbs that output so this context does not carry it.
 - **Never write code beyond the acceptance criteria.** Anything extra is a new task.
-- **Never commit or push here** — that is `/ck-code-lite:ship`.
+- **Never commit or push here** — that is `/ck-code-lite:ship`. The one exception is
+  DELEGATED MODE, which commits inside its own worktree because that is the only state
+  the orchestrator can merge or resume. Pushing is never an exception.
+
+### Parallel mode
+
+- **Never let a dispatched agent write `tasks/PLAN.md`.** Two branches editing adjacent
+  table rows conflict on merge; the orchestrator is the sole writer for the whole run.
+- **Never dispatch two tasks that share a declared `files:` path in the same wave.**
+- **Never orchestrate a single task** — one task in scope takes Phases 2–7 inline.
+- **Never build, test, lint, or read source in the orchestrator context.** It sees
+  statuses, counts, branch names and verdicts only.
+- **Never trust an agent's self-report** — done is a non-empty diff plus a `QA: PASS`.
+- **Never re-dispatch a ◐ partial task from scratch** — resume the same agent with
+  `SendMessage`; a fresh worktree is only for an empty or errored one.
+- **Never merge a branch that failed QA or conflicted**, and never into a protected
+  branch — merge into the `$TARGET` frozen in P1.
+- **Never skip the manual gate in parallel mode** — it runs once per wave on `$TARGET`.
