@@ -30,7 +30,10 @@ Independent tasks do not have to wait in line:
 Waves come from the plan's own `needs` column, and two tasks that declare the same file
 never run together. Each task builds in its own worktree and merges back only after its
 integrity check and its QA pass; the manual sign-off runs once per wave, on the merged
-result. The four guarantees below hold in a parallel run exactly as they do in a single one.
+result. A merged worktree is removed as soon as it is signed off, and a run never ends
+with a worktree it cannot account for — anything still standing is named in the report
+with the reason it was kept. The four guarantees below hold in a parallel run exactly as
+they do in a single one.
 
 ## The four guarantees
 
