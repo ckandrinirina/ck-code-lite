@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-07-27
+
+### Changed
+- **start / README**: outgrowing lite now names the way out — `/ck-code:migrate` converts a
+  lite project's `tasks/PLAN.md` and `docs/ARCHITECTURE.md` to the full ck-code v4 layout,
+  so the two-file workflow is no longer a dead end.
+
 ## [0.1.0] — 2026-07-27
 
 ### Added
