@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-07-27
+
+### Added
+- **build**: parallel and wave execution — `/ck-code-lite:build T-02 T-05` builds
+  independent tasks concurrently, one git worktree each, and `--waves` drives the whole
+  remaining plan in dependency-ordered waves. Waves come from the plan's `needs` column,
+  tasks declaring the same file never run together, and the orchestrator remains the sole
+  writer of `tasks/PLAN.md` so concurrent branches cannot conflict on the plan table.
+  RED, QA and manual sign-off all still gate a task before it is marked `done`.
+
 ## [0.1.1] — 2026-07-27
 
 ### Changed
