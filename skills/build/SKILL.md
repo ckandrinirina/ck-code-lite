@@ -250,6 +250,10 @@ git status --porcelain && git branch --show-current
 A dirty tree or a detached HEAD stops the run. The current branch becomes `$TARGET`, the
 one branch every worktree is cut from and merged back into — never a hardcoded `main`.
 
+Then sweep worktrees left by earlier runs — see [worktree lifecycle](references/parallel-dispatch.md#worktree-lifecycle).
+Any whose branch is already fully merged into `$TARGET` is stale: remove it here. One
+holding unmerged commits is reported with its task ID and kept, never removed silently.
+
 If `$TARGET` would be `main`, `master`, `develop` or `release/*`, ask first
 (`AskUserQuestion`): `New branch: batch/<slug>` (recommended) or a user-named branch.
 Create it and use it as `$TARGET`. Merged worktrees land there, never on a protected branch.
@@ -316,11 +320,22 @@ For every merged, signed-off task: tick the satisfied checkboxes, append the age
 reported paths to `files:`, and flip `doing → done` in both places — one Edit per task,
 `grep -n` verified. A held or reverted task stays `doing` and holds its dependents.
 
+Then **retire that task's worktree in the same phase** — a worktree outlives its wave only
+by omission. Confirm the branch is fully merged into `$TARGET`, then force-remove the
+worktree and delete the branch ([worktree lifecycle](references/parallel-dispatch.md#worktree-lifecycle)).
+Force is safe only after that confirmation: every commit already lives in `$TARGET`, so
+nothing but untracked build output is discarded. A branch that is held, conflicted,
+blocked or reverted keeps its worktree — that is the only state a resume can read from.
+
 ### P8 Next wave
 
-Re-resolve the following wave from the freshly updated table and loop from P3. When none
-remain: `git worktree prune`, print the batch report, and point at `/ck-code-lite:ship`
-for the merged work.
+Re-resolve the following wave from the freshly updated table and loop from P3.
+
+When none remain, sweep before reporting: `git worktree prune`, then list what still
+stands. Every surviving worktree must map to a task the report names as held, blocked or
+conflicted, with its removal command printed. A worktree nobody can account for is a bug
+in P7 — remove it and say so. Then print the batch report and point at
+`/ck-code-lite:ship` for the merged work.
 
 ## DELEGATED MODE
 
@@ -375,3 +390,13 @@ Uncommitted work cannot be merged and cannot be resumed. Commit messages are con
 - **Never merge a branch that failed QA or conflicted**, and never into a protected
   branch — merge into the `$TARGET` frozen in P1.
 - **Never skip the manual gate in parallel mode** — it runs once per wave on `$TARGET`.
+- **Never leave a merged task's worktree standing.** Removal happens in P7 beside the
+  status flip, not deferred to the end of the run. `git worktree prune` is not removal —
+  it only clears records for directories that are already gone.
+- **Never remove a worktree whose branch is not fully merged into `$TARGET`**, and never
+  force-remove before `git branch --merged` has confirmed it — that discards work no
+  commit holds.
+- **Never end a run with an unexplained worktree.** Each one still standing is named in
+  the report with its task, its reason, and the command that removes it.
+- **Never remove a worktree from inside DELEGATED MODE** — an agent never cleans up its
+  own or any sibling's; the orchestrator owns the whole lifecycle.

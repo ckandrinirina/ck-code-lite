@@ -104,15 +104,48 @@ git merge --no-commit --no-ff "<branch>" >/dev/null 2>&1 && echo CLEAN || echo C
 git merge --abort 2>/dev/null || git reset --merge
 ```
 
+## Worktree lifecycle
+
+A worktree exists to be merged from and then destroyed. Removal is always explicit.
+
+**Pre-flight sweep (P1)** — worktrees from an earlier run. A branch already contained in
+`$TARGET` is stale; anything else is reported with its task ID and kept.
+
+```bash
+git worktree prune
+git worktree list --porcelain | awk '/^worktree /{w=$2} /^branch /{sub("refs/heads/","",$2); print $2"\t"w}'
+git branch --merged "$TARGET" --format='%(refname:short)'
+```
+
+**Retire a merged task (P7)** — per task, immediately after its status flip. The
+`--merged` check is the gate; `--force` is only reached once it passes, and then discards
+untracked build output alone.
+
+```bash
+git branch --merged "$TARGET" --format='%(refname:short)' | grep -qx "<branch>" || echo "NOT MERGED — keep"
+git worktree remove --force "<path>"
+git branch -d "<branch>"
+```
+
+`<path>` is the branch's worktree directory from the P6 `git worktree list` read. A
+`git worktree remove` failure keeps the branch and is reported, never retried blindly.
+
+**Final sweep (P8)** — run the pre-flight commands again. Every remaining worktree is
+listed in the report against the task that holds it, with its removal command:
+
+```
+git worktree remove --force <path> && git branch -D <branch>
+```
+
 ## Batch report
 
 ```
 ## Wave 1 results
 
-| Task | State | Commits | QA | Merge |
-|---|---|---|---|---|
-| T-02 | ✓ complete | 3 | PASS | merged |
-| T-05 | ◐ partial | 1 | — | held (1/3 criteria) |
+| Task | State | Commits | QA | Merge | Worktree |
+|---|---|---|---|---|---|
+| T-02 | ✓ complete | 3 | PASS | merged | removed |
+| T-05 | ◐ partial | 1 | — | held (1/3 criteria) | kept — resume or `git worktree remove --force ../wt-T-05 && git branch -D task/T-05` |
 
-Merged into main · 2 branches kept · next wave: T-06
+Merged into main · 1 branch kept · 0 stale worktrees · next wave: T-06
 ```
