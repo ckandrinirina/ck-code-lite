@@ -11,7 +11,7 @@ isolated QA pass, and your own hands-on sign-off before it counts as done.
 | Skill | Use it when | Produces |
 |---|---|---|
 | `/ck-code-lite:start` | A project needs its plan — new idea, existing codebase, or more tasks | `docs/ARCHITECTURE.md`, `tasks/PLAN.md` |
-| `/ck-code-lite:build` | Implementing one task end to end | Code, tests, a task marked `done` |
+| `/ck-code-lite:build` | Implementing one task end to end — or several at once, in waves | Code, tests, tasks marked `done` |
 | `/ck-code-lite:ship` | Committing finished work | A conventional commit and a PR |
 
 ```
@@ -19,6 +19,18 @@ isolated QA pass, and your own hands-on sign-off before it counts as done.
 /ck-code-lite:build
 /ck-code-lite:ship
 ```
+
+Independent tasks do not have to wait in line:
+
+```
+/ck-code-lite:build T-02 T-05     # both at once, one git worktree each
+/ck-code-lite:build --waves       # the whole remaining plan, dependency-ordered
+```
+
+Waves come from the plan's own `needs` column, and two tasks that declare the same file
+never run together. Each task builds in its own worktree and merges back only after its
+integrity check and its QA pass; the manual sign-off runs once per wave, on the merged
+result. The four guarantees below hold in a parallel run exactly as they do in a single one.
 
 ## The four guarantees
 
@@ -86,7 +98,7 @@ and `ship`, and running a project through both layouts will not end well.
 | Skills | 3 | 12 |
 | Planning artefacts | 2 files | epics, per-story files, generated indexes |
 | Architecture | 1 doc | per-feature docs + shared globals |
-| Parallel builds | no | yes, in git worktrees |
+| Parallel builds | yes, inside `build` | yes, a dedicated skill with conflict analysis |
 | Generated expert skills | no | yes (`team`) |
 | Bug triage workflow | no | yes (`fix`) |
 | Best for | getting an app working | a codebase several people maintain |
