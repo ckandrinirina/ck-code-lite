@@ -161,7 +161,8 @@ will stop the first build until a test runner is chosen.
 - **Never ask more than one round of questions**, and never more than 4 questions in it.
 - **Never ask what the manifest, README, or an existing architecture doc already answers.**
 - **Never create a file under `tasks/` other than `PLAN.md`.** No epics, no per-task files,
-  no index. If the project needs that structure, it has outgrown lite — use `ck-code`.
+  no index. If the project needs that structure, it has outgrown lite — install `ck-code`
+  and run `/ck-code:migrate`, which converts this plan and architecture doc in place.
 - **Never renumber or reorder existing tasks.** New IDs continue from the highest present.
 - **Never write a task larger than M.** Split it.
 - **Never write an acceptance criterion a test cannot assert.**
