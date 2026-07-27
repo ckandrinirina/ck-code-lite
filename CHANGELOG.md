@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-07-27
+
+### Fixed
+- **build**: parallel runs no longer leave stale worktrees behind — a merged and
+  signed-off task's worktree is removed and its branch deleted in P7 beside the status
+  flip, P1 sweeps worktrees left by earlier runs, and P8 accounts for every worktree still
+  standing in the batch report. `git worktree prune` alone never removed them, so each
+  merged task used to leak one.
+
 ## [0.2.0] — 2026-07-27
 
 ### Added
