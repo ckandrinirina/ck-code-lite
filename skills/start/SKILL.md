@@ -2,7 +2,6 @@
 name: start
 description: Use when a project needs its ck-code-lite artifacts — creating docs/ARCHITECTURE.md and tasks/PLAN.md for a new idea, adopting an existing codebase into the workflow, or adding new tasks to an existing plan. Argument is an optional feature description or spec-file path.
 argument-hint: "[feature description | path/to/spec.md]"
-disable-model-invocation: false
 effort: medium
 ---
 

@@ -2,7 +2,6 @@
 name: ship
 description: Use when finished work needs committing and a pull request opened or updated, whether or not a tasks/PLAN.md task sits behind it. Project-agnostic — works standalone on any git repo. Argument is an optional task ID such as T-03.
 argument-hint: "[T-NN]"
-disable-model-invocation: false
 effort: medium
 ---
 
