@@ -5,24 +5,39 @@ owns the algorithm, the literal prompts, and the report shapes.
 
 ## Reading the plan for a batch
 
-Three bounded greps supply everything the orchestrator needs. Never read `PLAN.md` whole.
+Three reads supply everything the orchestrator needs, and **each one is scoped to open
+work**. Never read `PLAN.md` whole, and never read across `done` tasks — a batch can only
+ever schedule open ones, so a finished task's row, meta line and criteria are all cost
+with no use.
 
 ```bash
-grep -n '^| T-' tasks/PLAN.md                      # id, status, size, needs
-grep -n '^T-[0-9]* · ' tasks/PLAN.md               # meta lines — the files: scope
-awk '/^## T-/{t=$2} /^### Acceptance/{p=1;print "== "t;next} /^### /{p=0} p&&/^- \[/{print}' tasks/PLAN.md
+grep -nE '^\| T-[0-9]+ \|.*\| (todo|doing|blocked) \|' tasks/PLAN.md   # id, status, size, needs
+grep -nE '^T-[0-9]+ · status: (todo|doing|blocked) ·' tasks/PLAN.md    # meta lines — the files: scope
+
+awk '/^## T-/{t=$2; o=0}
+     /^T-[0-9]+ · status: (todo|doing|blocked) ·/{o=1}
+     /^### Acceptance/{p=o; if(p) print "== "t; next}
+     /^### /{p=0}
+     p&&/^- \[/{print}' tasks/PLAN.md
 ```
 
-The third prints every task's acceptance criteria grouped by ID — the literal text the
-clarify gate reads and the QA dispatch quotes.
+The third prints each **open** task's acceptance criteria grouped by ID — the literal text
+the clarify gate reads and the QA dispatch quotes. It tracks the meta line's status, so a
+`done` task's criteria never enter this context.
+
+All three cost a function of open work, not of plan length: on a plan with 92 finished
+tasks and 9 open ones they return 9, 9 and 26 lines instead of 101, 101 and 302.
 
 ## Wave planning
 
-Scope `S` is the explicit ID list, or every non-`done` task under `--waves`.
+Scope `S` is the explicit ID list, or the whole open set under `--waves`.
 
-- **Wave 1** — tasks in `S` whose every `needs` entry is already `done`.
-- **Wave k+1** — tasks whose every `needs` entry is `done` or scheduled in a wave ≤ k.
-- **Unschedulable** — a `needs` entry that is neither `done` nor in `S`, a dependency
+A `needs` entry is **satisfied** when it does not appear in the open set — by the open-set
+invariant, absent means `done`. Every rule below reads against that set alone.
+
+- **Wave 1** — tasks in `S` whose every `needs` entry is satisfied.
+- **Wave k+1** — tasks whose every `needs` entry is satisfied or scheduled in a wave ≤ k.
+- **Unschedulable** — a `needs` entry that is neither satisfied nor in `S`, a dependency
   cycle, or a `blocked` status. Excluded from every wave and reported at the end.
 
 Then split each wave by declared file scope: walk the wave in ID order and move any task

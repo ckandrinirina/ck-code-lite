@@ -34,7 +34,7 @@ test/           mirrors src/, one .test.ts per source file
 
 ## Decisions
 
-Append-only. One line each, always with the reason.
+One line each, always with the reason. New decisions append at the bottom.
 
 - SQLite over Postgres — single-writer workload, no ops burden
 - Domain layer has no framework imports — keeps the rules testable without a server
@@ -60,9 +60,21 @@ every later QA verdict is wrong. `(none)` is a valid value and must not be guess
 **Folder structure** — only directories that exist or are about to. One line of purpose
 each. No file-by-file inventory.
 
-**Decisions** — append-only, newest at the bottom. Never delete a decision; if one is
-reversed, append the reversal with its reason. This is the section that stops the same
-debate happening twice.
+**Decisions** — newest at the bottom. This is the section that stops the same debate
+happening twice, and the only one that grows with project age. `build` reads this file on
+every run, so the section is kept to the choices that are still live:
+
+- A **reversal folds into the line it replaces**, carrying both reasons —
+  `Postgres over SQLite — concurrent writers; replaced SQLite, chosen when the workload was single-writer`.
+  Never leave the superseded line standing beside its replacement: two lines saying
+  opposite things is the one shape a reader cannot resolve.
+- A decision the **toolchain now enforces** — a lint rule, a type, a CI gate — is deleted.
+  The enforcement is the record, and the line is duplication that can silently go stale.
+- Everything else stays. A decision that is still live and still unenforced earns its line
+  however old it is.
+
+Growth is then proportional to live architectural choices, not to project history. If the
+section still passes a screen, the project has outgrown lite.
 
 **Conventions** — only rules a reader could not infer from the code in a minute. Skip
 anything the linter already enforces.

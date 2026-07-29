@@ -62,14 +62,15 @@ The last five commits fix the repo's style: conventional vs free-form, scope usa
 imperative vs past tense. Match what is already there; default to conventional commits
 when no pattern is established.
 
-When a task ID resolved, read only that section for the plain-language copy:
+When a task ID resolved, extract only that section for the plain-language copy:
 
 ```bash
-grep -n '^## T-' tasks/PLAN.md
+awk '/^## T-05 /{f=1} f&&/^## T-/&&!/^## T-05 /{exit} f' tasks/PLAN.md
 ```
 
-Read from its offset to the next `## T-` line. Its title and acceptance criteria describe
-what a user can now do — that is the commit body and PR body.
+Substitute the real ID in both places, keeping the trailing space that separates `T-05`
+from `T-050`. Its title and acceptance criteria describe what a user can now do — that is
+the commit body and PR body.
 
 ## PHASE 3: COMMIT
 
@@ -173,8 +174,10 @@ If a task resolved and `/ck-code-lite:build` did not already close it, flip its 
 `done` in **both** the table row and the meta line in one Edit, then verify:
 
 ```bash
-grep -n "T-NN" tasks/PLAN.md
+grep -nE "^(\| T-05 \||## T-05 |T-05 · )" tasks/PLAN.md
 ```
+
+Exactly three hits, with the table row and meta line agreeing.
 
 Then point at the next step: `/ck-code-lite:build` for the next ready task.
 
@@ -193,5 +196,6 @@ Then point at the next step: `/ck-code-lite:build` for the next ready task.
 - **Never block the commit because `gh` is missing** — degrade to commit-only.
 - **Never change a status in one place only** — the table row and the meta line move
   together, verified by `grep`.
-- **Never read `tasks/PLAN.md` whole** — the chosen section by offset.
+- **Never read `tasks/PLAN.md` whole** — the chosen section via the `awk` extractor, which
+  costs the same at any plan size.
 - **Always match the repo's established commit style** when one exists.

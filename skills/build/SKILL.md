@@ -34,16 +34,27 @@ inside someone else's parallel run — read DELEGATED MODE before Phase 2.
 
 ## PHASE 1: TASK SELECTION
 
-Read the table only:
+Read the **open rows only** — never the whole table:
 
 ```bash
-grep -n '^| T-' tasks/PLAN.md
+grep -nE '^\| T-[0-9]+ \|.*\| (todo|doing|blocked) \|' tasks/PLAN.md
 ```
 
-No `tasks/PLAN.md` at all → stop and point at `/ck-code-lite:start`.
+No `tasks/PLAN.md` at all → stop and point at `/ck-code-lite:start`. No output → every
+task is `done`; say so and suggest `/ck-code-lite:start` to add more.
 
-A task is **ready** when its status is `todo` and every ID in its `needs` list has status
-`done`. Statuses come from the table rows just read — no other source.
+A task is **ready** when its own row says `todo` and **no ID in its `needs` appears in the
+open set** — by the open-set invariant in [plan-format.md](../../references/plan-format.md),
+an ID absent from that set is `done`. This set is the only status source; never widen the
+grep to recover `done` rows.
+
+Before treating an absent `needs` ID as done, confirm it exists at all:
+
+```bash
+grep -cE "^(\| T-04 \||## T-04 |T-04 · )" tasks/PLAN.md
+```
+
+`3` is a satisfied dependency. `0` is a corrupt plan — report it and stop.
 
 - **Explicit IDs** — skip the menu. A single ID that is not ready → report which `needs`
   entries are outstanding and stop. Two or more IDs → PARALLEL MODE.
@@ -51,10 +62,14 @@ A task is **ready** when its status is `todo` and every ID in its `needs` list h
 - **No argument, several ready** — one `AskUserQuestion` listing each ready task with its
   size and title, plus two batch options: **build all N ready tasks in parallel** and
   **build the whole plan in waves**. Either batch answer enters PARALLEL MODE.
-- **None ready** — report each `todo` task with its unfinished `needs`, and if every task
-  is `done`, say so and suggest `/ck-code-lite:start` to add more.
+- **None ready** — report each `todo` task with its unfinished `needs`.
 
 One task in scope is never orchestrated — it takes Phases 2–7 below, inline.
+
+**Graduation check.** If the open set holds more than 40 tasks, say so once, plainly:
+lite carries the whole plan in one flat file, and past that size `ck-code`'s epics and
+generated indexes cost less to work with. Point at `/ck-code:migrate`, then continue with
+the build — this is a notice, never a block.
 
 ## PHASE 2: CONTEXT AND THE PLAN/BRANCH GATE
 
@@ -64,13 +79,15 @@ Read `docs/ARCHITECTURE.md` — `## Commands` supplies the exact test, build and
 commands used in Phases 3, 4 and 5. If `## Commands` is missing, resolve it now via
 [stack-commands.md](../../references/stack-commands.md) and write it into the file.
 
-Locate the chosen task's section and read **only** it:
+Extract the chosen task's section and nothing else — one command, no offsets, no `Read`:
 
 ```bash
-grep -n '^## T-' tasks/PLAN.md
+awk '/^## T-05 /{f=1} f&&/^## T-/&&!/^## T-05 /{exit} f' tasks/PLAN.md
 ```
 
-Read from that task's offset to the next `## T-` line. Never read the whole plan.
+Substitute the real ID in both places, keeping the trailing space that separates `T-05`
+from `T-050`. Never read the whole plan, and never list every `## T-` header to find an
+offset — that output grows with every task ever written.
 
 Then read the files listed in the task's `files:` field that already exist, plus the
 nearest existing test file — its conventions govern the tests written in Phase 3.
@@ -99,13 +116,13 @@ git checkout -b task/T-NN-<slug>
 ### 2.3 Mark it started
 
 Flip `todo → doing` in **both** the table row and the meta line, in one Edit pass, then
-verify:
+verify with the anchored check:
 
 ```bash
-grep -n "T-NN" tasks/PLAN.md
+grep -nE "^(\| T-05 \||## T-05 |T-05 · )" tasks/PLAN.md
 ```
 
-Three hits, and the two status mentions agree.
+Exactly three hits, and the table row and meta line report the same status.
 
 ## PHASE 3: RED — the failing test comes first
 
@@ -223,7 +240,7 @@ checkbox left unticked is a task that is not done — say so rather than ticking
 Flip `doing → done` in **both** the table row and the meta line in one Edit, then verify:
 
 ```bash
-grep -n "T-NN" tasks/PLAN.md
+grep -nE "^(\| T-05 \||## T-05 |T-05 · )" tasks/PLAN.md
 ```
 
 Print a short summary: what was built, files changed, tests added, QA verdict.
@@ -273,9 +290,9 @@ here or not at all.
 
 ### P4 Mark and dispatch
 
-Flip `todo → doing` for this wave's tasks — table rows and meta lines, one Edit — then
-`grep -n` each ID to confirm three hits with agreeing statuses. **This context is the only
-writer of `tasks/PLAN.md` for the whole run.**
+Flip `todo → doing` for this wave's tasks — table rows and meta lines, one Edit — then run
+the anchored three-line check per ID to confirm three hits with agreeing statuses. **This
+context is the only writer of `tasks/PLAN.md` for the whole run.**
 
 Then dispatch every task of the wave in a **single message**, one `Agent` call each, so
 they run concurrently. Per call: `isolation: "worktree"`, `subagent_type:
@@ -318,7 +335,7 @@ task `doing`, and names `/ck-code-lite:build T-NN` as the way to finish it.
 
 For every merged, signed-off task: tick the satisfied checkboxes, append the agent's
 reported paths to `files:`, and flip `doing → done` in both places — one Edit per task,
-`grep -n` verified. A held or reverted task stays `doing` and holds its dependents.
+anchored-grep verified. A held or reverted task stays `doing` and holds its dependents.
 
 Then **retire that task's worktree in the same phase** — a worktree outlives its wave only
 by omission. Confirm the branch is fully merged into `$TARGET`, then force-remove the
@@ -329,7 +346,7 @@ blocked or reverted keeps its worktree — that is the only state a resume can r
 
 ### P8 Next wave
 
-Re-resolve the following wave from the freshly updated table and loop from P3.
+Re-resolve the following wave from a freshly re-read open set and loop from P3.
 
 When none remain, sweep before reporting: `git worktree prune`, then list what still
 stands. Every surviving worktree must map to a task the report names as held, blocked or
@@ -365,7 +382,11 @@ Uncommitted work cannot be merged and cannot be resumed. Commit messages are con
 - **Never proceed past an `ISSUES` answer without re-running QA.**
 - **Never ask more than one question round in Phase 2**, and never more than 4 questions.
 - **Never build on `main`, `master`, `develop`, or `release/*`.**
-- **Never read `tasks/PLAN.md` whole** — the table via `grep`, the chosen section by offset.
+- **Never read `tasks/PLAN.md` whole, and never read the whole table** — open rows via the
+  status-filtered `grep`, the chosen section via the `awk` extractor. Both cost the same at
+  any plan size; a full-table read grows with every task ever written.
+- **Never widen the open-work grep to recover `done` rows.** An ID absent from the open set
+  is `done` — that invariant is what keeps the read bounded.
 - **Never change a status in one place only.** The table row and the meta line move
   together in one Edit, verified by `grep` in the same phase.
 - **Never create a file under `tasks/` other than `PLAN.md`.**

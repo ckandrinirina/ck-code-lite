@@ -56,13 +56,15 @@ the picture (`tsconfig.json`, `pyproject.toml`, a framework config). Stop at fiv
 even if curiosity says otherwise — the goal is an accurate `## Stack` and `## Commands`,
 not a full understanding of the codebase.
 
-**EXTEND** — read `docs/ARCHITECTURE.md`, then the plan's table only:
+**EXTEND** — read `docs/ARCHITECTURE.md`, then the plan's **open rows only**:
 
 ```bash
-grep -n '^| T-' tasks/PLAN.md
+grep -nE '^\| T-[0-9]+ \|.*\| (todo|doing|blocked) \|' tasks/PLAN.md
 ```
 
-Never read `tasks/PLAN.md` whole.
+That is everything needed to avoid planning work already queued. `done` tasks are not
+read: their titles cost a line each and change nothing about what to add next. Never read
+`tasks/PLAN.md` whole, and never read the whole table.
 
 In every mode, resolve `test` / `build` / `lint` using
 [stack-commands.md](../../references/stack-commands.md), including the lockfile and
@@ -104,6 +106,11 @@ restructure — this skill records reality, it does not reorganise it.
 **EXTEND** — targeted `Edit` of the affected sections only. A new feature typically adds
 one line under `## Decisions` and sometimes a directory under `## Folder structure`.
 Never `Write` over the file.
+
+A decision that **reverses** an existing one folds into that line rather than appending
+beside it, and one the toolchain now enforces is deleted — see the Decisions rules in
+[architecture-template.md](references/architecture-template.md). This keeps the section
+proportional to live choices, which matters because `build` reads the whole file every run.
 
 ## PHASE 5: WRITE OR EXTEND PLAN
 
@@ -152,6 +159,23 @@ Next: /ck-code-lite:build
 If any command resolved to `(none)`, say so plainly here and note that `test: (none)`
 will stop the first build until a test runner is chosen.
 
+### Graduation check
+
+Both artifacts are read on every `build` run, so their size is a running cost. Measure
+once, here:
+
+```bash
+grep -cE '^\| T-[0-9]+ \|.*\| (todo|doing|blocked) \|' tasks/PLAN.md
+wc -l < docs/ARCHITECTURE.md
+```
+
+More than **40 open tasks**, or an architecture doc over **150 lines**, means the project
+has outgrown a flat plan and a single doc. Add one line to the report saying so and naming
+`/ck-code:migrate`, which converts both artifacts in place. Under both thresholds, print
+nothing — a size notice on a small project is noise.
+
+This is a notice, never a block. The user decides when to graduate.
+
 ## RULES
 
 - **Never `Write` over an existing `docs/ARCHITECTURE.md` or `tasks/PLAN.md`** — always `Edit`.
@@ -168,4 +192,6 @@ will stop the first build until a test runner is chosen.
 - **Never write an acceptance criterion a test cannot assert.**
 - **Never invent a command a manifest does not declare** — `(none)` is the correct answer
   when there is no command.
-- **Never read `tasks/PLAN.md` whole** — the table via `grep`, sections by offset.
+- **Never read `tasks/PLAN.md` whole, and never read the whole table** — open rows via the
+  status-filtered `grep`, a single section via the `awk` extractor in
+  [plan-format.md](../../references/plan-format.md).
