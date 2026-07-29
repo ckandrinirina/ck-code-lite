@@ -73,10 +73,24 @@ T-02 · status: todo · size: S · needs: T-01 · files: src/count.js
 - [ ] A missing path exits non-zero with a readable message
 ```
 
-Statuses are `todo`, `doing`, `done`, `blocked`. Tasks are `S` or `M` only. Every ID
-appears on exactly three lines — the table row, the header, the meta line — so
-`grep -n "T-02" tasks/PLAN.md` is the whole consistency check. There is no generator, no
-index, and nothing to regenerate.
+Statuses are `todo`, `doing`, `done`, `blocked`. Tasks are `S` or `M` only. Every ID owns
+exactly three lines — the table row, the header, the meta line — so one anchored `grep` is
+the whole consistency check. There is no generator, no index, and nothing to regenerate.
+
+### Lite at any size
+
+The plan only grows, so nothing reads it whole — or even reads its whole table. A run pulls
+the rows that are still `todo`, `doing` or `blocked`, plus the one task section it is about
+to work on. Since the four statuses are the entire vocabulary, a task missing from that set
+is `done`, and dependencies resolve without ever loading a finished row.
+
+**Cost per run tracks open work, not project age.** A plan with four hundred finished tasks
+and three open ones reads like a three-task plan. `## Decisions` is kept to live choices the
+same way — a reversal folds into the line it replaces, and anything the linter or type
+system now enforces comes out.
+
+Past ~40 open tasks or a 150-line architecture doc, `start` says once that the project has
+outgrown a flat plan and points at `/ck-code:migrate`. It is a notice, not a wall.
 
 ## Install
 
