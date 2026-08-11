@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4] — 2026-08-11
+
+### Changed
+- **build**: PARALLEL MODE isolation now follows wave width. A wave holding exactly one
+  task is dispatched **solo** — one agent in the main checkout on `$TARGET`, no worktree,
+  no branch to merge — held in place by an explicit branch guard and verified against a
+  baseline SHA instead of a peer branch. Worktrees are cut only for waves of two or more,
+  where a peer actually exists to isolate from; a one-task wave no longer pays a cold
+  dependency install. No task is ever built inline once PARALLEL MODE is entered.
+- **build**: a `--waves` run is now bounded by an explicit context budget — wave width
+  capped at 4, acceptance criteria read one wave at a time instead of for the whole scope,
+  each finished task collapsed to a one-line ledger row, and a checkpoint every three waves
+  offering to stop. Stopping is free: status lives in `tasks/PLAN.md`, so `--waves` resumes
+  from it in a fresh context.
+
 ## [0.2.3] — 2026-07-29
 
 ### Changed
