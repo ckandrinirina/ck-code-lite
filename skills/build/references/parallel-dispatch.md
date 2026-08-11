@@ -5,28 +5,33 @@ owns the algorithm, the literal prompts, and the report shapes.
 
 ## Reading the plan for a batch
 
-Three reads supply everything the orchestrator needs, and **each one is scoped to open
-work**. Never read `PLAN.md` whole, and never read across `done` tasks — a batch can only
-ever schedule open ones, so a finished task's row, meta line and criteria are all cost
-with no use.
+Two reads plan the whole batch, and **both are scoped to open work**. Never read `PLAN.md`
+whole, and never read across `done` tasks — a batch can only ever schedule open ones, so a
+finished task's row, meta line and criteria are all cost with no use.
 
 ```bash
 grep -nE '^\| T-[0-9]+ \|.*\| (todo|doing|blocked) \|' tasks/PLAN.md   # id, status, size, needs
 grep -nE '^T-[0-9]+ · status: (todo|doing|blocked) ·' tasks/PLAN.md    # meta lines — the files: scope
+```
 
-awk '/^## T-/{t=$2; o=0}
-     /^T-[0-9]+ · status: (todo|doing|blocked) ·/{o=1}
-     /^### Acceptance/{p=o; if(p) print "== "t; next}
+Both cost a function of open work, not of plan length: on a plan with 92 finished tasks and
+9 open ones they return 9 lines each instead of 101.
+
+Acceptance criteria are read **per wave, at P3, for that wave's IDs only** — never for the
+whole scope up front. A wave is at most 4 tasks, so this read is bounded by wave width
+rather than by how much open work exists, and a task re-planned before its wave arrives is
+never paid for twice:
+
+```bash
+awk -v ids="T-02 T-05" 'BEGIN{n=split(ids,a," "); for(i=1;i<=n;i++) w[a[i]]=1}
+     /^## T-/{t=$2; p=0}
+     /^### Acceptance/{if(w[t]){p=1; print "== "t} next}
      /^### /{p=0}
      p&&/^- \[/{print}' tasks/PLAN.md
 ```
 
-The third prints each **open** task's acceptance criteria grouped by ID — the literal text
-the clarify gate reads and the QA dispatch quotes. It tracks the meta line's status, so a
-`done` task's criteria never enter this context.
-
-All three cost a function of open work, not of plan length: on a plan with 92 finished
-tasks and 9 open ones they return 9, 9 and 26 lines instead of 101, 101 and 302.
+It prints the wave's acceptance criteria grouped by ID — the literal text the clarify gate
+reads and the dispatch prompt quotes.
 
 ## Wave planning
 
@@ -44,6 +49,11 @@ Then split each wave by declared file scope: walk the wave in ID order and move 
 that shares a `files:` path with a task already placed into the **next** wave. Two tasks
 touching the same file are never dispatched together, whatever their `needs` say.
 
+Finally apply the **width cap of 4**: a wave holding more keeps its first four in ID order
+and pushes the rest to the next wave. Every task of a wave returns a verdict, a QA line and
+a merge result into the orchestrator's context, and that context is re-paid on every later
+wave — four is the point past which a long run starts paying for its own width.
+
 ```
 ## Wave plan
 
@@ -55,7 +65,7 @@ Unschedulable · T-09 (needs T-08, not in scope)
 
 More than three waves means many sequential merge cycles — say so and offer a re-scope.
 
-## Dispatch prompt (one Agent call per task, all in one message)
+## Fan-out dispatch prompt (wave of ≥ 2 — one Agent call per task, all in one message)
 
 `subagent_type: "general-purpose"`, `isolation: "worktree"`, a stable `name` of
 `task-T-NN` so a partial return can be resumed with `SendMessage`.
@@ -81,6 +91,33 @@ Commands: test: <cmd> · build: <cmd> · lint: <cmd>
 Return only the verdict block below. Nothing else is read.
 ```
 
+## Solo dispatch (wave of exactly 1)
+
+One task has no peer to collide with, so it gets no worktree — the agent works in the main
+checkout on `$TARGET`, where P1 already proved the tree clean and the branch unprotected,
+and its commits are already where a merge would have put them.
+
+The dispatch above with three deltas; everything else — `subagent_type`, the stable
+`task-T-NN` name, model tiering, `MODE: delegated`, the criteria, the commands, the verdict
+schema — is identical:
+
+1. **Drop `isolation`.**
+2. **Replace the opening line** with:
+   `You are implementing task T-NN in the main checkout, already on branch <TARGET>.`
+   `You are the only agent running — no worktree, no peer, nothing to isolate from.`
+3. **Insert the branch guard** directly below it:
+
+```
+Branch guard — before your first edit, run `git rev-parse --abbrev-ref HEAD` and confirm
+it prints <TARGET>. If it does not, stop and return status "blocked" with the branch you
+found; do not implement. Never run `git checkout -b`, `git switch -c`, `git rebase`,
+`git reset`, or any `git worktree` command — the branch is the orchestrator's to choose.
+Leave the tree clean when you return; uncommitted work fails the integrity gate.
+```
+
+The guard replaces the worktree. With no harness-owned directory holding the agent in
+place, it is the only thing keeping it off another branch — never dispatch solo without it.
+
 ## Verdict schema
 
 ```
@@ -105,10 +142,26 @@ cycle, then return the verdict block again.")
 
 ## Integrity gate
 
+**Fan-out** — compare the returned branch against the target:
+
 ```bash
 git diff --shortstat "$TARGET".."<branch>"                  # empty → 🚫 blocked
 git diff --name-only --diff-filter=D "$TARGET".."<branch>"  # any → ⚠ unexpected deletion
 ```
+
+**Solo** — there is no second branch, so the baseline is the SHA recorded at P4, and the
+branch and tree are checked too:
+
+```bash
+git diff --shortstat "<base-sha>"..HEAD                     # empty → 🚫 blocked
+git diff --name-only --diff-filter=D "<base-sha>"..HEAD     # any → ⚠ unexpected deletion
+git rev-parse --abbrev-ref HEAD                             # ≠ $TARGET → 🚫 blocked, stop the run
+git status --porcelain                                      # non-empty → 🚫 blocked, stop the run
+```
+
+Branch drift or a dirty tree on a solo run is a hard stop, not a resume: the agent
+committed or left work somewhere this context never authorised, and no later phase can
+tell what is safe to keep.
 
 ## Merge dry-run
 
@@ -152,15 +205,44 @@ listed in the report against the task that holds it, with its removal command:
 git worktree remove --force <path> && git branch -D <branch>
 ```
 
-## Batch report
+## Running ledger (the only thing a wave leaves behind)
+
+At P7, each finished task collapses to **one row**, and the wave's verdicts, QA lines,
+merge output and worktree paths are dropped from this context. The ledger is append-only
+and never re-printed mid-run except at a P0 checkpoint.
 
 ```
-## Wave 1 results
-
-| Task | State | Commits | QA | Merge | Worktree |
+| W | Task | State | Commits | QA | Outcome |
 |---|---|---|---|---|---|
-| T-02 | ✓ complete | 3 | PASS | merged | removed |
-| T-05 | ◐ partial | 1 | — | held (1/3 criteria) | kept — resume or `git worktree remove --force ../wt-T-05 && git branch -D task/T-05` |
+| 1 | T-02 | ✓ | 3 | PASS | merged · worktree removed |
+| 1 | T-05 | ◐ | 1 | — | held 1/3 · wt ../wt-T-05 |
+| 2 | T-06 | ✓ | 2 | PASS | solo on main · nothing to merge |
+```
+
+## Checkpoint (every 3 waves)
+
+Print the ledger, then one `AskUserQuestion`:
+
+```
+Waves 1–3 done · 5 tasks done · 1 held · 4 tasks remain (T-07 … T-10)
+
+Continue?  CONTINUE — run wave 4 in this context
+           STOP HERE — resume later with `/ck-code-lite:build --waves`
+```
+
+Stopping costs nothing: every status already sits in `tasks/PLAN.md`, so a fresh run
+re-resolves the remaining waves in a clean context. A held or blocked task is named with
+its worktree either way.
+
+## Batch report (end of run, built from the ledger)
+
+```
+## Batch results
+
+| W | Task | State | Commits | QA | Outcome |
+|---|---|---|---|---|---|
+| 1 | T-02 | ✓ | 3 | PASS | merged · worktree removed |
+| 1 | T-05 | ◐ | 1 | — | held 1/3 — `git worktree remove --force ../wt-T-05 && git branch -D task/T-05` |
 
 Merged into main · 1 branch kept · 0 stale worktrees · next wave: T-06
 ```

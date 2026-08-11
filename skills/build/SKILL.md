@@ -11,8 +11,9 @@ Implements a task from `tasks/PLAN.md`: failing test, minimum code, cleanup, iso
 manual sign-off, done. Four gates are non-negotiable and appear below in bold:
 **clarify**, **RED**, **QA**, **manual test**.
 
-Two or more tasks at once run through [PARALLEL MODE](#parallel-mode) — one worktree per
-task, dependency-ordered waves — and every gate above still applies.
+Two or more tasks at once run through [PARALLEL MODE](#parallel-mode) — dependency-ordered
+waves, a worktree per task only where tasks run beside each other — and every gate above
+still applies.
 
 Format contract: [plan-format.md](../../references/plan-format.md).
 Command resolution: [stack-commands.md](../../references/stack-commands.md).
@@ -25,6 +26,8 @@ Command resolution: [stack-commands.md](../../references/stack-commands.md).
   blocked, name the blocking task and stop.
 - **Two or more IDs** (`T-02 T-05`) — PARALLEL MODE, one wave.
 - **`--waves`** — PARALLEL MODE over every non-`done` task, in dependency-ordered waves.
+  It **always** orchestrates, even when only one task remains: that wave is dispatched
+  solo to an agent in the main checkout, never built inline here.
 - **Empty** — list ready tasks and ask which one, offering the batch options when two or
   more are ready.
 
@@ -63,7 +66,9 @@ grep -cE "^(\| T-04 \||## T-04 |T-04 · )" tasks/PLAN.md
   **build the whole plan in waves**. Either batch answer enters PARALLEL MODE.
 - **None ready** — report each `todo` task with its unfinished `needs`.
 
-One task in scope is never orchestrated — it takes Phases 2–7 below, inline.
+One **explicitly chosen** task — a `T-NN` argument, or a single task picked from the menu —
+takes Phases 2–7 below, inline. `--waves` is the exception: it orchestrates whatever it
+finds, and a wave that holds one task is dispatched solo (P4), not built here.
 
 **Graduation check.** If the open set holds more than 40 tasks, say so once, plainly:
 lite carries the whole plan in one flat file, and past that size `ck-code`'s epics and
@@ -249,13 +254,41 @@ Then apply the Phase 6 ship answer without asking again — `SHIP` invokes
 
 ## PARALLEL MODE
 
-Several tasks at once, each in its own git worktree. This context **decides, verifies and
-merges** — it never writes code, never runs a suite, and never opens a source file. The
-expensive work happens in agents whose contexts are discarded; this one is re-paid every
-turn.
+Tasks dispatched wave by wave. This context **decides, verifies and merges** — it never
+writes code, never runs a suite, and never opens a source file. The expensive work happens
+in agents whose contexts are discarded; this one is re-paid every turn.
 
-Planning algorithm, dispatch prompt, verdict schema and report shapes:
+**Every task in this mode is implemented by a dispatched agent — never inline here.**
+
+**Isolation follows wave width, not mode.** A wave of **≥ 2** tasks fans out one worktree
+agent per task (`isolation: "worktree"`), then merges the branches. A wave of **exactly
+one** task is dispatched **solo**: one agent in the **main checkout** on `$TARGET`, no
+worktree, no branch to merge. A worktree exists to keep concurrent agents off each other's
+files; with no peer there is nothing to isolate from, and the cold dependency install it
+forces is pure cost.
+
+Planning algorithm, dispatch prompts, verdict schema and report shapes:
 [parallel-dispatch.md](references/parallel-dispatch.md).
+
+### P0 Context budget
+
+A waves run is a loop, and everything this context reads stays in it for every later wave.
+Four limits keep the run bounded, and all four are enforced, not advisory:
+
+- **Wave width ≤ 4.** A wave resolving wider is split — the surplus tasks slide to the next
+  wave in ID order. Announce the split.
+- **Read criteria one wave at a time**, for that wave's IDs only, with the wave-scoped
+  extractor in [parallel-dispatch.md](references/parallel-dispatch.md). Never pull the
+  criteria of tasks scheduled for a later wave — most runs never reach them at their
+  current shape.
+- **One ledger line per finished task, then drop the detail.** A wave's verdicts, QA lines,
+  merge output and worktree paths collapse into a single row each (see the ledger format in
+  [parallel-dispatch.md](references/parallel-dispatch.md)). Never re-print a previous wave's
+  table; the final report is built from the ledger.
+- **Checkpoint every 3 waves.** After the third wave — and every third one after — print
+  the ledger and ask (`AskUserQuestion`): `CONTINUE` or `STOP HERE`. Status lives in
+  `tasks/PLAN.md`, so `/ck-code-lite:build --waves` resumes exactly where a stop left off,
+  in a fresh context, with nothing lost.
 
 ### P1 Freeze the target
 
@@ -276,16 +309,19 @@ Create it and use it as `$TARGET`. Merged worktrees land there, never on a prote
 
 ### P2 Plan the waves
 
-Resolve the scope set, order it into waves by `needs`, then split each wave so no two
-tasks in it share a declared `files:` path. Print the wave plan and the unschedulable
-tasks with the reason each was excluded.
+Resolve the scope set, order it into waves by `needs`, split each wave so no two tasks in
+it share a declared `files:` path, then apply the **P0 width cap of 4**. Print the wave
+plan and the unschedulable tasks with the reason each was excluded.
+
+Plan the shape, not the content: this step reads the status/`needs`/`files` greps only.
+Acceptance criteria are read per wave at P3, never here.
 
 ### P3 Confirm — ONE question call
 
-**Exactly one `AskUserQuestion`, at most 4 questions**, covering the wave plan
-(`PROCEED` / `DROP A TASK` / `ABORT`) and any genuine ambiguity in the scheduled tasks'
-acceptance criteria. The dispatched agents have no user to ask, so ambiguity is resolved
-here or not at all.
+Read **this wave's** acceptance criteria now — wave-scoped extractor, that wave's IDs only.
+Then **exactly one `AskUserQuestion`, at most 4 questions**, covering the wave plan
+(`PROCEED` / `DROP A TASK` / `ABORT`) and any genuine ambiguity in those criteria. The
+dispatched agents have no user to ask, so ambiguity is resolved here or not at all.
 
 ### P4 Mark and dispatch
 
@@ -293,11 +329,25 @@ Flip `todo → doing` for this wave's tasks — table rows and meta lines, one E
 the anchored three-line check per ID to confirm three hits with agreeing statuses. **This
 context is the only writer of `tasks/PLAN.md` for the whole run.**
 
-Then dispatch every task of the wave in a **single message**, one `Agent` call each, so
-they run concurrently. Per call: `isolation: "worktree"`, `subagent_type:
-"general-purpose"`, name `task-T-NN`, and the dispatch prompt from
+Both shapes use `subagent_type: "general-purpose"`, the stable name `task-T-NN` so a
+partial return can be resumed with `SendMessage`, and the dispatch prompt from
 [parallel-dispatch.md](references/parallel-dispatch.md) carrying the acceptance criteria
-and the `## Commands` values inline.
+and the `## Commands` values inline. Announce the decision before dispatching.
+
+**Fan-out — wave of ≥ 2.** Dispatch every task in a **single message**, one `Agent` call
+each with `isolation: "worktree"`, so they run concurrently.
+`Fan-out: N tasks → dispatching N worktree agents.`
+
+**Solo — wave of exactly 1.** No worktree and no task branch: the agent works in the main
+checkout on `$TARGET`, which P1 already froze as unprotected and clean, so its commits land
+where the merge would have put them anyway. Before dispatching, record the baseline —
+`git rev-parse HEAD` — because P5 has no second branch to diff against. Then one `Agent`
+call with **no `isolation` field** and the branch guard from
+[parallel-dispatch.md](references/parallel-dispatch.md#solo-dispatch-wave-of-exactly-1).
+`Solo: 1 task → dispatching 1 agent on <$TARGET> (no worktree).`
+
+The branch is the agent's alone until it returns: never edit files in this context while a
+solo agent runs, and never dispatch one while a fan-out wave is still in flight.
 
 Model tier by reasoning difficulty, never by `size`: inherit by default, `haiku` for a
 mechanical change, `opus` for novel algorithms, concurrency, or a security-critical path.
@@ -305,19 +355,27 @@ mechanical change, `opus` for novel algorithms, concurrency, or a security-criti
 ### P5 Integrity — derive done from git
 
 The failure to catch is an agent that did nothing and reported success. Per returned
-branch, run the integrity gate and classify:
+branch — or, solo, against the P4 baseline SHA — run the integrity gate and classify:
 
 - **✓ complete** — non-empty diff, no unexpected deletion, verdict `done`. QA-eligible.
 - **◐ partial** — real commits, criteria outstanding. Resume the same agent with
   `SendMessage`; **cap 2 rounds**, then keep the branch and report it as too large.
 - **🚫 blocked** — empty diff or an unexpected deletion. Excluded, branch kept, reported.
 
-### P6 QA — one validator per branch
+Solo adds one check: `git rev-parse --abbrev-ref HEAD` must still print `$TARGET`, and the
+tree must be clean. A solo agent that moved branch or left work uncommitted is **🚫
+blocked** — a hard stop for the run, not a resume, because its commits are somewhere this
+context did not authorise.
 
-Dispatch one `ck-code-lite:qa-validator` per ✓ branch, all in a single message, each with
-the task's criteria, its returned `files:` list, the ordered `## Commands`, and the
-branch's worktree path from `git worktree list` as the working directory. A branch without
-`QA: PASS` is held back from the merge, never merged and fixed later.
+### P6 QA — one validator per completed task
+
+Dispatch one `ck-code-lite:qa-validator` per ✓ task, all in a single message, each with the
+task's criteria, its returned `files:` list, the ordered `## Commands`, and a working
+directory: the branch's worktree path from `git worktree list` (fan-out), or the main
+checkout (solo). A fan-out branch without `QA: PASS` is held back from the merge, never
+merged and fixed later. A solo task without `QA: PASS` has its work already on `$TARGET`
+with nothing to withhold — do not advance to P8 past it; its dependents would build on
+broken code.
 
 ### P7 Merge, sign off, complete
 
@@ -327,17 +385,22 @@ Dry-run each eligible branch onto `$TARGET`, merge the clean ones in that order:
 git merge --no-ff "<branch>" -m "feat(T-NN): <task title>"
 ```
 
-A conflicting branch is reported and kept, never force-merged. Then run the **Phase 6
-manual gate once for the wave** on `$TARGET` — the only place the merged work sits
-together. `ISSUES` records what was seen in the offending task's `### Notes`, leaves that
+A conflicting branch is reported and kept, never force-merged. A solo wave skips this
+entirely — the work is already on `$TARGET` — and says so in one line
+(`Merge: none needed (solo on <$TARGET>).`). Then run the **Phase 6
+manual gate once for the wave** on `$TARGET` — the only place the wave's work sits
+together, solo waves included. `ISSUES` records what was seen in the offending task's `### Notes`, leaves that
 task `doing`, and names `/ck-code-lite:build T-NN` as the way to finish it.
 
-For every merged, signed-off task: tick the satisfied checkboxes, append the agent's
-reported paths to `files:`, and flip `doing → done` in both places — one Edit per task,
+For every signed-off task — merged, or solo and already on `$TARGET` — tick the satisfied
+checkboxes, append the agent's reported paths to `files:`, and flip `doing → done` in both
+places — one Edit per task,
 anchored-grep verified. A held or reverted task stays `doing` and holds its dependents.
 
+Then record the task's ledger line and drop the wave's detail from this context (P0).
+
 Then **retire that task's worktree in the same phase** — a worktree outlives its wave only
-by omission. Confirm the branch is fully merged into `$TARGET`, then force-remove the
+by omission. A solo wave has none: `Cleanup: none (solo on <$TARGET>).` Confirm the branch is fully merged into `$TARGET`, then force-remove the
 worktree and delete the branch ([worktree lifecycle](references/parallel-dispatch.md#worktree-lifecycle)).
 Force is safe only after that confirmation: every commit already lives in `$TARGET`, so
 nothing but untracked build output is discarded. A branch that is held, conflicted,
@@ -345,7 +408,9 @@ blocked or reverted keeps its worktree — that is the only state a resume can r
 
 ### P8 Next wave
 
-Re-resolve the following wave from a freshly re-read open set and loop from P3.
+Re-resolve the following wave from a freshly re-read open set and loop from P3 — the
+status greps only, and this wave's criteria when P3 asks for them. At every third wave,
+run the P0 checkpoint before looping.
 
 When none remain, sweep before reporting: `git worktree prune`, then list what still
 stands. Every surviving worktree must map to a task the report names as held, blocked or
@@ -355,8 +420,11 @@ in P7 — remove it and say so. Then print the batch report and point at
 
 ## DELEGATED MODE
 
-Active only when the dispatch prompt begins `MODE: delegated`. The harness has already
-placed this run in its own worktree on its own branch, and there is no user to ask.
+Active only when the dispatch prompt begins `MODE: delegated`. The run is already on the
+branch it must work on — its own harness-created worktree (fan-out), or the branch the
+orchestrator checked out in the main checkout (solo, where the prompt names it and asks for
+the branch guard first). Either way the branch is not this run's to choose, and there is no
+user to ask.
 
 | Phase | Change |
 |---|---|
@@ -366,10 +434,12 @@ placed this run in its own worktree on its own branch, and there is no user to a
 | 3–4 | Unchanged. RED still gates GREEN. Touched paths are reported in the verdict instead of appended to the plan. |
 | 5 | Run the `## Commands` inline in this context; never delegate to `qa-validator` — the orchestrator runs it per branch. |
 | 6 | Skipped — manual sign-off happens once on the target after merge. |
-| 7 | No status flip, no ship. Commit inside this worktree after RED and again after GREEN, then return the verdict block. |
+| 7 | No status flip, no ship. Commit after RED and again after GREEN, then return the verdict block. |
 
-Uncommitted work cannot be merged and cannot be resumed. Commit messages are conventional
-(`test(T-NN):`, `feat(T-NN):`) with no AI references.
+Uncommitted work cannot be merged, cannot be resumed, and (solo) leaves the shared branch
+dirty for the orchestrator. Never run `git checkout -b`, `switch -c`, `rebase`, `reset` or
+any `git worktree` command — the branch is the orchestrator's to choose. Commit messages
+are conventional (`test(T-NN):`, `feat(T-NN):`) with no AI references.
 
 ## RULES
 
@@ -401,7 +471,21 @@ Uncommitted work cannot be merged and cannot be resumed. Commit messages are con
 - **Never let a dispatched agent write `tasks/PLAN.md`.** Two branches editing adjacent
   table rows conflict on merge; the orchestrator is the sole writer for the whole run.
 - **Never dispatch two tasks that share a declared `files:` path in the same wave.**
-- **Never orchestrate a single task** — one task in scope takes Phases 2–7 inline.
+- **Never orchestrate an explicitly chosen single task** — a `T-NN` argument or a single
+  task picked from the menu takes Phases 2–7 inline. `--waves` is the exception: it always
+  orchestrates, dispatching even a lone remaining task solo (P4).
+- **Never build a task inline once PARALLEL MODE is entered** — every task goes to an
+  agent, one-task waves included. That split is what keeps this context cheap.
+- **Never cut a worktree for a one-task wave** — solo runs in the main checkout on
+  `$TARGET`. Worktrees are for concurrency; with no peer they buy nothing and cost a cold
+  dependency install.
+- **Never dispatch solo without the branch guard**, and never edit files here or leave a
+  fan-out wave in flight while a solo agent runs — nothing else keeps it on `$TARGET`.
+- **Never exceed a wave width of 4, and never skip the 3-wave checkpoint** (P0) — an
+  unbounded waves run grows this context until the whole batch is at risk. A stop loses
+  nothing: `tasks/PLAN.md` holds the status and `--waves` resumes from it.
+- **Never read a later wave's acceptance criteria**, and never re-print a finished wave's
+  report — one ledger line per task, then the detail is dropped.
 - **Never build, test, lint, or read source in the orchestrator context.** It sees
   statuses, counts, branch names and verdicts only.
 - **Never trust an agent's self-report** — done is a non-empty diff plus a `QA: PASS`.
