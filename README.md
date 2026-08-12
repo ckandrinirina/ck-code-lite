@@ -32,9 +32,15 @@ never run together. Every task in a wave is built by a dispatched agent, but the
 follows the wave's width: two or more tasks each get their own worktree and merge back
 after an integrity check and a QA pass, while a wave holding a **single** task runs solo in
 the main checkout — no worktree to cut, no cold dependency install, nothing to merge. The
-manual sign-off runs once per wave either way. A merged worktree is removed as soon as it
-is signed off, and a run never ends with a worktree it cannot account for — anything still
-standing is named in the report with the reason it was kept.
+manual sign-off runs once per wave either way.
+
+Concurrency is the *only* reason this plugin ever cuts a worktree. `start` and `ship` never
+do, and neither does a single `build` task, which runs inline on a branch created in place.
+The orchestrator dispatches isolation without entering it: after every wave it proves it is
+still in the main checkout on the branch it started from. A merged worktree is removed as
+soon as it is signed off, and no run ends with an unmerged one the user did not explicitly
+choose to keep — anything still standing is reconciled before the report, with the option to
+merge it there and then.
 
 A waves run also stays bounded: at most four tasks per wave, acceptance criteria read one
 wave at a time, each finished task collapsed to a single ledger row, and a checkpoint every
