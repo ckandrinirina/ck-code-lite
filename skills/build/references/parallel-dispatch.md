@@ -174,7 +174,20 @@ git merge --abort 2>/dev/null || git reset --merge
 
 ## Worktree lifecycle
 
-A worktree exists to be merged from and then destroyed. Removal is always explicit.
+A worktree exists to be merged from and then destroyed. Removal is always explicit. Who may
+create one at all, and what may never be left standing, is
+[worktree-policy.md](../../../references/worktree-policy.md).
+
+**Return to base (start and end of every P7, and once at P8)** — the orchestrator proves it
+never followed its agents into isolation:
+
+```bash
+test "$(git rev-parse --show-toplevel)" = "$ROOT" && test "$(git rev-parse --abbrev-ref HEAD)" = "$TARGET" && echo AT-BASE || echo DRIFTED
+```
+
+`DRIFTED` → `git -C "$ROOT" checkout "$TARGET"` and re-run it. Still `DRIFTED` → stop the
+run and report the actual toplevel and branch; every merge and every `tasks/PLAN.md` write
+after this point would land somewhere this context did not choose.
 
 **Pre-flight sweep (P1)** — worktrees from an earlier run. A branch already contained in
 `$TARGET` is stale; anything else is reported with its task ID and kept.
@@ -198,8 +211,20 @@ git branch -d "<branch>"
 `<path>` is the branch's worktree directory from the P6 `git worktree list` read. A
 `git worktree remove` failure keeps the branch and is reported, never retried blindly.
 
-**Final sweep (P8)** — run the pre-flight commands again. Every remaining worktree is
-listed in the report against the task that holds it, with its removal command:
+**Final reconcile (P8)** — return to base, run the pre-flight commands again, then classify
+every survivor against `git branch --merged "$TARGET"`:
+
+| Survivor | Action |
+|---|---|
+| merged | retire it here — a P7 miss; say so |
+| unmerged, ledger says held / conflicted / blocked | goes to the P8 question |
+| unmerged, in no ledger row | unaccounted work — report it and stop; never delete |
+
+The question is asked once for the whole run, listing each worktree with its task, state and
+commit count. Only a `KEEP` answer lets one survive the run; a `MERGE NOW` answer re-enters
+QA and the P7 dry-run, and `DISCARD` is offered only for a blocked branch with an empty diff.
+
+Kept worktrees are printed in the report with the command that removes them:
 
 ```
 git worktree remove --force <path> && git branch -D <branch>

@@ -15,6 +15,12 @@ Two or more tasks at once run through [PARALLEL MODE](#parallel-mode) — depend
 waves, a worktree per task only where tasks run beside each other — and every gate above
 still applies.
 
+**A single task never gets a worktree.** Phases 2–7 run inline, in the checkout this skill
+was invoked from, on a branch created in place. Isolation is only ever cut for tasks that
+run *concurrently*, which is one wave shape of PARALLEL MODE and nothing else — the full
+contract, including who returns where and what may never be left behind, is
+[worktree-policy.md](../../references/worktree-policy.md).
+
 Format contract: [plan-format.md](../../references/plan-format.md).
 Command resolution: [stack-commands.md](../../references/stack-commands.md).
 
@@ -111,11 +117,16 @@ nearest existing test file — its conventions govern the tests written in Phase
 the current branch is one of them, the only options are a new branch or an explicit
 user-named branch.
 
-Create the branch before writing anything:
+Create the branch **in place**, before writing anything — one command, no isolation step
+before or after it:
 
 ```bash
 git checkout -b task/T-NN-<slug>
 ```
+
+Nothing else moves the working tree for the rest of the run. This is a single task with no
+peer, so there is nothing to isolate from; a worktree here would only strand the work
+where Phases 5–7 cannot reach it.
 
 ### 2.3 Mark it started
 
@@ -267,6 +278,11 @@ worktree, no branch to merge. A worktree exists to keep concurrent agents off ea
 files; with no peer there is nothing to isolate from, and the cold dependency install it
 forces is pure cost.
 
+**This context never leaves the main checkout.** It dispatches isolation, it never enters
+it: no `git worktree add`, no `EnterWorktree`, no `checkout` away from `$TARGET` for the
+whole run. Every worktree it creates is merged and retired, or explicitly accounted for at
+P8 — [worktree-policy.md](../../references/worktree-policy.md).
+
 Planning algorithm, dispatch prompts, verdict schema and report shapes:
 [parallel-dispatch.md](references/parallel-dispatch.md).
 
@@ -293,11 +309,15 @@ Four limits keep the run bounded, and all four are enforced, not advisory:
 ### P1 Freeze the target
 
 ```bash
-git status --porcelain && git branch --show-current
+git status --porcelain && git branch --show-current && git rev-parse --show-toplevel
 ```
 
 A dirty tree or a detached HEAD stops the run. The current branch becomes `$TARGET`, the
-one branch every worktree is cut from and merged back into — never a hardcoded `main`.
+one branch every worktree is cut from and merged back into — never a hardcoded `main`. The
+toplevel path becomes `$ROOT`, the directory this context must still be standing in at the
+end of every wave. Both are recorded once and never re-derived: a value read again later
+would report wherever the run has drifted to, which is exactly what the check exists to
+catch.
 
 Then sweep worktrees left by earlier runs — see [worktree lifecycle](references/parallel-dispatch.md#worktree-lifecycle).
 Any whose branch is already fully merged into `$TARGET` is stale: remove it here. One
@@ -377,7 +397,14 @@ merged and fixed later. A solo task without `QA: PASS` has its work already on `
 with nothing to withhold — do not advance to P8 past it; its dependents would build on
 broken code.
 
-### P7 Merge, sign off, complete
+### P7 Return to base, merge, sign off, complete
+
+**Return to base first.** Before reading a verdict or touching a branch, prove this context
+is still where P1 left it — `git rev-parse --show-toplevel` equals `$ROOT` and
+`git rev-parse --abbrev-ref HEAD` equals `$TARGET`. If either differs, `git checkout
+"$TARGET"` from `$ROOT` and re-check; if it still differs, stop the run and report where
+this context is standing. Merging from inside a worktree merges the wrong way round, and
+writing `tasks/PLAN.md` there writes it onto a branch about to be deleted.
 
 Dry-run each eligible branch onto `$TARGET`, merge the clean ones in that order:
 
@@ -404,7 +431,13 @@ by omission. A solo wave has none: `Cleanup: none (solo on <$TARGET>).` Confirm 
 worktree and delete the branch ([worktree lifecycle](references/parallel-dispatch.md#worktree-lifecycle)).
 Force is safe only after that confirmation: every commit already lives in `$TARGET`, so
 nothing but untracked build output is discarded. A branch that is held, conflicted,
-blocked or reverted keeps its worktree — that is the only state a resume can read from.
+blocked or reverted keeps its worktree — that is the only state a resume can read from,
+and P8 will make the user decide its fate before the run ends.
+
+Close the wave by re-running the two return-to-base checks and reporting one line:
+`Base: <$ROOT> on <$TARGET> · worktrees standing: N`. A wave that dispatched isolation and
+did not clean up after itself is visible here, one wave later, instead of at the end of a
+long run.
 
 ### P8 Next wave
 
@@ -412,11 +445,33 @@ Re-resolve the following wave from a freshly re-read open set and loop from P3 �
 status greps only, and this wave's criteria when P3 asks for them. At every third wave,
 run the P0 checkpoint before looping.
 
-When none remain, sweep before reporting: `git worktree prune`, then list what still
-stands. Every surviving worktree must map to a task the report names as held, blocked or
-conflicted, with its removal command printed. A worktree nobody can account for is a bug
-in P7 — remove it and say so. Then print the batch report and point at
-`/ck-code-lite:ship` for the merged work.
+When none remain, **reconcile before reporting** — the run does not end with work sitting
+outside `$TARGET`.
+
+Return to base one last time, then sweep: `git worktree prune`, list what still stands, and
+check each surviving branch against `git branch --merged "$TARGET"`.
+
+- **Merged but still standing** — a P7 miss. Retire it here and say so.
+- **Unmerged** — it must map to a task the ledger names **held**, **conflicted** or
+  **blocked**. One that maps to nothing is unaccounted work: never delete it, and never
+  let it pass silently into the report.
+
+If anything is still unmerged after that, **one `AskUserQuestion`** listing each worktree
+with its task, its state and its commit count, offering:
+
+- `MERGE NOW` — re-run QA on that branch, then P7's dry-run and merge; a conflict comes
+  straight back here
+- `KEEP` — a deliberate hand-off; the report prints the branch, the worktree path and
+  `/ck-code-lite:build T-NN` as the way to finish it
+- `DISCARD` — only for a 🚫 blocked branch whose diff is empty; force-remove and delete
+
+The run may end with a worktree standing only through an explicit `KEEP`. Reaching the
+final report with an unmerged worktree nobody chose to keep is the failure
+[worktree-policy.md](../../references/worktree-policy.md) exists to prevent — treat it as a
+stop, not a footnote.
+
+Then print the batch report, naming every kept worktree with its removal command, and point
+at `/ck-code-lite:ship` for the merged work.
 
 ## DELEGATED MODE
 
@@ -451,6 +506,10 @@ are conventional (`test(T-NN):`, `feat(T-NN):`) with no AI references.
 - **Never proceed past an `ISSUES` answer without re-running QA.**
 - **Never ask more than one question round in Phase 2**, and never more than 4 questions.
 - **Never build on `main`, `master`, `develop`, or `release/*`.**
+- **Never create or enter a git worktree for a single task.** Phases 2–7 run inline in the
+  checkout the skill was invoked from, on a branch created in place with `git checkout -b`.
+  Isolation is only ever cut by the PARALLEL MODE orchestrator, for a wave of ≥ 2
+  ([worktree-policy.md](../../references/worktree-policy.md)).
 - **Never read `tasks/PLAN.md` whole, and never read the whole table** — open rows via the
   status-filtered `grep`, the chosen section via the `awk` extractor. Both cost the same at
   any plan size; a full-table read grows with every task ever written.
@@ -500,7 +559,11 @@ are conventional (`test(T-NN):`, `feat(T-NN):`) with no AI references.
 - **Never remove a worktree whose branch is not fully merged into `$TARGET`**, and never
   force-remove before `git branch --merged` has confirmed it — that discards work no
   commit holds.
-- **Never end a run with an unexplained worktree.** Each one still standing is named in
-  the report with its task, its reason, and the command that removes it.
+- **Never enter a worktree from the orchestrator.** It dispatches isolation and stays in
+  `$ROOT` on `$TARGET` for the whole run — no `git worktree add`, no `EnterWorktree`, no
+  `checkout` away. Both values are verified at the start and end of every P7.
+- **Never end a run with an unmerged worktree the user did not explicitly keep.** P8
+  reconciles every survivor against `git branch --merged` and asks before the report — a
+  named entry in the report is not an accounting; a `KEEP` answer is.
 - **Never remove a worktree from inside DELEGATED MODE** — an agent never cleans up its
   own or any sibling's; the orchestrator owns the whole lifecycle.

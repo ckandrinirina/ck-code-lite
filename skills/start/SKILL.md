@@ -11,6 +11,10 @@ Produces the only two files this workflow needs: `docs/ARCHITECTURE.md` (stack,
 structure, decisions, commands) and `tasks/PLAN.md` (a flat list of small tasks with
 acceptance criteria). One pass, one question round, no subagents.
 
+This skill writes two files in the checkout it was invoked from. It never branches, never
+dispatches, and **never creates or enters a git worktree** — see
+[worktree-policy.md](../../references/worktree-policy.md).
+
 Format contract: [plan-format.md](../../references/plan-format.md).
 Command resolution: [stack-commands.md](../../references/stack-commands.md).
 
@@ -181,6 +185,11 @@ This is a notice, never a block. The user decides when to graduate.
   This single rule makes every re-run safe.
 - **Never dispatch a subagent.** This skill is one pass; a dispatch costs more than the
   five reads it would save, and the clarify round needs that context resident.
+- **Never create or enter a git worktree, and never create or switch a branch.** No
+  `git worktree add`, no `EnterWorktree`, no isolation offered by any general worktree
+  convention. Writing two files in the current checkout has nothing to isolate from, and a
+  worktree here strands both artifacts on a branch the next `build` run never reads
+  ([worktree-policy.md](../../references/worktree-policy.md)).
 - **Never ask more than one round of questions**, and never more than 4 questions in it.
 - **Never ask what the manifest, README, or an existing architecture doc already answers.**
 - **Never create a file under `tasks/` other than `PLAN.md`.** No epics, no per-task files,
