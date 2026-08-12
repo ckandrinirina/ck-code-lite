@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5] — 2026-08-12
+
+### Fixed
+- **start / ship**: never create or enter a git worktree — both work in the checkout they were invoked from, so the artifacts they write and the diff they ship are not stranded on an isolated branch.
+- **build**: a single task never gets a worktree — Phases 2–7 run inline on a branch created in place with `git checkout -b`. Isolation is cut only by the PARALLEL MODE orchestrator, and only for a wave of two or more concurrent tasks.
+- **build**: the orchestrator dispatches isolation without entering it — P1 records the main checkout path alongside the target branch, and P7 verifies both at its start and end, stopping the run on drift instead of merging from the wrong side.
+- **build**: P8 now reconciles every surviving worktree against `git branch --merged` and asks the user to merge, keep or discard each one before the report; a run can no longer end with unmerged work nobody chose to keep.
+
+### Added
+- **references/worktree-policy.md**: plugin-wide contract naming which situations may cut a worktree, forbidding manual isolation, and defining return-to-base and the no-orphan rule.
+
 ## [0.2.4] — 2026-08-11
 
 ### Changed
