@@ -3,7 +3,7 @@
   "name": "ck-code-lite",
   "displayName": "CK Code Lite",
   "description": "Minimal three-skill workflow: start -> build -> ship. One architecture doc, one flat plan file, no generators. Keeps the guarantees that matter — a failing test before the code, an isolated QA pass, and manual sign-off before anything is marked done.",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "author": {
     "name": "ckandrinirina",
     "email": "ckandrinirina@gmail.com"
