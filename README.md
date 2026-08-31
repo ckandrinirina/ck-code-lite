@@ -3,8 +3,9 @@
 Three skills. Two files. Ship an app fast without losing the steps that keep it correct.
 
 `ck-code-lite` is the fast path: describe what you want, get an architecture doc and a
-flat task list, then build tasks one at a time — each with a failing test first, an
-isolated QA pass, and your own hands-on sign-off before it counts as done.
+flat task list, then build tasks one at a time — each with a failing test first, a bounded
+cleanup pass that refuses to keep code the repo already has, an isolated QA pass, and your
+own hands-on sign-off before it counts as done.
 
 ## Skills
 
