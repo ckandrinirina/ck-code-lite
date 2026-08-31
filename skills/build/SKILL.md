@@ -192,9 +192,25 @@ changed, and QA reads it.
 
 ### 4.3 Cleanup
 
-With tests green, one bounded pass: remove duplication introduced during 4.1, fix
-misleading names, delete dead code, extract a function where one obviously wants to
-exist. Re-run the tests after each change — green stays green throughout.
+With tests green, one bounded pass over the diff — the files in the task's `files:` list,
+never wider. Five checks:
+
+1. **Already exists** — before keeping a new helper, type or utility, grep the repo for its
+   verb + noun and for a distinctive line of its body. A hit means call the existing one,
+   or extend it. 4.1 said to reuse; this is where you verify you did.
+2. **Duplication** — the same block twice in the diff. Two occurrences differing only by a
+   value are a parameter; three are a helper.
+3. **Dead code** — an export nothing imports, a parameter no body reads, an import no line
+   uses, a branch no test reaches.
+4. **Single-caller wrapper** — a wrapper or adapter with one caller and no behaviour of its
+   own. Inline it.
+5. **Beyond the criteria** — an option, flag or config key no acceptance criterion asked
+   for. Delete it; the task is the scope.
+
+Also fix misleading names, and extract a function where one obviously wants to exist. Re-run
+the tests after each change — green stays green throughout. Leave alone what the codebase
+makes deliberate: a boundary `docs/ARCHITECTURE.md` draws, or test setup repeated for
+readability.
 
 This is not an open refactor. Anything larger than a few minutes belongs in its own task.
 
@@ -522,6 +538,8 @@ are conventional (`test(T-NN):`, `feat(T-NN):`) with no AI references.
 - **Never run the full test suite in this context once QA is delegated** — the subagent
   absorbs that output so this context does not carry it.
 - **Never write code beyond the acceptance criteria.** Anything extra is a new task.
+- **Never keep a reimplementation of code the repo already has** — 4.3 check 1 is a grep
+  against the repo, not a recollection of it.
 - **Never commit or push here** — that is `/ck-code-lite:ship`. The one exception is
   DELEGATED MODE, which commits inside its own worktree because that is the only state
   the orchestrator can merge or resume. Pushing is never an exception.
