@@ -5,6 +5,11 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7] — 2026-08-31
+
+### Changed
+- **build**: Phase 4.3 Cleanup is now five explicit checks over the task's diff — code the repo already has (a grep, not a recollection), duplication inside the diff, dead code, single-caller wrappers, and surface no acceptance criterion asked for. It stays one bounded pass, and leaves deliberate boundaries and repeated test setup alone.
+
 ## [0.2.6] — 2026-08-31
 
 ### Added
