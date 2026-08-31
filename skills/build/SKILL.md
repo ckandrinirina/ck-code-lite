@@ -3,6 +3,7 @@ name: build
 description: Use when a task from tasks/PLAN.md needs implementing end-to-end with tests, when a task left in progress needs finishing, when several independent tasks can be built at once in isolated worktrees, or when the remaining plan should run in dependency-ordered waves. Argument is an optional task ID such as T-03, several IDs, or `--waves`; with no argument, picks interactively.
 argument-hint: "[T-NN | T-NN T-NN … | --waves]"
 effort: high
+allowed-tools: Bash(git status*) Bash(git diff*) Bash(git log*) Bash(git branch*) Bash(git rev-parse*) Bash(git checkout*) Bash(git switch*) Bash(git add*) Bash(git commit*) Bash(git merge*) Bash(git worktree*) Skill
 ---
 
 # Build — One Task, Test First

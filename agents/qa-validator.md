@@ -3,6 +3,9 @@ name: qa-validator
 description: Use when ck-code-lite:build needs an isolated QA pass — runs the caller-supplied build, test and lint commands in its own context and returns a per-criterion verdict plus one summary line, never the full suite output.
 tools: Read, Bash, Grep, Glob
 model: haiku
+effort: low
+experimental:
+  cacheTtl: "1h"
 ---
 
 # qa-validator
