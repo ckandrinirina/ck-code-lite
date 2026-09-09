@@ -159,6 +159,9 @@ the table above.
 - **Never guess a command.** `(none)` is a valid answer; an invented npm script is not.
 - **Append, never rewrite.** Re-running `start` adds tasks; it never clobbers your edits.
 - **Isolate expensive output.** QA runs somewhere else and comes back with a verdict.
+- **Cheap to filter.** Commands are written in the long `pnpm run test` form so an optional
+  [RTK](https://github.com/ckandrinirina/rtk) hook can compress their output. Never required,
+  never hardcoded — see `references/rtk.md`.
 
 ## License
 
