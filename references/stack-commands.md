@@ -13,7 +13,7 @@ ls package.json Cargo.toml pyproject.toml go.mod Gemfile composer.json CMakeList
 
 | Manifest | Stack | test | build | lint |
 |---|---|---|---|---|
-| `package.json` | Node / TypeScript | `npm test` | `npm run build` | `npm run lint` |
+| `package.json` | Node / TypeScript | `npm run test` | `npm run build` | `npm run lint` |
 | `Cargo.toml` | Rust | `cargo test` | `cargo build` | `cargo clippy -- -D warnings` |
 | `pyproject.toml` | Python | `pytest` | (none) | `ruff check .` |
 | `go.mod` | Go | `go test ./...` | `go build ./...` | `go vet ./...` |
@@ -45,6 +45,10 @@ ls pnpm-lock.yaml yarn.lock bun.lockb package-lock.json 2>/dev/null
 First match wins: `pnpm-lock.yaml` → `pnpm`, `yarn.lock` → `yarn`, `bun.lockb` → `bun`,
 `package-lock.json` → `npm`. No lockfile → `npm`.
 
+Always write the **`<runner> run <script>`** long form — `pnpm run test`, never `pnpm test`.
+The two are exact aliases, but only the long form is filtered when the user runs RTK, and
+the test suite is the largest output this workflow produces. See [rtk.md](rtk.md).
+
 ### 3. Python test runner
 
 `pytest` only when `pyproject.toml` declares a `[tool.pytest…]` table or a `tests/`
@@ -54,9 +58,9 @@ directory exists. Otherwise `python -m unittest discover`.
 
 ```markdown
 ## Commands
-- test: pnpm test
-- build: pnpm build
-- lint: pnpm lint
+- test: pnpm run test
+- build: pnpm run build
+- lint: pnpm run lint
 ```
 
 ## `(none)` is a real value

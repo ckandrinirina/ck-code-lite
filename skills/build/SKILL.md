@@ -24,6 +24,7 @@ contract, including who returns where and what may never be left behind, is
 
 Format contract: [plan-format.md](../../references/plan-format.md).
 Command resolution: [stack-commands.md](../../references/stack-commands.md).
+Output filtering (optional): [rtk.md](../../references/rtk.md).
 
 ## INPUT
 

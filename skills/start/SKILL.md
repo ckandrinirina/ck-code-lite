@@ -18,6 +18,7 @@ dispatches, and **never creates or enters a git worktree** — see
 
 Format contract: [plan-format.md](../../references/plan-format.md).
 Command resolution: [stack-commands.md](../../references/stack-commands.md).
+Output filtering (optional): [rtk.md](../../references/rtk.md).
 
 ## INPUT
 

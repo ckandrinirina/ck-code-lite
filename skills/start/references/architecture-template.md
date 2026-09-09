@@ -18,9 +18,9 @@ past a screen, the project has outgrown lite.
 
 ## Commands
 
-- test: pnpm test
-- build: pnpm build
-- lint: pnpm lint
+- test: pnpm run test
+- build: pnpm run build
+- lint: pnpm run lint
 
 ## Folder structure
 
