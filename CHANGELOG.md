@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-09-09
+
+### Added
+- **references/rtk.md** (new): RTK is an optional third-party `PreToolUse` hook that filters command output before it reaches context. Documents the command forms its hook recognizes and the rule that a skill must never hardcode an `rtk` prefix. Linked from `start` and `build`.
+
+### Changed
+- **references/stack-commands.md**: the Node row and the `## Commands` example now resolve to the `<runner> run <script>` long form (`npm run test`, `pnpm run test`, `pnpm run build`). `npm test` is an exact alias of `npm run test`, but only the long form is filtered by RTK — and `build` runs that one command on every RED and GREEN cycle, again in QA, and again per worktree in `--waves`.
+- **start/references/architecture-template.md**: the `## Commands` example matches the new long form.
+
 ## [0.2.7] — 2026-08-31
 
 ### Changed
