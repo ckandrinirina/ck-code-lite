@@ -133,6 +133,18 @@ Each task carries:
 
 Order tasks so dependencies flow forward, and record them in `needs`.
 
+**Order demo-first.** The first task makes the app run and its user-facing surface (a
+page, a screen, a command) show real-looking output from **fixture data behind one
+adapter module** — no backend yet. Every remaining surface task comes next, each reading
+its own fixture through that same seam. Backend tasks (API, datastore, external service)
+come last, one per seam: each `needs` the surface task it serves, its acceptance re-runs
+that surface's click path or command and sees real data, and the fixture is removed. A
+fixture task with no replacing task in the same plan is a mock shipped to production —
+add the replacement or drop the fixture. A criterion a human can only check with a manual
+API client (Postman, curl) is a planning defect: the check belongs in the task's automated
+tests, and the human check goes through the surface. A project with no human-facing
+surface (a library, a daemon, a pure API) says so in one line and orders core code first.
+
 **NEW / ADOPT** — write `tasks/PLAN.md` in the format from
 [plan-format.md](../../references/plan-format.md).
 
@@ -200,6 +212,9 @@ This is a notice, never a block. The user decides when to graduate.
 - **Never renumber or reorder existing tasks.** New IDs continue from the highest present.
 - **Never write a task larger than M.** Split it.
 - **Never write an acceptance criterion a test cannot assert.**
+- **Never plan a backend task before the surface that exercises it** (Phase 5) — the app
+  runs on fixtures first; each backend task replaces one fixture and is verified through
+  the surface already built, never through a manual API client.
 - **Never invent a command a manifest does not declare** — `(none)` is the correct answer
   when there is no command.
 - **Never read `tasks/PLAN.md` whole, and never read the whole table** — open rows via the
