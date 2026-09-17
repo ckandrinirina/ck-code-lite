@@ -5,6 +5,11 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] — 2026-09-17
+
+### Changed
+- **start**: Phase 5 now orders tasks demo-first. The first task makes the app run with its user-facing surface reading fixture data behind one adapter module; every remaining surface task follows; backend tasks come last, one per fixture, each `needs` the surface task it serves and is verified by re-running that surface with real data. A fixture with no replacing task in the plan, or an acceptance criterion that needs Postman or curl to check, is a planning defect. Headless projects (library, daemon, pure API) say so and order core code first. No format change to `tasks/PLAN.md`.
+
 ## [0.3.0] — 2026-09-09
 
 ### Added
