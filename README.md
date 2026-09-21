@@ -49,6 +49,18 @@ three waves offering to stop. Stopping costs nothing — status lives in `tasks/
 `--waves` resumes from it in a fresh context. The four guarantees below hold in a parallel
 run exactly as they do in a single one.
 
+### Every prompt goes through the workflow
+
+You do not have to type the slash command. In an adopted project (one with `tasks/PLAN.md`
+or `docs/ARCHITECTURE.md`) a `UserPromptSubmit` hook (`scripts/prompt-router.sh`) injects
+[`references/prompt-routing.md`](references/prompt-routing.md) — a three-line intent → skill
+table — as context for each free-text prompt, so "implement T-03" runs `build`, "the parser
+crashes on empty input" runs `start` to add the task and then `build`, and "ship it" runs
+`ship`. The chosen skill is announced in one line and invoked; the prompt is the consent. The
+hook stays silent on a slash command, on a reply shorter than 12 characters (an answer to a
+running skill), in a repo that never adopted the workflow, and in a full ck-code project,
+whose own router owns the prompt. Pure local read, always exits 0.
+
 ## The four guarantees
 
 Speed comes from deleting ceremony, not from deleting checks. These four are hard gates
