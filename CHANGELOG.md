@@ -5,6 +5,11 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-09-21
+
+### Added
+- **prompt-router** (`scripts/prompt-router.sh`, `UserPromptSubmit`): every free-text prompt in an adopted project (`tasks/PLAN.md` or `docs/ARCHITECTURE.md`) now receives `references/prompt-routing.md` as context — a three-line intent → skill table — so "implement T-03" runs `build`, a bug or feature with no task runs `start` (EXTEND mode) then `build`, and "ship it" runs `ship`, without the user typing the slash command. The chosen skill is announced in one line and invoked; the prompt is the consent. Silent on a slash command, on a reply under 12 characters (an answer to a running skill), in a repo that never adopted the workflow, and in a full ck-code project, whose own router owns the prompt. Bash 3.2, no jq, always exits 0. No format change to `tasks/PLAN.md` or `docs/ARCHITECTURE.md`.
+
 ## [0.3.1] — 2026-09-17
 
 ### Changed
