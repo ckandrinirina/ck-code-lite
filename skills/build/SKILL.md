@@ -185,6 +185,11 @@ already has before adding anything new — check for an existing helper, type or
 first. Run the test command after each significant change. Stop as soon as everything
 passes; do not build ahead of the criteria.
 
+Comments only where the code cannot speak for itself: a *why*, an invariant, a workaround
+with its issue link, or a one-line doc comment on an exported symbol. Fewest words that stay
+precise — fragments are fine (`// UTC; caller converts`); no filler (`This function…`), no
+restating a name, param or type, no history (`// added for T-03`), no commented-out code.
+
 ### 4.2 Track what was touched
 
 Any file edited that is not already in the task's `files:` meta line gets appended to
@@ -194,7 +199,7 @@ changed, and QA reads it.
 ### 4.3 Cleanup
 
 With tests green, one bounded pass over the diff — the files in the task's `files:` list,
-never wider. Five checks:
+never wider. Six checks:
 
 1. **Already exists** — before keeping a new helper, type or utility, grep the repo for its
    verb + noun and for a distinctive line of its body. A hit means call the existing one,
@@ -207,6 +212,8 @@ never wider. Five checks:
    own. Inline it.
 5. **Beyond the criteria** — an option, flag or config key no acceptance criterion asked
    for. Delete it; the task is the scope.
+6. **Comments** — delete any the code already says; trim any longer than 4.1 allows. A
+   test's descriptive comment or a mandated file header is not a finding.
 
 Also fix misleading names, and extract a function where one obviously wants to exist. Re-run
 the tests after each change — green stays green throughout. Leave alone what the codebase
@@ -539,6 +546,7 @@ are conventional (`test(T-NN):`, `feat(T-NN):`) with no AI references.
 - **Never run the full test suite in this context once QA is delegated** — the subagent
   absorbs that output so this context does not carry it.
 - **Never write code beyond the acceptance criteria.** Anything extra is a new task.
+- **Never ship a comment that restates the code or runs longer than it needs** — 4.3 check 6.
 - **Never keep a reimplementation of code the repo already has** — 4.3 check 1 is a grep
   against the repo, not a recollection of it.
 - **Never commit or push here** — that is `/ck-code-lite:ship`. The one exception is
