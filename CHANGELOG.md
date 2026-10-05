@@ -5,6 +5,37 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] — 2026-10-05
+
+A stabilization pass from three audits of 1.0.0 (scripts stress-tested on macOS and Linux, every skill cross-checked, a full run on a real project) and a review of the fixes. Plan format unchanged — no migration.
+
+### Fixed
+- **ck-lite**: a write that would corrupt the plan is refused before it lands, leaving the file byte-identical. Before, it was saved first and checked after: a `|` in a title, a body line shaped like a plan row, or a newline in a note could corrupt it.
+- **ck-lite**: parallel writes no longer drop each other's updates (6–7 of 8 were lost). Every write now holds a lock, and a lock left by a dead process is taken over safely.
+- **ck-lite**: `add` refuses self-dependencies, cycles, over-padded IDs (`T-005`), and `size: L` with a clear message, and leaves no temp files behind.
+- **ck-lite `retire`**: it no longer deletes a worktree whose uncommitted work sits on a branch 0 commits ahead.
+- **ck-lite `try-merge`**: it no longer wipes staged changes. It now dry-runs with `git merge-tree`, reports `DIRTY` when the branch changes a path that is uncommitted here, and treats a missing branch as a usage error.
+- **ck-lite**: paths containing spaces stay whole; `commands` keeps labels such as `test:unit`; `show` exits 1 for an unknown ID; `waves` schedules a repeated ID once; writes keep the plan's file mode; CRLF plans are read correctly and written back as LF.
+- **ck-lite**: it works from any subdirectory, using the nearest `tasks/PLAN.md` above it, so a monorepo project keeps its own plan.
+- **ck-lite-qa**: a plan write or regenerated Python bytecode no longer voids the reuse stamp, which used to force a second full-suite run. Runs and logs are now kept per checkout, so two projects never share a `T-01`. Sub-second suites are no longer charged a 2 s poll.
+- **build**: an interrupted (`doing`) task is resumed or offered with no argument, and its earlier branch or kept worktree is found. The next task branches from trunk instead of stacking on the previous task's branch, unless it `needs` that task.
+- **build**: a recorded `test: (none)` exception can now pass QA, inline and in parallel. A `CORRUPT` task points at the lines to fix by hand. A missing `docs/ARCHITECTURE.md` points at `start`.
+- **build, parallel mode**:
+  - A run is no longer stopped by architecture docs that a fresh `start` left uncommitted.
+  - `STOP HERE` reconciles before reporting.
+  - A failing merged-result QA ends the run, and that QA run gets its own ID.
+  - A merged worktree is retired on merge.
+  - Held branches are noted on the task so a later build finds them.
+  - An empty remaining scope ends the run cleanly.
+  - Drift recovery `cd`s back to the main checkout.
+- **ship**: it no longer marks a `doing` task done (that skipped QA and the manual test). It offers closing a task only when the task is still `todo`.
+- **start**: a project with only one of `docs/ARCHITECTURE.md` and `tasks/PLAN.md` is handled without overwriting the doc. Python projects using `setup.py` or `requirements.txt` are detected. Multi-stack commands use `cd dir && …`. `node --test` gets a `test-one`.
+- **qa-validator**: told up front that `ck-lite-qa` is the only command it runs; a bare run had skipped the reuse stamp.
+
+### Added
+- **ck-lite `drop`**: removes a mistaken `todo` or `blocked` task that nothing depends on.
+- **tests**: 124 smoke assertions, up from 85. 33 of them fail on 1.0.0.
+
 ## [1.0.0] — 2026-10-05
 
 A run's cost now tracks the work in front of it, not the age of the project, and the slow parts of a build are scripted or skipped — the four gates (clarify, RED, QA, manual test) are unchanged.
