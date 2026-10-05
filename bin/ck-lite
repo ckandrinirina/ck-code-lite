@@ -1,0 +1,447 @@
+#!/usr/bin/env bash
+# ck-lite — every read and write ck-code-lite makes to tasks/PLAN.md and docs/, one call each.
+#
+# Usage:
+#   ck-lite open                       open tasks, readiness worked out, then a count line
+#   ck-lite show <T-NN>                one task's section
+#   ck-lite criteria <T-NN>…           acceptance criteria of those tasks, grouped by ID
+#   ck-lite context <T-NN>             ARCHITECTURE.md, the area docs the task's files touch, the task
+#   ck-lite commands                   the ## Commands lines of docs/ARCHITECTURE.md
+#   ck-lite waves [--next] <T-NN>…|--all   dependency-ordered waves (file-disjoint, width ≤ 4)
+#   ck-lite set <status> <T-NN>…       move the table row and the meta line together
+#   ck-lite files <T-NN> <path>…       append paths to the task's files: list
+#   ck-lite note <T-NN> <text>         append a dated line under the task's ### Notes
+#   ck-lite done <T-NN> [<path>…]      tick every checkbox, append paths, status done
+#   ck-lite next-id                    the next free task ID
+#   ck-lite init <project name>        create an empty tasks/PLAN.md
+#   ck-lite add                        append task sections from stdin; table rows are generated
+#   ck-lite check                      validate the whole plan (exit 1 on any defect)
+#   ck-lite stats                      counts, doc sizes and the graduation notice
+#   ck-lite base <root> <target>       AT-BASE, or DRIFTED with where this checkout really is (exit 1)
+#   ck-lite worktrees <target>         linked worktrees: branch, path, merged|unmerged, commits ahead
+#   ck-lite try-merge <branch>         merge dry-run onto HEAD, always aborted: CLEAN or CONFLICT (exit 1)
+#   ck-lite retire <target> <branch>   remove a fully merged branch's worktree, then the branch
+#
+# Reads the whole plan in a pipe and prints only what was asked, so a caller's cost is the
+# same at 5 tasks or 500. Writes go through a temp file and a rename, then are re-verified
+# against the three-line rule. Exit 0 ok, 1 defect found, 2 usage error.
+# Paths: CK_LITE_PLAN (tasks/PLAN.md), CK_LITE_ARCH (docs/ARCHITECTURE.md); area docs resolve
+# against the directory above the ARCHITECTURE.md folder. Bash 3.2, BWK awk.
+
+set -uo pipefail
+
+PLAN="${CK_LITE_PLAN:-tasks/PLAN.md}"
+ARCH="${CK_LITE_ARCH:-docs/ARCHITECTURE.md}"
+WIDTH=4
+STATUSES="todo doing done blocked"
+
+die() { echo "ck-lite: ERROR — $*" >&2; exit 2; }
+need_plan() { [ -f "$PLAN" ] || die "no $PLAN — run /ck-code-lite:start first"; }
+is_id() { case "$1" in T-[0-9][0-9]*) case "${1#T-}" in *[!0-9]*) return 1 ;; esac; return 0 ;; esac; return 1; }
+need_id() { is_id "${1:-}" || die "expected a task ID like T-05, got: ${1:-<nothing>}"; }
+
+# One TSV line per ID: id rows hdrs metas row_status meta_status size needs files title.
+# needs is comma-joined without spaces ("" when none); files is as written ("" when none).
+index() {
+  awk '
+    function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
+    function see(id) { if (!(id in seen)) { seen[id] = 1; ids[++n] = id } }
+    /^\| T-[0-9]+ \|/ {
+      split($0, f, "|"); id = trim(f[2]); see(id); rows[id]++
+      title[id] = trim(f[3]); rs[id] = trim(f[4]); sz[id] = trim(f[5])
+      nd = trim(f[6]); if (nd == "—" || nd == "-") nd = ""; gsub(/ /, "", nd); needs[id] = nd
+      next
+    }
+    /^## T-[0-9]+ / { see($2); hdrs[$2]++; if (title[$2] == "") { t = $0; sub(/^## T-[0-9]+ /, "", t); title[$2] = t }; next }
+    /^T-[0-9]+ · / {
+      id = $1; see(id); metas[id]++
+      k = split($0, p, " · ")
+      for (i = 2; i <= k; i++) {
+        if (p[i] ~ /^status: /) { v = p[i]; sub(/^status: /, "", v); ms[id] = trim(v) }
+        if (p[i] ~ /^files: /)  { v = p[i]; sub(/^files: /, "", v); v = trim(v); if (v == "—" || v == "-") v = ""; fl[id] = v }
+      }
+    }
+    END {
+      for (i = 1; i <= n; i++) { id = ids[i]
+        printf "%s\t%d\t%d\t%d\t%s\t%s\t%s\t%s\t%s\t%s\n", id, rows[id], hdrs[id], metas[id], rs[id], ms[id], sz[id], needs[id], fl[id], title[id] }
+    }' "$PLAN"
+}
+
+# Exits 1 unless ID owns exactly one row, one header and one meta line, agreeing on status.
+three_lines() {
+  index | awk -F'\t' -v id="$1" '
+    $1 == id { found = 1
+      if ($2 != 1 || $3 != 1 || $4 != 1) { printf "ck-lite: %s owns %d row / %d header / %d meta line(s) — need exactly 1 of each\n", id, $2, $3, $4; bad = 1 }
+      else if ($5 != $6) { printf "ck-lite: %s table says %s, meta line says %s — corrupt plan\n", id, $5, $6; bad = 1 } }
+    END { if (!found) printf "ck-lite: %s is not in the plan\n", id; exit (found && !bad) ? 0 : 1 }'
+}
+
+status_of() { index | awk -F'\t' -v id="$1" '$1 == id { print $5 }'; }
+
+replace_plan() { mv "$1" "$PLAN" || die "could not write $PLAN"; }
+
+cmd_open() {
+  need_plan
+  index | awk -F'\t' '
+    { id[NR] = $1; st[$1] = $5; ok[$1] = ($2 == 1 && $3 == 1 && $4 == 1 && $5 == $6); n = NR; line[$1] = $0 }
+    END {
+      for (i = 1; i <= n; i++) { s = st[id[i]]; if (s == "done") done++; else if (s == "todo" || s == "doing" || s == "blocked") open++ }
+      for (i = 1; i <= n; i++) { t = id[i]; s = st[t]
+        if (s == "done") continue
+        split(line[t], f, "\t")
+        state = s
+        if (!ok[t]) state = "CORRUPT(three-line rule — run ck-lite check)"
+        else if (s == "todo") {
+          wait = ""; miss = ""
+          m = split(f[8], nd, ",")
+          for (j = 1; j <= m; j++) { d = nd[j]; if (d == "") continue
+            if (!(d in st)) miss = miss (miss ? "," : "") d
+            else if (st[d] != "done") wait = wait (wait ? "," : "") d }
+          if (miss) state = "CORRUPT(needs " miss " — not in the plan)"
+          else if (wait) state = "todo wait(" wait ")"
+          else { state = "todo READY"; ready++ }
+        }
+        needs = f[8] ? f[8] : "—"; files = f[9] ? f[9] : "—"
+        printf "%s %s %s · needs: %s · files: %s · %s\n", t, state, f[7], needs, files, f[10]
+      }
+      printf "open %d · ready %d · done %d · total %d\n", open, ready, done, n
+      if (open > 40) printf "graduation: %d open tasks — past ~40 a flat plan costs more than ck-code epics; /ck-code:migrate converts it (a notice, never a block)\n", open
+    }'
+}
+
+cmd_show() {
+  need_plan; need_id "${1:-}"
+  awk -v id="$1" '$0 ~ "^## " id " " {f = 1; print; next} f && /^## T-/ {exit} f' "$PLAN"
+}
+
+cmd_criteria() {
+  need_plan; [ "$#" -gt 0 ] || die "criteria needs at least one task ID"
+  for i in "$@"; do need_id "$i"; done
+  awk -v ids="$*" 'BEGIN { n = split(ids, a, " "); for (i = 1; i <= n; i++) w[a[i]] = 1 }
+    /^## T-/ { t = $2; p = 0 }
+    /^### Acceptance/ { if (w[t]) { p = 1; print "== " t } next }
+    /^### / { p = 0 }
+    p && /^- \[/ { print }' "$PLAN"
+}
+
+cmd_commands() {
+  [ -f "$ARCH" ] || die "no $ARCH — run /ck-code-lite:start first"
+  awk '/^## Commands/ {f = 1; next} f && /^## / {exit} f && /^- [A-Za-z-]+: / {sub(/^- /, ""); print}' "$ARCH"
+}
+
+cmd_context() {
+  need_plan; need_id "${1:-}"
+  [ -f "$ARCH" ] || die "no $ARCH — run /ck-code-lite:start first"
+  three_lines "$1" >/dev/null || { three_lines "$1"; exit 1; }
+  files="$(index | awk -F'\t' -v id="$1" '$1 == id { print $9 }')"
+  AROOT="$(dirname "$(dirname "$ARCH")")"
+  echo "== $ARCH"
+  cat "$ARCH"
+  # ## Areas rows: | area | doc | path prefixes, comma-separated |
+  areas="$(awk '/^## Areas/ {f = 1; next} f && /^## / {exit}
+    f && /^\| / && !/^\|[- |]+\|$/ { split($0, c, "|"); a = c[2]; d = c[3]; p = c[4]
+      gsub(/^[ \t`]+|[ \t`]+$/, "", a); gsub(/^[ \t`]+|[ \t`]+$/, "", d); gsub(/[ \t`]/, "", p)
+      if (a != "" && a != "Area") print a "\t" d "\t" p }' "$ARCH")"
+  if [ -n "$areas" ]; then
+    if [ -z "$files" ]; then
+      echo "== areas: none matched — $1 has no files: list (areas: $(printf '%s\n' "$areas" | cut -f1 | paste -sd, -))"
+    else
+      printf '%s\n' "$areas" | while IFS="$(printf '\t')" read -r _area doc prefixes; do
+        hit=0
+        oldifs="$IFS"; IFS=','
+        for f in $files; do f="${f# }"; f="${f% }"
+          for p in $prefixes; do [ -n "$p" ] || continue
+            case "$f" in "$p"*) hit=1 ;; esac
+          done
+        done
+        IFS="$oldifs"
+        [ "$hit" = 1 ] || continue
+        path="$doc"; case "$doc" in /*) ;; *) path="$AROOT/$doc" ;; esac
+        if [ -f "$path" ]; then echo; echo "== $doc"; cat "$path"
+        else echo; echo "== $doc — listed under ## Areas but missing; fix the row or create the doc"; fi
+      done
+    fi
+  fi
+  echo; echo "== task $1"
+  cmd_show "$1"
+}
+
+cmd_set() {
+  need_plan
+  to="${1:-}"; shift || true
+  case " $STATUSES " in *" $to "*) [ -n "$to" ] ;; *) false ;; esac || die "status must be one of: $STATUSES"
+  [ "$#" -gt 0 ] || die "set needs at least one task ID"
+  for i in "$@"; do need_id "$i"; three_lines "$i" >&2 || exit 1; done
+  for i in "$@"; do
+    from="$(status_of "$i")"
+    tmp="$(mktemp "${PLAN}.XXXXXX")" || die "mktemp failed"
+    awk -v id="$i" -v to="$to" '
+      $0 ~ "^\\| " id " \\|" { n = split($0, f, "|"); f[4] = " " to " "; s = f[1]; for (k = 2; k <= n; k++) s = s "|" f[k]; print s; next }
+      $0 ~ "^" id " · " { sub(/status: [a-z]+/, "status: " to); print; next }
+      { print }' "$PLAN" >"$tmp" && replace_plan "$tmp"
+    three_lines "$i" || exit 1
+    echo "$i: $from → $to"
+  done
+}
+
+# Appends $2… (comma-joined) to ID's files: list, skipping paths already there.
+add_files() {
+  id="$1"; shift
+  [ "$#" -gt 0 ] || return 0
+  tmp="$(mktemp "${PLAN}.XXXXXX")" || die "mktemp failed"
+  ADD="$*" awk -v id="$id" '
+    BEGIN { add = ENVIRON["ADD"] }
+    $0 ~ "^" id " · " {
+      if (match($0, / · files: /)) { head = substr($0, 1, RSTART - 1); cur = substr($0, RSTART + RLENGTH) } else { head = $0; cur = "" }
+      if (cur == "—" || cur == "-") cur = ""
+      n = split(cur, c, /, */); for (k = 1; k <= n; k++) if (c[k] != "") have[c[k]] = 1
+      m = split(add, a, /[ ,]+/)
+      for (k = 1; k <= m; k++) { p = a[k]; if (p == "" || (p in have)) continue; have[p] = 1; cur = cur (cur ? ", " : "") p; added++ }
+      print head " · files: " (cur ? cur : "—"); next }
+    { print }
+    END { print added + 0 > "/dev/stderr" }' "$PLAN" >"$tmp" 2>"$tmp.n" && replace_plan "$tmp"
+  ADDED="$(cat "$tmp.n" 2>/dev/null)"; rm -f "$tmp.n"
+}
+
+cmd_files() {
+  need_plan; need_id "${1:-}"; id="$1"; shift
+  [ "$#" -gt 0 ] || die "files needs at least one path"
+  three_lines "$id" >&2 || exit 1
+  ADDED=0; add_files "$id" "$@"
+  echo "$id: files +${ADDED:-0}"
+}
+
+cmd_note() {
+  need_plan; need_id "${1:-}"; id="$1"; shift
+  [ "$#" -gt 0 ] || die "note needs text"
+  three_lines "$id" >&2 || exit 1
+  tmp="$(mktemp "${PLAN}.XXXXXX")" || die "mktemp failed"
+  # Inserts after the last line of an existing ### Notes block, else opens one at the
+  # section's end; blank lines between sections are kept as they were.
+  NOTE="- $(date +%F): $*" awk -v id="$id" '
+    BEGIN { txt = ENVIRON["NOTE"] }
+    { L[NR] = $0 }
+    END {
+      for (i = 1; i <= NR; i++) { if (L[i] ~ "^## " id " ") { s = i; continue } if (s && L[i] ~ /^## T-/) { e = i - 1; break } }
+      if (!e) e = NR
+      last = e; while (last > s && L[last] ~ /^[ \t]*$/) last--
+      for (i = s + 1; i <= last; i++) if (L[i] ~ /^### Notes/) notes = i
+      if (notes) { ins = last; for (i = notes + 1; i <= last; i++) if (L[i] ~ /^### /) { ins = i - 1; break }
+        while (ins > notes && L[ins] ~ /^[ \t]*$/) ins-- }
+      for (i = 1; i <= NR; i++) { print L[i]
+        if (notes && i == ins) print txt
+        if (!notes && i == last) { print ""; print "### Notes"; print txt } } }' "$PLAN" >"$tmp" && replace_plan "$tmp"
+  three_lines "$id" || exit 1
+  echo "$id: note added"
+}
+
+cmd_done() {
+  need_plan; need_id "${1:-}"; id="$1"; shift
+  three_lines "$id" >&2 || exit 1
+  ADDED=0; add_files "$id" "$@"
+  tmp="$(mktemp "${PLAN}.XXXXXX")" || die "mktemp failed"
+  awk -v id="$id" '
+    $0 ~ "^## " id " " { f = 1; print; next }
+    f && /^## T-/ { f = 0 }
+    f && /^- \[ \]/ { sub(/^- \[ \]/, "- [x]"); t++ }
+    { print }
+    END { print t + 0 > "/dev/stderr" }' "$PLAN" >"$tmp" 2>"$tmp.n" && replace_plan "$tmp"
+  ticked="$(cat "$tmp.n" 2>/dev/null)"; rm -f "$tmp.n"
+  out="$(cmd_set "done" "$id")" || { echo "$out"; exit 1; }
+  echo "$out · ticked ${ticked:-0} · files +${ADDED:-0}"
+}
+
+cmd_next_id() {
+  need_plan
+  awk '/^(## |\| )?T-[0-9]+/ { s = $0; sub(/^(## |\| )/, "", s); sub(/^T-/, "", s); sub(/[^0-9].*$/, "", s); if (s + 0 > m) m = s + 0 }
+    END { printf "T-%02d\n", m + 1 }' "$PLAN"
+}
+
+cmd_init() {
+  [ "$#" -gt 0 ] || die "init needs a project name"
+  [ -f "$PLAN" ] && die "$PLAN already exists — use ck-lite add"
+  mkdir -p "$(dirname "$PLAN")" || die "cannot create $(dirname "$PLAN")"
+  printf '# PLAN — %s\n\n| ID | Title | Status | Size | Needs |\n|---|---|---|---|---|\n' "$*" >"$PLAN"
+  echo "created $PLAN"
+}
+
+# stdin: task sections in plan-format shape, IDs already assigned (start from ck-lite next-id).
+cmd_add() {
+  need_plan
+  in="$(mktemp "${PLAN}.in.XXXXXX")" || die "mktemp failed"
+  cat >"$in"
+  existing="$(index | cut -f1 | tr '\n' ' ')"
+  rows="$(awk -v existing="$existing" '
+    BEGIN { n = split(existing, e, " "); for (i = 1; i <= n; i++) { have[e[i]] = 1; v = e[i]; sub(/^T-/, "", v); if (v + 0 > max) max = v + 0 } }
+    /^## T-[0-9]+ / { id = $2; t = $0; sub(/^## T-[0-9]+ /, "", t)
+      if (id in have) { print "ERR " id " already exists in the plan"; bad = 1 }
+      v = id; sub(/^T-/, "", v); if (v + 0 <= max) { print "ERR " id " is not above the highest existing ID — use ck-lite next-id"; bad = 1 }
+      max = v + 0; have[id] = 1; cur = id; title[id] = t; ids[++k] = id; next }
+    cur != "" && meta[cur] == "" && /[^ ]/ {
+      if ($0 !~ "^" cur " · status: todo · size: (S|M) · needs: .* · files: ") { print "ERR " cur " meta line must follow the header: " cur " · status: todo · size: S|M · needs: … · files: …"; bad = 1 }
+      meta[cur] = $0; next }
+    END {
+      if (k == 0) { print "ERR no ## T-NN sections on stdin"; exit 1 }
+      for (i = 1; i <= k; i++) { id = ids[i]; m = meta[id]
+        if (m == "") { print "ERR " id " has no meta line"; bad = 1; continue }
+        split(m, p, " · "); sz = p[3]; sub(/^size: /, "", sz); nd = p[4]; sub(/^needs: /, "", nd)
+        c = nd; gsub(/ /, "", c); if (c != "—" && c != "-" && c != "") { q = split(c, d, ","); for (j = 1; j <= q; j++) if (!(d[j] in have)) { print "ERR " id " needs " d[j] ", which does not exist"; bad = 1 } }
+        rows[i] = "| " id " | " title[id] " | todo | " sz " | " ((nd == "-" || nd == "") ? "—" : nd) " |" }
+      if (bad) exit 1
+      for (i = 1; i <= k; i++) print rows[i] }' "$in")" || { printf '%s\n' "$rows" | sed 's/^ERR /ck-lite: /' >&2; rm -f "$in"; exit 1; }
+  tmp="$(mktemp "${PLAN}.XXXXXX")" || die "mktemp failed"
+  last="$(awk '/^## / {exit} /^\|/ {n = NR} END {print n}' "$PLAN")"
+  [ -n "$last" ] || die "$PLAN has no table — it must open with the | ID | Title | Status | Size | Needs | table"
+  { head -n "$last" "$PLAN"; printf '%s\n' "$rows"; tail -n +"$((last + 1))" "$PLAN" | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}'
+    echo; cat "$in"; } >"$tmp"
+  rm -f "$in"
+  replace_plan "$tmp"
+  for id in $(printf '%s\n' "$rows" | awk -F'|' '{gsub(/ /, "", $2); print $2}'); do three_lines "$id" || exit 1; done
+  first="$(printf '%s\n' "$rows" | head -1 | awk -F'|' '{gsub(/ /, "", $2); print $2}')"
+  lastid="$(printf '%s\n' "$rows" | tail -1 | awk -F'|' '{gsub(/ /, "", $2); print $2}')"
+  n="$(printf '%s\n' "$rows" | wc -l | tr -d ' ')"
+  if [ "$n" = 1 ]; then echo "added $first"; else echo "added $n tasks ($first … $lastid)"; fi
+}
+
+cmd_waves() {
+  need_plan
+  next=0; all=0; scope=""
+  for a in "$@"; do case "$a" in --next) next=1 ;; --all) all=1 ;; *) need_id "$a"; scope="$scope $a" ;; esac; done
+  [ "$all" = 1 ] || [ -n "$scope" ] || die "waves needs task IDs or --all"
+  index | awk -F'\t' -v scope="$scope" -v all="$all" -v width="$WIDTH" -v next_="$next" '
+    function overlaps(t, w,   k, q, a, b) {
+      q = split(fl[t], a, /, */)
+      for (k = 1; k <= q; k++) if (a[k] != "" && ((w SUBSEP a[k]) in used)) return 1
+      return 0 }
+    { st[$1] = $5; nd[$1] = $8; fl[$1] = $9; ti[$1] = $10; id[++n] = $1; ok[$1] = ($2 == 1 && $3 == 1 && $4 == 1 && $5 == $6) }
+    END {
+      if (all) { for (i = 1; i <= n; i++) if (st[id[i]] == "todo") { S[id[i]] = 1; order[++m] = id[i] } }
+      else { q = split(scope, sc, " "); for (i = 1; i <= n; i++) for (j = 1; j <= q; j++) if (id[i] == sc[j]) { S[id[i]] = 1; order[++m] = id[i] }
+        for (j = 1; j <= q; j++) if (!(sc[j] in S)) { if (!(sc[j] in st)) why[sc[j]] = "not in the plan"; else why[sc[j]] = "status " st[sc[j]] ", not todo"; bad[sc[j]] = 1; unl[++u] = sc[j] } }
+      for (i = 1; i <= m; i++) { t = order[i]
+        if (!ok[t]) { why[t] = "corrupt — run ck-lite check"; bad[t] = 1; continue }
+        if (st[t] != "todo") { why[t] = "status " st[t] ", not todo"; bad[t] = 1; continue }
+        k = split(nd[t], d, ",")
+        for (j = 1; j <= k; j++) { x = d[j]; if (x == "") continue
+          if (!(x in st)) { why[t] = "needs " x ", not in the plan"; bad[t] = 1 }
+          else if (st[x] != "done" && !(x in S)) { why[t] = "needs " x " (" st[x] "), not in scope"; bad[t] = 1 } } }
+      # anything depending on an excluded task is excluded too
+      do { ch = 0
+        for (i = 1; i <= m; i++) { t = order[i]; if (bad[t]) continue
+          k = split(nd[t], d, ","); for (j = 1; j <= k; j++) if (bad[d[j]] && (d[j] in S)) { why[t] = "needs " d[j] ", which is unschedulable"; bad[t] = 1; ch = 1; break } }
+      } while (ch)
+      left = 0; for (i = 1; i <= m; i++) if (!bad[order[i]]) left++
+      w = 0
+      while (left > 0) { w++; placed = 0
+        for (i = 1; i <= m; i++) { t = order[i]; if (bad[t] || (t in wave)) continue
+          if (placed >= width) break
+          ready = 1; k = split(nd[t], d, ",")
+          for (j = 1; j <= k; j++) { x = d[j]; if (x == "" || st[x] == "done") continue; if (!(x in wave) || wave[x] >= w) { ready = 0; break } }
+          if (!ready || overlaps(t, w)) continue
+          wave[t] = w; placed++; left--; members[w] = members[w] (members[w] ? " " : "") t
+          q = split(fl[t], a, /, */); for (j = 1; j <= q; j++) if (a[j] != "") used[w, a[j]] = 1 }
+        if (placed == 0) { for (i = 1; i <= m; i++) { t = order[i]; if (!bad[t] && !(t in wave)) { why[t] = "dependency cycle"; bad[t] = 1 } } w--; break } }
+      if (next_) { print members[1]; exit }
+      for (x = 1; x <= w; x++) { k = split(members[x], mm, " ")
+        for (j = 1; j <= k; j++) { t = mm[j]
+          printf "%s %s · %s · files: %s%s\n", (j == 1 ? sprintf("Wave %d", x) : sprintf("%" length(sprintf("Wave %d", x)) "s", "")), t, ti[t], (fl[t] ? fl[t] : "—"), (nd[t] ? " · needs: " nd[t] : "") } }
+      for (i = 1; i <= m; i++) { t = order[i]; if (bad[t]) printf "Unschedulable %s — %s\n", t, why[t] }
+      for (i = 1; i <= u; i++) printf "Unschedulable %s — %s\n", unl[i], why[unl[i]]
+      printf "waves %d · scheduled %d · width cap %d\n", w, m - (function_count_bad()), width
+    }
+    function function_count_bad(   i, c) { c = 0; for (i = 1; i <= m; i++) if (bad[order[i]]) c++; return c }'
+}
+
+cmd_check() {
+  need_plan
+  index | awk -F'\t' -v statuses="$STATUSES" '
+    BEGIN { split(statuses, s, " "); for (i in s) okst[s[i]] = 1 }
+    { id[++n] = $1; st[$1] = $5; nd[$1] = $8
+      if ($2 != 1 || $3 != 1 || $4 != 1) { printf "%s: owns %d row / %d header / %d meta line(s), need 1 of each\n", $1, $2, $3, $4; e++ }
+      if ($2 >= 1 && !($5 in okst)) { printf "%s: table status \"%s\" is not one of %s\n", $1, $5, statuses; e++ }
+      if ($4 >= 1 && $5 != $6) { printf "%s: table says %s, meta line says %s\n", $1, $5, $6; e++ }
+      if ($2 >= 1 && $7 != "S" && $7 != "M") { printf "%s: size \"%s\" — only S or M\n", $1, $7; e++ } }
+    END {
+      for (i = 1; i <= n; i++) { k = split(nd[id[i]], d, ","); for (j = 1; j <= k; j++) if (d[j] != "" && !(d[j] in st)) { printf "%s: needs %s, which is not in the plan\n", id[i], d[j]; e++ } }
+      # peel tasks whose needs are all resolved; whatever remains sits on a cycle
+      do { ch = 0; for (i = 1; i <= n; i++) { t = id[i]; if (t in res) continue
+          k = split(nd[t], d, ","); r = 1; for (j = 1; j <= k; j++) if (d[j] != "" && (d[j] in st) && !(d[j] in res)) { r = 0; break }
+          if (r) { res[t] = 1; ch = 1 } } } while (ch)
+      for (i = 1; i <= n; i++) if (!(id[i] in res)) { printf "%s: on a dependency cycle\n", id[i]; e++ }
+      if (e) { printf "ck-lite check: %d defect(s) in %d tasks\n", e, n; exit 1 }
+      printf "ck-lite check: OK — %d tasks\n", n }'
+}
+
+cmd_stats() {
+  need_plan
+  index | awk -F'\t' '{ n++; if ($5 == "done") d++; else o++ } END { printf "tasks %d · done %d · open %d\n", n, d, o; if (o > 40) printf "graduation: %d open tasks — /ck-code:migrate converts this plan to ck-code epics (a notice, never a block)\n", o }'
+  if [ -f "$ARCH" ]; then
+    l="$(wc -l <"$ARCH" | tr -d ' ')"
+    a="$(awk '/^## Areas/ {f = 1; next} f && /^## / {exit} f && /^\| / && !/^\|[- |]+\|$/ && !/^\| *Area *\|/ {c++} END {print c + 0}' "$ARCH")"
+    echo "architecture $l lines · areas $a"
+    [ "$l" -le 150 ] || echo "split: $ARCH is $l lines — move the largest area into docs/areas/<area>.md and list it under ## Areas (/ck-code-lite:start does this in EXTEND mode)"
+  fi
+}
+
+need_git() { git rev-parse --git-dir >/dev/null 2>&1 || die "not inside a git repository"; }
+
+cmd_base() {
+  need_git; [ "$#" -eq 2 ] || die "base needs <root> <target>"
+  top="$(git rev-parse --show-toplevel)"; br="$(git rev-parse --abbrev-ref HEAD)"
+  if [ "$top" = "$1" ] && [ "$br" = "$2" ]; then echo "AT-BASE"; return 0; fi
+  echo "DRIFTED — at $top on $br, expected $1 on $2"; return 1
+}
+
+# The main worktree is the first porcelain entry and is never listed: nothing here may touch it.
+cmd_worktrees() {
+  need_git; [ "$#" -eq 1 ] || die "worktrees needs <target>"
+  git worktree prune
+  git worktree list --porcelain | awk '/^worktree /{w = substr($0, 10); n++} /^branch /{b = $2; sub("refs/heads/", "", b); if (n > 1) print b "\t" w}' |
+  while IFS="$(printf '\t')" read -r b w; do
+    ahead="$(git rev-list --count "$1..$b" 2>/dev/null || echo "?")"
+    if [ "$ahead" = 0 ]; then m=merged; else m=unmerged; fi
+    printf '%s\t%s\t%s\t%s ahead\n' "$b" "$w" "$m" "$ahead"
+  done
+}
+
+cmd_try_merge() {
+  need_git; [ "$#" -eq 1 ] || die "try-merge needs <branch>"
+  if git merge --no-commit --no-ff "$1" >/dev/null 2>&1; then r=CLEAN; else r=CONFLICT; fi
+  git merge --abort >/dev/null 2>&1 || git reset --merge >/dev/null 2>&1
+  echo "$r $1"; [ "$r" = CLEAN ]
+}
+
+cmd_retire() {
+  need_git; [ "$#" -eq 2 ] || die "retire needs <target> <branch>"
+  line="$(cmd_worktrees "$1" | awk -F'\t' -v b="$2" '$1 == b')"
+  [ -n "$line" ] || die "$2 has no linked worktree (the main checkout is never retired)"
+  path="$(printf '%s\n' "$line" | cut -f2)"
+  case "$(printf '%s\n' "$line" | cut -f3)" in merged) ;; *) echo "NOT MERGED — $2 kept at $path"; return 1 ;; esac
+  git worktree remove --force "$path" || { echo "remove failed — $2 kept at $path"; return 1; }
+  git branch -d "$2" >/dev/null || { echo "worktree removed, branch $2 kept"; return 1; }
+  echo "retired $2 ($path)"
+}
+
+case "${1:-}" in
+  open) shift; cmd_open "$@" ;;
+  show) shift; cmd_show "$@" ;;
+  criteria) shift; cmd_criteria "$@" ;;
+  context) shift; cmd_context "$@" ;;
+  commands) shift; cmd_commands "$@" ;;
+  waves) shift; cmd_waves "$@" ;;
+  set) shift; cmd_set "$@" ;;
+  files) shift; cmd_files "$@" ;;
+  note) shift; cmd_note "$@" ;;
+  done) shift; cmd_done "$@" ;;
+  next-id) shift; cmd_next_id "$@" ;;
+  init) shift; cmd_init "$@" ;;
+  add) shift; cmd_add "$@" ;;
+  check) shift; cmd_check "$@" ;;
+  stats) shift; cmd_stats "$@" ;;
+  base) shift; cmd_base "$@" ;;
+  worktrees) shift; cmd_worktrees "$@" ;;
+  try-merge) shift; cmd_try_merge "$@" ;;
+  retire) shift; cmd_retire "$@" ;;
+  -h|--help|"") sed -n '3,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  *) die "unknown command: $1 (ck-lite --help)" ;;
+esac

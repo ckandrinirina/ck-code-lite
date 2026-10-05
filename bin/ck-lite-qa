@@ -1,0 +1,233 @@
+#!/usr/bin/env bash
+# ck-lite-qa — run QA commands once per code state, and never twice on the same one.
+# Ported from ck-code's scripts/ck-qa.sh; self-contained, lite never depends on ck-code.
+#
+# Usage:
+#   ck-lite-qa state
+#   ck-lite-qa run <id> [--parallel] [--reuse] [--rerun] <label>=<command> [<label>=<command>…]
+#   ck-lite-qa wait <id>
+#   ck-lite-qa since <id> <label>
+#
+# state  prints the code-state id: the git tree of the working copy, untracked
+#        (non-ignored) files included, so an uncommitted change is a different state.
+# run    runs each command from the current directory, output to
+#        ${TMPDIR:-/tmp}/ck-lite-<id>-<label>.log, and stamps every pass with
+#        (state, directory, command). --reuse reports a command already passed on that
+#        exact triple as REUSED instead of running it. --parallel runs them concurrently
+#        and reports every failure; the default is in order, stopping at the first one.
+#        Prints one line per command, the last 40 log lines of each failure, then
+#        `ck-lite-qa: PASS` (exit 0) or `ck-lite-qa: FAIL — <labels>` (exit 1).
+#        The commands run detached, and run waits up to CK_LITE_QA_WAIT seconds (default 540,
+#        under the 600 s cap of one agent Bash call). A longer run prints
+#        `ck-lite-qa: RUNNING` (exit 3) and keeps going. The same run started again while it
+#        is going waits on it instead of starting a second copy.
+#        Every command that ran on an unchanged tree also records its last run for
+#        (id, label, directory): a snapshot commit of the code state, and the full command.
+# --rerun  marks each <command> as a narrowed re-run of that label's last run here: the
+#        tests that failed plus those affected since the snapshot. A pass stamps the
+#        recorded full command on the new state, so a later --reuse of it reports REUSED.
+#        It is refused when the label has no recorded run in this directory.
+# wait   waits up to CK_LITE_QA_WAIT seconds more on the run for <id> and prints its result,
+#        or RUNNING again. Once it has ended, wait prints that result again.
+# since  prints the snapshot commit of <label>'s last run for <id> in this directory, the
+#        ref a runner's --changed flag narrows a re-run against.
+
+set -uo pipefail
+
+die() { echo "ck-lite-qa: ERROR — $*" >&2; exit 2; }
+TMP="${TMPDIR:-/tmp}"; TMP="${TMP%/}"
+STAMPS="$TMP/ck-lite-qa"
+RUNS="$TMP/ck-lite-qa-run"
+SELF="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)/$(basename -- "$0")"
+
+# The tree id of the working copy, computed in a throwaway index so the real one is never
+# touched. Prints nothing outside a git repository — a state that can never be reused.
+state() {
+  local top idx real
+  top="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
+  idx="$(mktemp "$TMP/ck-lite-qa-index.XXXXXX")" || return 0
+  real="$(git -C "$top" rev-parse --path-format=absolute --git-path index 2>/dev/null)"
+  if [ -f "$real" ]; then cp "$real" "$idx"; else rm -f "$idx"; fi
+  ( cd "$top" && GIT_INDEX_FILE="$idx" git add -A >/dev/null 2>&1 && GIT_INDEX_FILE="$idx" git write-tree 2>/dev/null )
+  rm -f "$idx"
+}
+
+# A commit object for tree $1, parented on HEAD so a runner's merge-base against it (jest
+# --changedSince) resolves. Nothing references it; git gc drops it after the prune window.
+snapshot() {
+  local e="GIT_AUTHOR_NAME=ck-lite-qa GIT_AUTHOR_EMAIL=ck-lite-qa@localhost GIT_COMMITTER_NAME=ck-lite-qa GIT_COMMITTER_EMAIL=ck-lite-qa@localhost"
+  if git rev-parse -q --verify HEAD >/dev/null 2>&1; then
+    env $e git commit-tree -p HEAD -m "ck-lite-qa snapshot" "$1" 2>/dev/null
+  else
+    env $e git commit-tree -m "ck-lite-qa snapshot" "$1" 2>/dev/null
+  fi
+}
+
+last_of() { printf '%s/last-%s-%s' "$STAMPS" "$1" "$2"; }   # id label → last-run record
+
+# Prints line $3 (1 snapshot, 2 directory, 3 full command) of the last-run record for
+# id $1 label $2, only when that run was in this directory.
+last_field() {
+  local f; f="$(last_of "$1" "$2")"
+  [ -f "$f" ] && [ "$(sed -n 2p "$f")" = "$(pwd -P)" ] || return 1
+  sed -n "$3p" "$f"
+}
+
+stamp_of() { printf '%s\n%s\n%s\n' "$1" "$(pwd -P)" "$2" | git hash-object --stdin; }
+
+# Waits on the run for $1 for up to CK_LITE_QA_WAIT seconds, then prints its result and exits
+# with its code, or prints RUNNING and exits 3 while it is still going.
+await_run() {
+  local d="$RUNS/$1" budget="${CK_LITE_QA_WAIT:-540}" t0=$SECONDS
+  [ -f "$d/pid" ] || die "no ck-lite-qa run for $1 — start it with ck-lite-qa run $1 …"
+  while [ ! -f "$d/rc" ]; do
+    if ! kill -0 "$(cat "$d/pid")" 2>/dev/null; then
+      [ -f "$d/rc" ] && break
+      die "the ck-lite-qa run for $1 stopped without a result — start it again with ck-lite-qa run"
+    fi
+    if [ $((SECONDS - t0)) -ge "$budget" ]; then
+      echo "ck-lite-qa: RUNNING — $1 has run $(( $(date +%s) - $(cat "$d/start") ))s; run 'ck-lite-qa wait $1' to keep waiting, never start it again"
+      exit 3
+    fi
+    sleep 2
+  done
+  cat "$d/out"
+  exit "$(cat "$d/rc")"
+}
+
+CMD="${1:-}"
+case "$CMD" in
+  state) state; exit 0 ;;
+  wait) [ -n "${2:-}" ] || die "wait needs an id"; await_run "$2" ;;
+  since) [ -n "${3:-}" ] || die "since needs an id and a label"
+         last_field "$2" "$3" 1 || die "no recorded run of $3 for $2 in this directory — run the full command"
+         exit 0 ;;
+  run|__worker) ;;
+  -h|--help|"") sed -n '4,35p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  *) die "unknown command: $CMD (state|run|wait|since)" ;;
+esac
+shift
+ARGS=("$@")
+ID="${1:-}"; [ -n "$ID" ] || die "run needs an id (the task id, e.g. T-05)"; shift
+case "$ID" in */*|.|..) die "id must not contain / (got: $ID)" ;; esac
+
+PARALLEL=0; REUSE=0; RERUN=0; LABELS=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --parallel) PARALLEL=1 ;;
+    --reuse) REUSE=1 ;;
+    --rerun) RERUN=1 ;;
+    *=*) l="${1%%=*}"
+         case "$l" in ""|*[!A-Za-z0-9_]*) die "label must be [A-Za-z0-9_]+, no hyphen (got: $l)" ;; esac
+         LABELS="$LABELS $l"; eval "CMD_$l=\"\${1#*=}\"" ;;
+    *) die "expected <label>=<command>, got: $1" ;;
+  esac
+  shift
+done
+[ -n "$LABELS" ] || die "no <label>=<command> given"
+mkdir -p "$STAMPS" "$RUNS" || die "cannot create $STAMPS"
+
+cmd_of() { eval "printf '%s' \"\$CMD_$1\""; }
+
+# The full command a label stands for: the recorded one on a --rerun, else its own. Read
+# once here, before this run overwrites the record.
+for l in $LABELS; do
+  if [ "$RERUN" = 1 ]; then
+    f="$(last_field "$ID" "$l" 3)" \
+      || die "--rerun: no recorded run of $l for $ID in this directory — run the full command"
+  else
+    f="$(cmd_of "$l")"
+  fi
+  eval "FULL_$l=\"\$f\""
+done
+full_of() { eval "printf '%s' \"\$FULL_$1\""; }
+
+# run: start the commands detached, so a run longer than one Bash call survives it, and
+# wait on it. An identical run already going is waited on, never started a second time.
+if [ "$CMD" = run ]; then
+  D="$RUNS/$ID"
+  KEY="$( { pwd -P; echo "$PARALLEL $REUSE $RERUN"; for l in $LABELS; do echo "$l=$(cmd_of "$l")"; done; } | git hash-object --stdin)"
+  if [ -f "$D/pid" ] && [ ! -f "$D/rc" ] && kill -0 "$(cat "$D/pid")" 2>/dev/null; then
+    [ "$(cat "$D/key" 2>/dev/null)" = "$KEY" ] \
+      || die "a different ck-lite-qa run for $ID is still going — ck-lite-qa wait $ID first"
+    echo "ck-lite-qa: $ID is already running — waiting on that run, not starting another"
+  else
+    rm -rf "$D"; mkdir -p "$D" || die "cannot create $D"
+    echo "$KEY" >"$D/key"; date +%s >"$D/start"
+    D="$D" nohup bash -c '"$0" __worker "$@" >"$D/out" 2>&1; echo $? >"$D/rc.tmp"; mv "$D/rc.tmp" "$D/rc"' \
+      "$SELF" "${ARGS[@]}" </dev/null >/dev/null 2>&1 &
+    echo $! >"$D/pid"
+  fi
+  await_run "$ID"
+fi
+
+log_of() { printf '%s/ck-lite-%s-%s.log' "$TMP" "$ID" "$1"; }
+
+S0="$(state)"
+RESULT=""   # "<label>:<PASS|FAIL|REUSED|SKIPPED>" words
+
+run_one() {  # label → writes the exit code to <log>.rc
+  local l="$1" log; log="$(log_of "$l")"
+  bash -c "$(cmd_of "$l")" >"$log" 2>&1
+  echo $? >"$log.rc"
+}
+
+TORUN=""
+for l in $LABELS; do
+  if [ "$REUSE" = 1 ] && [ -n "$S0" ] && [ -f "$STAMPS/$(stamp_of "$S0" "$(full_of "$l")")" ]; then
+    RESULT="$RESULT $l:REUSED"
+  else
+    TORUN="$TORUN $l"
+  fi
+done
+
+if [ "$PARALLEL" = 1 ]; then
+  for l in $TORUN; do run_one "$l" & done
+  wait
+else
+  stop=0
+  for l in $TORUN; do
+    if [ "$stop" = 1 ]; then rm -f "$(log_of "$l").rc"; continue; fi
+    run_one "$l"
+    [ "$(cat "$(log_of "$l").rc")" = 0 ] || stop=1
+  done
+fi
+
+S1="$(state)"
+[ "$S0" = "$S1" ] || echo "ck-lite-qa: WARN — a command changed the working tree (formatter, snapshot update?); nothing stamped, fix that before trusting a PASS"
+
+SNAP=""; [ -n "$S0" ] && [ "$S0" = "$S1" ] && SNAP="$(snapshot "$S0")"
+FAILED=""
+for l in $TORUN; do
+  rc_file="$(log_of "$l").rc"
+  if [ ! -f "$rc_file" ]; then RESULT="$RESULT $l:SKIPPED"; continue; fi
+  rc="$(cat "$rc_file")"; rm -f "$rc_file"
+  [ -n "$SNAP" ] && printf '%s\n%s\n%s\n' "$SNAP" "$(pwd -P)" "$(full_of "$l")" >"$(last_of "$ID" "$l")"
+  if [ "$rc" = 0 ]; then
+    RESULT="$RESULT $l:PASS"
+    [ -n "$SNAP" ] && : >"$STAMPS/$(stamp_of "$S0" "$(full_of "$l")")"
+  else
+    RESULT="$RESULT $l:FAIL"; FAILED="$FAILED $l"
+  fi
+done
+
+for r in $RESULT; do
+  l="${r%%:*}"; v="${r#*:}"
+  case "$v" in
+    REUSED)  echo "$l: REUSED — already passed on this code state here" ;;
+    SKIPPED) echo "$l: SKIPPED — an earlier command failed" ;;
+    PASS)    if [ "$RERUN" = 1 ]; then
+               echo "$l: PASS (re-run) — stamped as the full command; log $(log_of "$l")"
+             else
+               echo "$l: PASS — log $(log_of "$l")"
+             fi ;;
+    *)       echo "$l: $v — log $(log_of "$l")" ;;
+  esac
+done
+for l in $FAILED; do
+  echo "--- $l (last 40 lines of $(log_of "$l")) ---"
+  tail -n 40 "$(log_of "$l")"
+done
+
+if [ -n "$FAILED" ]; then echo "ck-lite-qa: FAIL —${FAILED}"; exit 1; fi
+echo "ck-lite-qa: PASS"
