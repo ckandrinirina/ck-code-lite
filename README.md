@@ -5,7 +5,8 @@ Three skills. Two files. Ship an app fast without losing the steps that keep it 
 `ck-code-lite` is the fast path: describe what you want, get an architecture doc and a
 flat task list, then build tasks one at a time — each with a failing test first, a bounded
 cleanup pass that refuses to keep code the repo already has, an isolated QA pass, and your
-own hands-on sign-off before it counts as done.
+own hands-on sign-off before it counts as done. The bookkeeping between those steps is
+scripted, so a run's cost tracks the work in front of it, not the age of the project.
 
 ## Skills
 
@@ -28,8 +29,9 @@ Independent tasks do not have to wait in line:
 /ck-code-lite:build --waves       # the whole remaining plan, dependency-ordered
 ```
 
-Waves come from the plan's own `needs` column, and two tasks that declare the same file
-never run together. Every task in a wave is built by a dispatched agent, but the isolation
+Waves come from the plan's own `needs` column (`ck-lite waves` works them out), and two tasks
+that declare the same file never run together. Every task in a wave is built by a dispatched
+`task-builder` agent — which carries only the TDD rules, not the whole skill — but the isolation
 follows the wave's width: two or more tasks each get their own worktree and merge back
 after an integrity check and a QA pass, while a wave holding a **single** task runs solo in
 the main checkout — no worktree to cut, no cold dependency install, nothing to merge. The
@@ -77,11 +79,13 @@ and cannot be skipped:
 4. **Clarify before building.** One batched question round on genuine ambiguity, before
    anything is written. Nothing ambiguous means no questions at all.
 
-## The two files
+## The files
 
 `docs/ARCHITECTURE.md` — stack, folder structure, decisions with their reasons, and a
 `## Commands` block holding the project's real test/build/lint commands. `build` reads it
-every run and passes those commands to QA.
+every run and passes those commands to QA. Past 150 lines, `start` moves the largest area out
+into `docs/areas/<area>.md` and lists it under `## Areas`; from then on a task reads the core
+plus only the area docs its files touch.
 
 `tasks/PLAN.md` — one table plus one section per task:
 
@@ -100,23 +104,36 @@ T-02 · status: todo · size: S · needs: T-01 · files: src/count.js
 ```
 
 Statuses are `todo`, `doing`, `done`, `blocked`. Tasks are `S` or `M` only. Every ID owns
-exactly three lines — the table row, the header, the meta line — so one anchored `grep` is
-the whole consistency check. There is no generator, no index, and nothing to regenerate.
+exactly three lines — the table row, the header, the meta line. There is no generator, no
+index, and nothing to regenerate; the file stays hand-editable.
 
 ### Lite at any size
 
-The plan only grows, so nothing reads it whole — or even reads its whole table. A run pulls
-the rows that are still `todo`, `doing` or `blocked`, plus the one task section it is about
-to work on. Since the four statuses are the entire vocabulary, a task missing from that set
-is `done`, and dependencies resolve without ever loading a finished row.
+The plan only grows, so no skill ever reads or edits it. Every access is one call to
+`ck-lite`, which parses the file in a pipe and prints only the answer:
+
+| | |
+|---|---|
+| `ck-lite open` | open tasks with readiness worked out |
+| `ck-lite context T-05` | the architecture core, the area docs the task touches, the task |
+| `ck-lite set doing T-05` · `ck-lite done T-05` | a status move, row and meta line together, verified |
+| `ck-lite add` · `ck-lite next-id` | new tasks, table rows generated |
+| `ck-lite waves --all` | dependency-ordered, file-disjoint waves |
+| `ck-lite check` · `ck-lite stats` | integrity, sizes, and the graduation notice |
 
 **Cost per run tracks open work, not project age.** A plan with four hundred finished tasks
-and three open ones reads like a three-task plan. `## Decisions` is kept to live choices the
-same way — a reversal folds into the line it replaces, and anything the linter or type
-system now enforces comes out.
+and three open ones costs what a three-task plan does — reads *and* writes, since a status
+change no longer needs the file loaded to edit it. The plan is never split: an archive would
+buy no tokens and add a lookup to every dependency check.
 
-Past ~40 open tasks or a 150-line architecture doc, `start` says once that the project has
-outgrown a flat plan and points at `/ck-code:migrate`. It is a notice, not a wall.
+**Fast without fewer checks.** RED and GREEN run only the task's own tests (the optional
+`test-one` command); the full suite runs once, after cleanup. Every test, build and lint run
+goes through `ck-lite-qa`, which prints one line per command and keeps the output in a log,
+and an inline QA pass reuses that full-suite run when not a byte of code changed since. A
+parallel wave's QA never reuses anything.
+
+Past ~40 open tasks, `start` and `build` say once that the project has outgrown a flat plan
+and point at `/ck-code:migrate`. It is a notice, not a wall.
 
 ## Install
 
@@ -140,7 +157,7 @@ and `ship`, and running a project through both layouts will not end well.
 |---|---|---|
 | Skills | 3 | 12 |
 | Planning artefacts | 2 files | epics, per-story files, generated indexes |
-| Architecture | 1 doc | per-feature docs + shared globals |
+| Architecture | 1 core doc + optional area docs | per-feature docs + shared globals |
 | Parallel builds | yes, inside `build` | yes, a dedicated skill with conflict analysis |
 | Generated expert skills | no | yes (`team`) |
 | Bug triage workflow | no | yes (`fix`) |
@@ -157,8 +174,9 @@ Nothing is stranded — install `ck-code` and run this inside the project:
 /ck-code:migrate
 ```
 
-It turns `tasks/PLAN.md` into epics and stories (proposing a grouping you confirm first)
-and splits `docs/ARCHITECTURE.md` into `docs/architecture/`. Statuses, acceptance criteria
+It turns `tasks/PLAN.md` into epics and stories (proposing a grouping you confirm first,
+seeded by your areas) and splits `docs/ARCHITECTURE.md` and `docs/areas/` into
+`docs/architecture/`. Statuses, acceptance criteria
 and ticked boxes carry over, so finished work stays finished. The lite files are marked
 superseded rather than deleted, the whole conversion lands in one revertable commit, and
 you are offered the `enabledPlugins` swap at the end. There is no path back — decide with
@@ -167,6 +185,8 @@ the table above.
 ## Design principles
 
 - **Two files, hand-editable.** If you can't fix the plan with an editor, the format is wrong.
+- **Scripts do the bookkeeping.** Anything with one right answer — readiness, waves, a status
+  move, the next ID — is a `ck-lite` call, not a reasoning step.
 - **Gates over process.** Four checks that catch real defects, and nothing else mandatory.
 - **Never guess a command.** `(none)` is a valid answer; an invented npm script is not.
 - **Append, never rewrite.** Re-running `start` adds tasks; it never clobbers your edits.
