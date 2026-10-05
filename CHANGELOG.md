@@ -5,6 +5,30 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] — 2026-10-05
+
+A run's cost now tracks the work in front of it, not the age of the project, and the slow parts of a build are scripted or skipped — the four gates (clarify, RED, QA, manual test) are unchanged.
+
+### Added
+- **ck-lite** (`bin/`): the only reader and writer of `tasks/PLAN.md` — `open` (readiness worked out), `show`, `criteria`, `context`, `waves`, `set`, `files`, `note`, `done`, `next-id`, `init`, `add` (table rows generated), `check`, `stats` — plus the worktree steps with a safety rule (`base`, `worktrees`, `try-merge`, `retire`). An `Edit` needed a `Read` of the whole plan first; no skill reads or edits it now, so plan size costs nothing.
+- **ck-lite-qa** (`bin/`): every test, build and lint run goes through it — one line per command, the output in a log, each pass stamped on the exact code state; long suites detach past the 600 s call limit.
+- **task-builder** agent: builds one task of a parallel wave from a compact prompt plus the shared TDD rules, instead of re-loading the whole build skill (about 70% less loaded per agent).
+- **Architecture areas**: past 150 lines `start` moves an area out of `docs/ARCHITECTURE.md` into `docs/areas/<area>.md`, listed under `## Areas`; `ck-lite context` gives a task the core plus only the area docs its files touch.
+- **`test-one` command**: RED and GREEN run only the task's own tests; the full suite runs once, after cleanup.
+- `tests/smoke.sh` and CI (Linux gawk + macOS bash 3.2).
+
+### Changed
+- **build**: the single-task skill is about 55% smaller — PARALLEL MODE moved to `references/parallel-mode.md`, loaded only for batches; RED/GREEN/cleanup live in `references/tdd-cycle.md`. The branch is picked and announced (a task branch off a protected one), never asked. Inline QA reuses the closing full-suite run when no code changed since; parallel QA never reuses. A fan-out wave's merged result gets one full QA run before the manual gate.
+- **build PARALLEL MODE**: tolerates an uncommitted `tasks/PLAN.md` (resume after `STOP HERE` works); `test: (none)` and task drops are settled at P3; leftover unschedulable tasks are reported; worktrees from earlier runs are listed, never removed.
+- **start**: writes tasks through `ck-lite init/add`; splits the architecture core in EXTEND mode.
+- **ship**: closes the task before staging, so the status change lands in the commit.
+
+### Removed
+- `skills/build/references/parallel-dispatch.md` and DELEGATED MODE — replaced by `parallel-mode.md` and the `task-builder` agent.
+
+### Migration
+- No change to the `tasks/PLAN.md` format; existing plans work as they are. `docs/areas/` is optional. Moving up to ck-code needs ck-code ≥ 7.6.1, whose migrator turns areas into epics and feature docs.
+
 ## [0.5.0] — 2026-10-05
 
 ### Added
