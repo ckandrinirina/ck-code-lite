@@ -5,6 +5,11 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-10-05
+
+### Added
+- **build**: a worktree kept past a parallel run (`KEEP` on a held, conflicted or blocked task) now sheds its rebuildable build output through the new `ck-lite-reclaim` (`bin/`), which deletes only build-output directories (`target/`, `node_modules/`, `dist/`, `.venv/`, …) that git ignores and that hold no tracked file, keeps source, commits and gitignored config such as `.env`, refuses the main checkout, and prints one `freed` line — a Rust/Tauri `target/` alone runs to 5–20 GB per worktree. Merged worktrees were already removed as they land. No format change to `tasks/PLAN.md` or `docs/ARCHITECTURE.md`.
+
 ## [0.4.1] — 2026-09-29
 
 ### Changed
