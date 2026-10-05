@@ -15,14 +15,16 @@ ls package.json Cargo.toml pyproject.toml go.mod Gemfile composer.json CMakeList
 |---|---|---|---|---|
 | `package.json` | Node / TypeScript | `npm run test` | `npm run build` | `npm run lint` |
 | `Cargo.toml` | Rust | `cargo test` | `cargo build` | `cargo clippy -- -D warnings` |
-| `pyproject.toml` | Python | `pytest` | (none) | `ruff check .` |
+| `pyproject.toml`, `setup.py` or `requirements.txt` | Python | `pytest` | (none) | `ruff check .` |
 | `go.mod` | Go | `go test ./...` | `go build ./...` | `go vet ./...` |
 | `Gemfile` | Ruby | `bundle exec rspec` | (none) | `bundle exec rubocop` |
 | `composer.json` | PHP | `vendor/bin/phpunit` | (none) | `vendor/bin/phpcs` |
 | `CMakeLists.txt` | C / C++ | `ctest --test-dir build` | `cmake --build build` | (none) |
 
 Several manifests can coexist (a Python backend beside a Node frontend). Record every
-stack found, and mark which directory each set of commands runs in.
+stack found, and make each command self-contained — `cd api && pytest` — since every command
+runs from the repository root and the `## Commands` labels stay `test`, `build`, `lint`. Two
+suites under one label chain with `&&` (`test: npm run test && cd api && pytest`).
 
 ## Refinements, in precedence order
 
@@ -62,6 +64,7 @@ full suite runs once per task. `{files}` is replaced by space-separated test pat
 | Runner | `test-one` |
 |---|---|
 | vitest, jest, mocha (via a `test` script) | `<runner> run test -- {files}` |
+| `node --test` (via a `test` script) | `<runner> run test -- {files}` |
 | pytest | `pytest {files}` |
 | rspec | `bundle exec rspec {files}` |
 | phpunit | `vendor/bin/phpunit {files}` |

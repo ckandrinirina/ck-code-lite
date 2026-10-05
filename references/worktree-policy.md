@@ -72,5 +72,6 @@ to do with each one — merge it now, keep it deliberately, or discard it — an
 answer. Finishing a run with an unexplained worktree, or with one silently left behind
 because the report mentioned it, is the failure this policy exists to prevent.
 
-Removal is gated on `git branch --merged "$TARGET"` naming the branch. `--force` is only
-reached after that check passes, where it discards untracked build output and nothing else.
+Removal (`ck-lite retire`) is gated on the branch being fully merged into `$TARGET` **and** the
+worktree being clean apart from ignored files. `--force` is only reached after both checks pass,
+where it discards ignored build output and nothing else.

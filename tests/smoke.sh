@@ -42,7 +42,7 @@ eq  "add: rows land inside the table, before the sections" "| T-03 | JSON flag |
 eq  "next-id: continues from the highest" "T-04" "$(ck-lite next-id)"
 has "add: refuses an existing ID" "T-02 already exists" "$(task T-02 Dup S — x | ck-lite add 2>&1)"
 has "add: refuses an unknown needs" "needs T-77, which does not exist" "$(task T-04 X S T-77 x | ck-lite add 2>&1)"
-has "add: refuses size L" "meta line must follow" "$(task T-04 X L — x | ck-lite add 2>&1)"
+has "add: refuses size L" "size must be S or M" "$(task T-04 X L — x | ck-lite add 2>&1)"
 eq  "add: a refused batch writes nothing" "3" "$(grep -c '^| T-' tasks/PLAN.md)"
 has "add: a single task" "added T-04" "$(task T-04 "Stdin input" S "T-01, T-03" "src/cli.js" | ck-lite add 2>&1)"
 eq  "add: multi-needs row keeps its spacing" "| T-04 | Stdin input | todo | S | T-01, T-03 |" "$(grep '^| T-04' tasks/PLAN.md)"
@@ -57,7 +57,7 @@ has "open: every unmet need is named" "T-04 todo wait(T-01,T-03)" "$out"
 has "open: count line" "open 4 · ready 2 · done 0 · total 4" "$out"
 eq  "show: prints the section only" "## T-02 Missing file error" "$(ck-lite show T-02 | head -1)"
 lacks "show: stops before the next task" "## T-03" "$(ck-lite show T-02)"
-eq  "show: T-01 never matches T-010" "" "$(ck-lite show T-010)"
+eq  "show: T-01 never matches T-010" "" "$(ck-lite show T-010 2>/dev/null)"
 out="$(ck-lite criteria T-01 T-03)"
 has "criteria: grouped by ID" "== T-03" "$out"
 lacks "criteria: other tasks excluded" "Missing file" "$out"
@@ -102,7 +102,11 @@ out="$(ck-lite waves --all)"
 has "waves: width capped at 4" "Wave 2 T-05" "$out"
 has "waves: count line" "waves 2 · scheduled 6" "$out"
 fresh cyc; ck-lite init C >/dev/null
-{ task T-01 A S T-02 a; task T-02 B S T-01 b; } | ck-lite add >/dev/null
+has "add: refuses a cycle" "on a dependency cycle" "$( { task T-01 A S T-02 a; task T-02 B S T-01 b; } | ck-lite add 2>&1)"
+eq  "add: a refused cycle writes nothing" "0" "$(grep -c '^| T-' tasks/PLAN.md)"
+{ printf '# PLAN — C\n\n| ID | Title | Status | Size | Needs |\n|---|---|---|---|---|\n'
+  printf '| T-01 | A | todo | S | T-02 |\n| T-02 | B | todo | S | T-01 |\n\n'
+  task T-01 A S T-02 a; task T-02 B S T-01 b; } >tasks/PLAN.md
 has "check: finds a dependency cycle" "on a dependency cycle" "$(ck-lite check)"
 has "waves: a cycle is unschedulable" "dependency cycle" "$(ck-lite waves --all)"
 
@@ -179,6 +183,74 @@ has "qa run: stops at the first failure" "b: SKIPPED" "$out"
 has "qa run: overall FAIL line" "ck-lite-qa: FAIL" "$out"
 lacks "qa: never clashes with ck-code's stamps" "ck-qa:" "$out"
 has "qa run: a hyphenated label is refused" "no hyphen" "$(QA run T-01 test-one='true')"
+
+# ---- hardening (1.0.1 audit regressions) ------------------------------------------------
+echo "=== hardening ==="
+fresh hard; ck-lite init H >/dev/null; task T-01 A S — a | ck-lite add >/dev/null
+before="$(cat tasks/PLAN.md)"
+has "add: a | in a title is refused" "title contains |" "$(task T-02 'a | b' S — b | ck-lite add 2>&1)"
+has "add: a body row forging another task is refused" "looks like a plan row" "$( { task T-02 B S — b; printf '| T-01 | x | todo | S | — |\n'; } | ck-lite add 2>&1)"
+has "add: a task needing itself is refused" "needs itself" "$(task T-02 B S T-02 b | ck-lite add 2>&1)"
+has "add: an over-padded ID is refused" "over-padded" "$(task T-002 B S — b | ck-lite add 2>&1)"
+eq  "add: refused batches leave the plan byte-identical" "$before" "$(cat tasks/PLAN.md)"
+eq  "add: no temp files left behind" "PLAN.md" "$(ls tasks)"
+ck-lite note T-01 "$(printf 'line one\n## T-02 forged')" >/dev/null
+has "note: a newline cannot forge a header" "ck-lite check: OK" "$(ck-lite check)"
+ck-lite files T-01 "docs/Read Me.md" >/dev/null
+has "files: a path with a space stays one path" "files: a, docs/Read Me.md" "$(cat tasks/PLAN.md)"
+{ for i in 02 03 04 05 06 07; do task "T-$i" "T$i" S — "f$i"; done; } | ck-lite add >/dev/null
+for i in 02 03 04 05 06 07; do ck-lite set doing "T-$i" >/dev/null & done; wait
+eq  "set: concurrent writes all land" "6" "$(grep -c '^T-0[2-7] · status: doing' tasks/PLAN.md)"
+eq  "set: no lock left behind" "" "$(ls -d tasks/PLAN.md.lock 2>/dev/null)"
+chmod 644 tasks/PLAN.md; ck-lite note T-01 "mode probe" >/dev/null
+eq  "writes keep the plan's file mode" "-rw-r--r--" "$(ls -l tasks/PLAN.md | cut -c1-10)"
+has "show: an unknown ID exits 1" "rc=1" "$(ck-lite show T-42 >/dev/null 2>&1; echo "rc=$?")"
+has "waves: a repeated ID is scheduled once" "scheduled 1" "$(ck-lite waves T-01 T-01)"
+ck-lite set todo T-06 >/dev/null; task T-08 E S T-06 e | ck-lite add >/dev/null
+has "drop: refuses a task another needs" "T-08 needs T-06" "$(ck-lite drop T-06 2>&1)"
+has "drop: refuses a doing task" "only a todo or blocked" "$(ck-lite drop T-02 2>&1)"
+has "drop: removes a todo task" "T-08: dropped" "$(ck-lite drop T-08)"
+eq  "drop: row and section are gone" "0" "$(grep -c 'T-08' tasks/PLAN.md)"
+has "drop: the plan stays valid" "ck-lite check: OK" "$(ck-lite check)"
+mkdir -p src/deep; has "reads work from a subdirectory" "T-01" "$(cd src/deep && ck-lite show T-01)"
+printf '## Commands\n\n- test: npm test\n- test:unit: npm run unit\n- e2e: npx playwright test\n' >docs/ARCHITECTURE.md
+has "commands: keeps labels with digits and colons" "test:unit: npm run unit" "$(ck-lite commands)"
+has "commands: keeps a hyphen-free short label" "e2e: npx playwright test" "$(ck-lite commands)"
+fresh crlf; ck-lite init W >/dev/null; task T-01 A S — a | ck-lite add >/dev/null
+sed -i.bak 's/$/'"$(printf '\r')"'/' tasks/PLAN.md; rm -f tasks/PLAN.md.bak
+ck-lite files T-01 b >/dev/null
+has "crlf: a write produces a clean files: list" "files: a, b" "$(cat tasks/PLAN.md)"
+has "crlf: the plan stays valid" "ck-lite check: OK" "$(ck-lite check)"
+has "crlf: criteria come out without CR" "- [ ] A works|" "$(ck-lite criteria T-01 | sed -n 2p | tr '\r' '#')|"
+fresh wt2; echo x >x; git add x; git commit -qm x; git branch -M main
+git worktree add -q -b task/u "$WORK/wt-u" 2>/dev/null; echo wip >"$WORK/wt-u/wip.txt"
+has "retire: keeps a worktree with uncommitted work" "UNCOMMITTED" "$(ck-lite retire main task/u)"
+eq  "retire: the uncommitted file survives" "wip" "$(cat "$WORK/wt-u/wip.txt")"
+git branch task/m; echo s >keep.txt; git add keep.txt
+has "try-merge: staged work is not reported as a conflict" "CLEAN task/m" "$(ck-lite try-merge task/m)"
+has "try-merge: staged work survives" "A  keep.txt" "$(git status --porcelain)"
+has "try-merge: a missing branch is a usage error" "no branch or commit" "$(ck-lite try-merge task/nope 2>&1)"
+fresh mono; mkdir -p app/src; ( cd app && ck-lite init M >/dev/null && task T-01 A S — a | ck-lite add >/dev/null )
+has "monorepo: a subfolder project keeps its own plan" "## T-01 A" "$(cd app/src && ck-lite show T-01)"
+eq  "monorepo: init in the subfolder wrote no plan at the top" "" "$(ls tasks 2>/dev/null)"
+fresh lockp; ck-lite init L >/dev/null; task T-01 A S — a | ck-lite add >/dev/null
+ln -s 99999 tasks/PLAN.md.lock
+for i in 1 2 3 4 5 6; do ck-lite note T-01 "n$i" >/dev/null & done; wait
+eq  "lock: a dead holder is taken over by exactly one waiter" "6" "$(grep -c '^- .*: n[1-6]$' tasks/PLAN.md)"
+fresh wt3; printf 'out/\n' >.gitignore; echo x >x; git add .; git commit -qm x; git branch -M main
+git worktree add -q -b task/o "$WORK/wt-o" 2>/dev/null; mkdir "$WORK/wt-o/out"; echo b >"$WORK/wt-o/out/bin"
+has "retire: ignored build output does not block" "retired task/o" "$(ck-lite retire main task/o)"
+git checkout -q -b task/d; echo d >>x; git commit -qam d; git checkout -q main; echo local >>x
+has "try-merge: a dirty path the branch changes is DIRTY" "DIRTY task/d" "$(ck-lite try-merge task/d)"
+git checkout -q -- x
+fresh qa2; mkdir tasks; echo p >tasks/PLAN.md; echo a >a.py; git add .; git commit -qm init
+QA2() { TMPDIR="$QT" ck-lite-qa "$@" 2>&1; }
+QA2 run T-01 test='true' >/dev/null; echo more >>tasks/PLAN.md
+has "qa --reuse: a plan-only change keeps the stamp" "test: REUSED" "$(QA2 run T-01 --reuse test='true')"
+mkdir -p __pycache__; echo b >__pycache__/a.cpython.pyc
+has "qa --reuse: bytecode is not a code change" "test: REUSED" "$(QA2 run T-01 --reuse test='true')"
+QA2 run T-77 test='true' >/dev/null
+has "qa: runs are keyed per checkout" "no ck-lite-qa run for T-77" "$(cd "$WORK/qa" && QA wait T-77)"
 
 # ---- prompt router ------------------------------------------------------------------------
 echo "=== prompt router ==="

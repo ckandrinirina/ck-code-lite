@@ -77,17 +77,18 @@ and PR body.
 
 ## PHASE 3: COMMIT
 
-### 3.0 Close the task first
+### 3.0 The task's status
 
-If a task resolved and `/ck-code-lite:build` did not already close it, close it **before**
-staging, so the status change lands in this commit instead of dirtying the tree after it:
+`done` is earned in `/ck-code-lite:build`, against QA and the manual test — never here. Read
+the status from the meta line `ck-lite show` printed:
 
-```bash
-ck-lite set done T-05
-```
-
-Leave its boxes as they are — ticking is `build`'s call, made against QA and the manual test.
-If the commit is then aborted at 3.3, put the status back with `ck-lite set <previous> T-05`.
+- **`done`** — nothing to do; its status change is part of this commit.
+- **`doing`** — the build has not passed its gates (QA, manual test, a held parallel branch).
+  Leave it: ship the work as work in progress, and say `T-05 stays doing — finish it with
+  /ck-code-lite:build T-05`.
+- **`todo`** — the work was done outside `build`. The 3.3 question offers closing it; only on
+  that answer run `ck-lite set done T-05` **before** `git add`, so the status lands in this
+  commit. Its boxes stay as they are.
 
 ### 3.1 Group the files
 
@@ -117,7 +118,9 @@ user supplied an issue number — lite tracks no issue field, so it is never inf
 ### 3.3 One confirmation
 
 A single `AskUserQuestion` covering both the stage set and the message: `Commit` /
-`Adjust files` / `Edit message` / `Abort`. Never split them into two prompts.
+`Adjust files` / `Edit message` / `Abort`. For a `todo` task (3.0) the options are `Commit and
+mark T-05 done` / `Commit only` / `Adjust files or message` / `Abort`. Never split them into
+two prompts.
 
 ### 3.4 Execute
 
@@ -182,7 +185,7 @@ If `gh` is unavailable, print the manual compare URL
 **Message:** <subject>
 **Files:** <count>
 **PR:** <url — created | updated | skipped>
-**Task:** T-NN → done | standalone
+**Task:** T-NN → done | stays doing | standalone
 ```
 
 Then point at the next step: `/ck-code-lite:build` for the next ready task.

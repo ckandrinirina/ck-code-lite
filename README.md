@@ -109,7 +109,7 @@ index, and nothing to regenerate; the file stays hand-editable.
 
 ### Lite at any size
 
-The plan only grows, so no skill ever reads or edits it. Every access is one call to
+The plan only grows (a mistaken task aside), so no skill ever reads or edits it. Every access is one call to
 `ck-lite`, which parses the file in a pipe and prints only the answer:
 
 | | |
@@ -117,9 +117,12 @@ The plan only grows, so no skill ever reads or edits it. Every access is one cal
 | `ck-lite open` | open tasks with readiness worked out |
 | `ck-lite context T-05` | the architecture core, the area docs the task touches, the task |
 | `ck-lite set doing T-05` · `ck-lite done T-05` | a status move, row and meta line together, verified |
-| `ck-lite add` · `ck-lite next-id` | new tasks, table rows generated |
+| `ck-lite add` · `ck-lite next-id` · `ck-lite drop` | new tasks, table rows generated; a mistaken one removed |
 | `ck-lite waves --all` | dependency-ordered, file-disjoint waves |
 | `ck-lite check` · `ck-lite stats` | integrity, sizes, and the graduation notice |
+
+Writes are locked and verified before they land: a write that would corrupt the plan is
+refused and leaves it untouched, and parallel calls queue rather than overwrite each other.
 
 **Cost per run tracks open work, not project age.** A plan with four hundred finished tasks
 and three open ones costs what a three-task plan does — reads *and* writes, since a status

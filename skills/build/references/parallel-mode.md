@@ -25,19 +25,22 @@ away from `$TARGET`. Rules for who may create a worktree and what may outlive a 
 - **One ledger row per finished task**, then the wave's detail is dropped. Never re-print a
   finished wave; the final report is built from the ledger.
 - **Checkpoint every 3 waves** — print the ledger, then `AskUserQuestion`: `CONTINUE` or
-  `STOP HERE`. Status lives in `tasks/PLAN.md`, so `/ck-code-lite:build --waves` resumes in a
-  fresh context with nothing lost.
+  `STOP HERE`. `STOP HERE` runs P8's reconcile, then reports. Status lives in `tasks/PLAN.md`,
+  so `/ck-code-lite:build --waves` resumes in a fresh context; P1 surfaces any task a stopped
+  run left `doing`.
 
 ## P1 Freeze the target
 
 ```bash
-git status --porcelain -- . ':!tasks/PLAN.md' && git branch --show-current && git rev-parse --show-toplevel
+git status --porcelain -- . ':!tasks/PLAN.md' ':!docs/ARCHITECTURE.md' ':!docs/areas' && git branch --show-current && git rev-parse --show-toplevel
 ```
 
-Anything uncommitted besides `tasks/PLAN.md`, or a detached HEAD, stops the run: a worktree is
-cut from the last commit, so uncommitted code or docs would be invisible to its agent. Say so
-and point at `/ck-code-lite:ship`. `tasks/PLAN.md` alone may be dirty — this context writes it
-throughout, and agents read it from `$ROOT`, never from their worktree. The branch becomes `$TARGET` and the toplevel
+Anything else uncommitted, or a detached HEAD, stops the run: a worktree is cut from the last
+commit, so uncommitted code would be invisible to its agent. Say so and point at
+`/ck-code-lite:ship` — or, when the dirty files are a `doing` task's work, at
+`/ck-code-lite:build T-NN` to finish it first. The plan and the architecture docs may be dirty
+(a fresh `start` leaves them so): agents read both from `$ROOT` through their `Context` line,
+never from their worktree. The branch becomes `$TARGET` and the toplevel
 `$ROOT`, recorded once and never re-derived — a value read again later reports wherever the
 run drifted to, which is what the checks exist to catch. On `main`, `master`, `develop` or
 `release/*`, create `batch/<slug>` in place (`git checkout -b`) and announce it; that branch is
@@ -46,6 +49,11 @@ run drifted to, which is what the checks exist to catch. On `main`, `master`, `d
 List worktrees left by earlier runs — `ck-lite worktrees "$TARGET"` — and **report them only**:
 branch, path, merged or unmerged, each with its removal command. This run did not create them,
 so it never removes them; the user may have made them by hand.
+
+List every `doing` task (`ck-lite open`) too — the leftovers of an interrupted or stopped run.
+`ck-lite waves` never schedules one, so name each with its kept worktree, if any, and
+`/ck-code-lite:build T-NN` as the way to finish it. Their dependents show as `Unschedulable` at
+P2.
 
 ## P2 Plan the waves
 
@@ -67,7 +75,8 @@ one `AskUserQuestion`, at most 4 questions**:
 - the wave — multi-select over its tasks, every one checked by default: unchecking drops a task
   from this run (it stays `todo`); unchecking all of them aborts
 - `test: (none)`, first wave only — name a test command (written into `## Commands` before
-  dispatch) or record a documented exception for the run (passed to every agent as settled)
+  dispatch) or record a documented exception for the run: `ck-lite note T-NN "test exception:
+  <reason>"`, one call per task (`note` takes one ID), passed to every agent as settled and to QA as `exception: <reason>`
 - any genuine ambiguity in those criteria
 
 The agents have no user to ask, so all of it is settled here or not at all, and each answer goes
@@ -78,8 +87,9 @@ into the matching dispatch prompt.
 `ck-lite set doing <this wave's IDs>` — one call, verified by the script. **This context is the
 only writer of `tasks/PLAN.md` for the whole run**, and its edits stay uncommitted until `ship`.
 
-Dispatch `subagent_type: "ck-code-lite:task-builder"`, `name: "task-T-NN"` (stable, so a
-partial can be resumed), with the [dispatch prompt](#dispatch-prompt). Announce first.
+Dispatch `subagent_type: "ck-code-lite:task-builder"`, `name: "task-T-NN"` where the harness
+supports names, with the [dispatch prompt](#dispatch-prompt). Keep the agent ID each dispatch
+returns — that, or the name, is what resumes a partial. Announce first.
 
 - **Fan-out (≥ 2)** — every task in a **single message**, one `Agent` call each with
   `isolation: "worktree"`, so they run concurrently. `Fan-out: N tasks → N worktree agents.`
@@ -103,26 +113,31 @@ git diff --name-only --diff-filter=D "$TARGET".."<branch>"   # any → ⚠ unexp
 git diff --shortstat "<base-sha>"..HEAD
 git diff --name-only --diff-filter=D "<base-sha>"..HEAD
 git rev-parse --abbrev-ref HEAD                              # ≠ $TARGET → 🚫, stop the run
-git status --porcelain -- . ':!tasks/PLAN.md'                # non-empty → 🚫, stop the run
+git status --porcelain -- . ':!tasks/PLAN.md' ':!docs/ARCHITECTURE.md' ':!docs/areas'   # non-empty → 🚫, stop the run
 ```
 
 - **✓ complete** — non-empty diff, no unexpected deletion, verdict `done`.
 - **◐ partial** — real commits, criteria outstanding. Resume the same agent:
-  `SendMessage(task-T-NN, "Continue the remaining criteria, commit each cycle, return the verdict block again.")` —
+  `SendMessage(<agent ID or task-T-NN>, "Continue the remaining criteria, commit after the close, return the verdict block again.")` —
   **cap 2 rounds**, then keep the branch and report the task as too large.
 - **🚫 blocked** — empty diff, an unexpected deletion, or a `blocked` verdict. Excluded, branch
   kept, reported with the agent's reason.
 
-`tasks/PLAN.md` is excluded from the solo clean check because it holds this context's own
-uncommitted status edits. A solo agent that moved branch or left anything else uncommitted is
+Every fan-out task that is not ✓ gets `ck-lite note T-NN "branch: <branch> · worktree: <path>"`
+— the harness names worktree branches, so this note is how a later `/ck-code-lite:build T-NN`
+finds the work.
+
+The plan and the architecture docs are excluded from the solo clean check for the reason P1
+gives: they may be dirty before the run, and this context writes the plan throughout. A solo agent that moved branch or left anything else uncommitted is
 a hard stop for the run, not a resume — its work is somewhere this context never authorised.
 
 ## P6 QA — one validator per complete task
 
 One `ck-code-lite:qa-validator` per ✓ task, all in a single message, each with: the task ID
 and criteria, the returned `files:`, the `## Commands` as `label=command` pairs (`(none)`
-dropped), `reuse: no`, and the working directory — the branch's worktree path from
-`git worktree list` (fan-out) or `$ROOT` (solo).
+dropped), `reuse: no`, the working directory — the branch's worktree path from
+`git worktree list` (fan-out) or `$ROOT` (solo) — and `exception: <reason>` for a task under a
+recorded test exception.
 
 `reuse: no` always: an agent's own runs are never QA's evidence. A fan-out branch without
 `QA: PASS` is **held** — never merged and fixed later. A solo task without `QA: PASS` already
@@ -137,23 +152,29 @@ broken code.
 ck-lite base "$ROOT" "$TARGET"
 ```
 
-`DRIFTED` → `git -C "$ROOT" checkout "$TARGET"` and re-check; still `DRIFTED` → stop the run and
-report where this context stands. Merging from inside a worktree merges the wrong way round.
+`DRIFTED` → `cd "$ROOT" && git checkout "$TARGET"` and re-check — the `cd` matters, a drifted
+shell is the usual cause; still `DRIFTED` → stop the run and report where this context stands.
+Merging from inside a worktree merges the wrong way round.
 
 **Merge** (fan-out only) — dry-run each eligible branch, fewest overlapping paths first, then
 merge the clean ones:
 
 ```bash
-ck-lite try-merge "<branch>"          # CLEAN or CONFLICT, always aborted
+ck-lite try-merge "<branch>"          # CLEAN, CONFLICT, or DIRTY — never leaves a merge behind
 git merge --no-ff "<branch>" -m "feat(T-NN): <task title>"
 ```
 
-A conflicting branch is reported and kept, never force-merged. Solo: `Merge: none needed (solo on <$TARGET>).`
+Each merged branch's worktree is retired at once — `ck-lite retire "$TARGET" "<branch>"`, which
+refuses unless the branch is fully merged and clean and never touches the main checkout.
+Whatever the sign-off says next, a merged task is finished on `$TARGET`, never in its worktree.
+A `CONFLICT` or `DIRTY` branch (a path it changes is uncommitted here, typically a docs edit)
+is reported and kept, never force-merged; it gets the same `branch:` note as P5. Solo: `Merge: none needed (solo on <$TARGET>).`
 
 **Verify the merged result** (fan-out, two or more branches merged) — each branch passed QA
-alone; together they may not. One `ck-code-lite:qa-validator` on `$ROOT` with the full command
-list, `reuse: no`, and the merged tasks' criteria. A `FAIL` stops the wave before the manual
-gate: report which tasks merged, and leave them `doing` for `/ck-code-lite:build T-NN`.
+alone; together they may not. One `ck-code-lite:qa-validator` on `$ROOT` with task ID `wave-N` (it names the run's logs, never
+a plan entry), the full command list, `reuse: no`, and the merged tasks' criteria. A `FAIL`
+ends the run: report which tasks merged, leave them `doing` for `/ck-code-lite:build T-NN`, and
+go straight to P8's reconcile — no later wave builds on a target that fails its own suite.
 
 **Manual gate, once for the wave**, on `$TARGET` — the build skill's Phase 6 steps for every
 task, then one `AskUserQuestion` with one `PASS` / `ISSUES` question per task (at most 4, the
@@ -167,16 +188,15 @@ flips it to done, verified by the script:
 ck-lite done T-NN <paths from the verdict>
 ```
 
-Record its ledger row and drop the wave's detail. Then **retire its worktree in the same
-phase** — `ck-lite retire "$TARGET" "<branch>"`, which refuses unless the branch is fully merged
-and never touches the main checkout. A worktree outlives its wave only by omission.
-Close the wave with the return-to-base check and one line:
+Record its ledger row and drop the wave's detail. Close the wave with the return-to-base check and one line:
 `Base: <$ROOT> on <$TARGET> · worktrees standing: N`.
 
 ## P8 Next wave, then reconcile
 
 `ck-lite waves --next <remaining scope>` (or `--next --all`) gives the next wave from the plan
-as it now stands; loop from P3. Every third wave, run the P0 checkpoint first.
+as it now stands; loop from P3. The remaining scope is the run's IDs not yet `done`; when none
+remain, there is no next wave — skip to the reconcile. Every third wave, run the P0 checkpoint
+first.
 
 When it prints nothing, run `ck-lite waves <remaining scope>` once more without `--next`: its
 `Unschedulable` lines (dependents of a held or `ISSUES` task, for instance) go into the report,
@@ -230,8 +250,8 @@ Every git step with a safety rule is a `ck-lite` call, so the rule is code rathe
 | Call | Guarantee |
 |---|---|
 | `ck-lite worktrees "$TARGET"` | prunes stale records, never lists the main checkout; `merged` means 0 commits ahead of `$TARGET` |
-| `ck-lite try-merge "<branch>"` | the dry run is always aborted, whatever its result |
-| `ck-lite retire "$TARGET" "<branch>"` | removes only a linked worktree whose branch is fully merged, then `git branch -d`; a failure keeps both and says so |
+| `ck-lite try-merge "<branch>"` | `DIRTY` when a path the branch changes is uncommitted here; else `git merge-tree`, which never touches the index or the tree — on an older git it refuses staged work, then aborts its dry run |
+| `ck-lite retire "$TARGET" "<branch>"` | removes only a clean linked worktree whose branch is fully merged, then `git branch -d`; uncommitted work or a failure keeps both and says so |
 | `ck-lite base "$ROOT" "$TARGET"` | exit 1 and the real location on drift |
 
 A kept worktree is printed in the report with its removal command:

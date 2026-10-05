@@ -69,11 +69,18 @@ not project age** — a plan with 400 done tasks and 3 open ones costs what a 3-
 | finish | `ck-lite done T-05 [paths…]` | ticks every box in the section, appends paths, `→ done` |
 | new tasks | `ck-lite next-id`, then `ck-lite add` (sections on stdin) | the table rows are generated |
 | a new plan | `ck-lite init "<project name>"` | the heading and an empty table |
+| remove a mistaken task | `ck-lite drop T-08` | only `todo`/`blocked`, only when nothing `needs` it |
 | integrity | `ck-lite check` | every defect, exit 1 — or `OK — N tasks` |
 
 Why a script and not `grep` + `Edit`: an `Edit` needs a `Read` of the file first, and that
 `Read` is the one access whose cost grows with every task ever written. `ck-lite` makes every
 write a single call with no read, and the three-line check part of the write itself.
+
+Every write holds a lock on the plan, so parallel calls queue instead of dropping each other's
+updates, and builds the new plan in a temp file that replaces the old one only when it adds no
+defect `ck-lite check` would report — a refused write leaves the file byte-identical. CRLF
+plans are read fine and written back as LF. The file stays plain Markdown: a `CORRUPT` task,
+which no write will touch, is repaired by a human editing the lines `ck-lite check` names.
 
 A full conversion — `/ck-code:migrate` reading every task, done ones included — is the one
 caller that legitimately reads all rows. No skill in this plugin does.
@@ -102,9 +109,11 @@ field changes shape for it — an accurate `files` line simply buys more paralle
 New tasks always go at the end of the table and the end of the file. `ck-lite next-id` gives
 the first free ID; write the sections with real IDs (a new task may `need` another new one),
 pipe them to `ck-lite add`, and it generates the table rows, inserts them after the last row,
-appends the sections, and refuses the whole batch on a duplicate or out-of-order ID, an
-unknown `needs`, or a size other than `S`/`M`. Never renumber, never reorder, never rewrite an
-existing section.
+appends the sections, and refuses the whole batch on a duplicate, out-of-order or over-padded
+ID, an unknown, self- or circular `needs`, a size other than `S`/`M`, a `|` in a title, or a
+body line shaped like a table row or meta line. Never renumber, never reorder, never rewrite an
+existing section. `ck-lite drop` removes a mistaken `todo` or `blocked` task nothing depends
+on; when it was the highest ID, `next-id` may hand that ID out again.
 
 ## Optional sections
 

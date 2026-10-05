@@ -48,7 +48,9 @@ If the criteria or the commands are missing, return `status: blocked` and say wh
 5. **Return** the verdict block, and nothing else.
 
 An ambiguity that blocks progress is never guessed: return `status: blocked` with the question.
-`test: (none)` with no exception settled in your prompt is a block too.
+`test: (none)` with no exception settled in your prompt is a block too. With one settled, skip
+RED and the closing run as tdd-cycle says, and report `done` when every criterion is
+implemented and `build`/`lint` pass.
 
 ## Outputs
 
@@ -72,7 +74,8 @@ missing verdict is read as `partial`. The orchestrator verifies from git regardl
   paths only; never `git add -A` or `git add .`.
 - Never run `git checkout -b`, `git switch`, `git rebase`, `git reset`, or any `git worktree`
   command, and never remove a worktree — yours or a sibling's.
-- Never create or edit an implementation file before a test run has been observed failing.
+- Never create or edit an implementation file before a test run has been observed failing,
+  unless your prompt carries a settled test exception.
 - Never delegate QA — the orchestrator runs `ck-code-lite:qa-validator` per task.
 - Never run the manual-test gate or ship — both happen once per wave, on the target.
 - Never write code beyond the acceptance criteria.

@@ -3,7 +3,7 @@ name: build
 description: Use when a task from tasks/PLAN.md needs implementing end-to-end with tests, when a task left in progress needs finishing, when several independent tasks can be built at once in isolated worktrees, or when the remaining plan should run in dependency-ordered waves. Argument is an optional task ID such as T-03, several IDs, or `--waves`; with no argument, picks interactively.
 argument-hint: "[T-NN | T-NN T-NN … | --waves]"
 effort: high
-allowed-tools: Bash(git status*) Bash(git diff*) Bash(git log*) Bash(git branch*) Bash(git rev-parse*) Bash(git checkout*) Bash(git switch*) Bash(git add*) Bash(git commit*) Bash(git merge*) Bash(git worktree*) Bash(ck-lite*) Skill
+allowed-tools: Bash(git status*) Bash(git diff*) Bash(git log*) Bash(git branch*) Bash(git rev-parse*) Bash(git checkout*) Bash(git switch*) Bash(git add*) Bash(git commit*) Bash(git merge*) Bash(git worktree*) Bash(cd*) Bash(ck-lite*) Skill
 ---
 
 # Build — One Task, Test First
@@ -43,18 +43,26 @@ One line per open task — `READY`, `wait(T-…)`, `doing`, `blocked` or `CORRUP
 count line, and a `graduation:` line past 40 open tasks: relay it once, as a notice, and carry
 on. No `tasks/PLAN.md` → point at `/ck-code-lite:start` and stop. `open 0` → every task is
 done; suggest `/ck-code-lite:start` to add more. A `CORRUPT` task is reported with
-`ck-lite check`'s detail and never built.
+`ck-lite check`'s detail and never built: no `ck-lite` write touches it, so hand the user the
+named lines to fix by hand in `tasks/PLAN.md` (it is plain Markdown), then re-run.
 
 - **An explicit `READY` ID** — continue.
 - **An explicit `doing` ID** — a task left in progress: resume it. Phase 2.3 is skipped, and
   Phase 3 starts by running the task's tests — criteria already covered by a test stay as
   they are, RED applies to every criterion not yet covered.
-- **An explicit ID waiting or blocked** — name what it waits on and stop.
-- **No argument, one `READY`** — announce it and continue, no prompt.
-- **No argument, several `READY`** — one `AskUserQuestion` listing each with size and title,
-  plus **build all N ready tasks in parallel** and **build the whole plan in waves**. Either
-  batch answer enters PARALLEL MODE.
-- **None ready** — report each `todo` task with what it waits on.
+- **An explicit ID waiting or blocked** — name what it waits on and stop. A `blocked` task was
+  parked on purpose; `ck-lite set todo T-NN` unparks it — the user's call, never made here.
+- **No argument** — a `doing` task is unfinished work and comes first:
+  - **one `doing`, nothing else in progress** — announce it and resume it, no prompt
+  - **several `doing`, or `doing` plus `READY`** — one `AskUserQuestion` of at most 4 options:
+    `doing` tasks first (resume), then `READY` ones; any that do not fit are named in the
+    question text with "pass the ID to pick it"
+  - **no `doing`, one `READY`** — announce it and continue, no prompt
+  - **no `doing`, several `READY`** — one `AskUserQuestion` listing each with size and title,
+    plus **build all N ready tasks in parallel** and **build the whole plan in waves**. Either
+    batch answer enters PARALLEL MODE.
+  - **nothing `doing` or `READY`** — report each `todo` task with what it waits on, and each
+    `blocked` one with `ck-lite set todo T-NN` as the way to unpark it.
 
 ## PHASE 2: CONTEXT AND BRANCH
 
@@ -65,8 +73,9 @@ ck-lite context T-05
 ```
 
 It prints `docs/ARCHITECTURE.md`, the area docs whose paths the task's `files:` touch, and
-the task's section. `## Commands` supplies every command used below. If it is missing,
-resolve it now via [stack-commands.md](../../references/stack-commands.md) and write it into
+the task's section. No `docs/ARCHITECTURE.md` → point at `/ck-code-lite:start`, which writes
+one for an existing plan, and stop. `## Commands` supplies every command used below. If it is
+missing, resolve it now via [stack-commands.md](../../references/stack-commands.md) and write it into
 `docs/ARCHITECTURE.md`.
 
 Then read the files in `files:` that already exist, plus the nearest existing test file —
@@ -74,11 +83,22 @@ its conventions govern the tests written in Phase 3.
 
 ### 2.2 Branch — decided, announced, not asked
 
+First, when resuming a `doing` task, look for its earlier work: a `branch: … · worktree: …`
+line in the section `ck-lite context` printed (a parallel run leaves one), then
+`git branch --list 'task/T-NN-*'`. A worktree that still exists → name its path, say the work
+lives there (`cd` into it and re-run `/ck-code-lite:build T-NN`), and stop. A branch without
+one → `git checkout` it; that is this task's branch.
+
 | Current branch | Action |
 |---|---|
-| `main`, `master`, `develop`, `release/*` | `git checkout -b task/T-NN-<slug>` |
 | `task/T-NN-*` for this task | stay |
+| `main`, `master`, `develop`, `release/*` | `git checkout -b task/T-NN-<slug>` |
+| `task/T-MM-*` for another task | this task `needs` T-MM → `git checkout -b task/T-NN-<slug>` here, stacked on it. Otherwise → `git checkout -b task/T-NN-<slug> <trunk>` from the protected branch it grew from (`main`, else `master`, else `develop`) |
 | anything else | stay — the user put the checkout there |
+
+Leaving another task's branch with uncommitted changes would carry its work into this one:
+`git status --porcelain` lists anything besides `tasks/PLAN.md` → stop and point at
+`/ck-code-lite:ship T-MM` first.
 
 Announce it in one line: `Branch: task/T-05-missing-file (created from main)`. Nothing else
 moves the working tree for the rest of the run.
@@ -103,8 +123,9 @@ closing full `test` run. Inline, each touched path not yet in `files:` is record
 `ck-lite files T-05 <path>…`.
 
 `test: (none)` stops at RED. Ask (`AskUserQuestion`): name a test command — record it in
-`## Commands` and continue — or record a documented exception with `ck-lite note T-05 "<reason>"`
-and proceed without RED. Never pick the exception on the user's behalf.
+`## Commands` and continue — or record a documented exception with `ck-lite note T-05
+"test exception: <reason>"` and proceed without RED or the closing run. Never pick the
+exception on the user's behalf. Under that exception Phase 5 passes `exception: <reason>`.
 
 ## PHASE 5: QA — isolated
 
@@ -114,6 +135,7 @@ Delegate to `ck-code-lite:qa-validator`, supplying inline:
 - its `files:` list
 - the `## Commands` as ordered `label=command` pairs — `test`, `build`, `lint`, dropping `(none)`
 - the working directory, and `reuse: yes`
+- under a recorded test exception only, `exception: <reason>`
 
 `reuse: yes` lets it report the closing `test` run as `REUSED` when not a byte of code changed
 since — that suite already passed on this exact state. Build and lint always run, and every

@@ -3,7 +3,7 @@ name: start
 description: Use when a project needs its ck-code-lite artifacts — creating docs/ARCHITECTURE.md and tasks/PLAN.md for a new idea, adopting an existing codebase into the workflow, or adding new tasks to an existing plan. Argument is an optional feature description or spec-file path.
 argument-hint: "[feature description | path/to/spec.md]"
 effort: medium
-allowed-tools: Bash(git status*) Bash(git ls-files*) Bash(git rev-parse*) Bash(mkdir*) Bash(ls*) Bash(ck-lite*) Skill
+allowed-tools: Bash(git status*) Bash(git ls-files*) Bash(git rev-parse*) Bash(mkdir*) Bash(ls*) Bash(head*) Bash(node -e*) Bash(ck-lite*) Skill
 ---
 
 # Start — Architecture and Plan in One Pass
@@ -34,12 +34,14 @@ Output filtering (optional): [rtk.md](../../references/rtk.md).
 
 ```bash
 ls docs/ARCHITECTURE.md tasks/PLAN.md 2>/dev/null
-ls package.json Cargo.toml pyproject.toml go.mod Gemfile composer.json CMakeLists.txt 2>/dev/null
+ls package.json Cargo.toml pyproject.toml setup.py requirements.txt go.mod Gemfile composer.json CMakeLists.txt 2>/dev/null
 ```
 
 | Condition | Mode |
 |---|---|
-| `tasks/PLAN.md` exists | **EXTEND** — append tasks to the existing plan |
+| Both exist | **EXTEND** — append tasks to the existing plan |
+| `tasks/PLAN.md` only | **EXTEND** — but Phase 2 runs the ADOPT survey too and Phase 4 writes `docs/ARCHITECTURE.md` from the template, since `build` cannot run without it |
+| `docs/ARCHITECTURE.md` only | **EXTEND** — the doc is `Edit`ed, never rewritten; Phase 5 starts the plan with `ck-lite init` |
 | No artifacts, a manifest or tracked source exists | **ADOPT** — describe what is already there, then plan forward |
 | Neither | **NEW** — greenfield |
 
@@ -63,7 +65,8 @@ even if curiosity says otherwise — the goal is an accurate `## Stack` and `## 
 not a full understanding of the codebase.
 
 **EXTEND** — read `docs/ARCHITECTURE.md` (the core only — an area doc is read when a new
-task will work in that area), then:
+task will work in that area; with no doc yet, run the ADOPT survey above instead), then, when
+`tasks/PLAN.md` exists:
 
 ```bash
 ck-lite open
@@ -110,7 +113,8 @@ In ADOPT mode, `## Stack` and `## Folder structure` describe what the survey act
 found. Do not invent structure the repository does not have, and do not propose a
 restructure — this skill records reality, it does not reorganise it.
 
-**EXTEND** — targeted `Edit` of the affected sections only. A new feature typically adds
+**EXTEND** — targeted `Edit` of the affected sections only (with no `docs/ARCHITECTURE.md` yet,
+write it as NEW / ADOPT does). A new feature typically adds
 one line under `## Decisions` and sometimes a directory under `## Folder structure`.
 Never `Write` over the file.
 
@@ -140,7 +144,8 @@ Each task carries:
 
 Order tasks so dependencies flow forward, and record them in `needs`.
 
-**Order demo-first.** The first task makes the app run and its user-facing surface (a
+**Order demo-first.** The first task makes the app run — its entry point (the `bin/`
+script, the server, the page) is in that task's `files:` — and its user-facing surface (a
 page, a screen, a command) show real-looking output from **fixture data behind one
 adapter module** — no backend yet. Every remaining surface task comes next, each reading
 its own fixture through that same seam. Backend tasks (API, datastore, external service)
@@ -156,7 +161,7 @@ Write the sections in the format from [plan-format.md](../../references/plan-for
 hand them to `ck-lite`, which generates the table rows:
 
 ```bash
-ck-lite init "Word count CLI"     # NEW / ADOPT only — creates the heading and empty table
+ck-lite init "Word count CLI"     # only when there is no tasks/PLAN.md yet — heading and empty table
 ck-lite next-id                   # first free ID: T-01 on a new plan
 ck-lite add <<'EOF'
 ## T-01 Count words in a file
@@ -174,8 +179,10 @@ EOF
 
 IDs continue from `next-id` in creation order, and a new task may `need` another new one. `add`
 refuses the whole batch on a duplicate or out-of-order ID, an unknown `needs`, or a size other
-than `S`/`M` — fix the batch and pipe it again. Never renumber, never reorder, never rewrite an
-existing section: a task already `doing` or `done` is history.
+than `S`/`M`, a title holding `|`, a self- or circular `needs`, or a body line shaped like a
+plan row — fix the batch and pipe it again; nothing is written. Never renumber, never reorder,
+never rewrite an existing section: a task already `doing` or `done` is history. A task added by
+mistake that is still `todo` and that nothing `needs` is removed with `ck-lite drop T-NN`.
 
 ## PHASE 6: REPORT
 

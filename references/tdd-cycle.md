@@ -17,8 +17,9 @@ Labels are letters, digits and `_` only — `one` for a `test-one` run, `test` f
 suite; a hyphenated label is refused. It prints one line per command, plus the last 40 lines of a failure; the full log stays at the
 printed path for a `Read` when 40 lines are not enough. It stamps every pass with the exact
 code state, which is what lets the QA pass that follows skip a run on code that has not
-changed since. Exit 3 prints `RUNNING`: the suite is still going, so continue it with
-`ck-lite-qa wait T-05` and never start it a second time.
+changed since. Exit 3 prints `RUNNING`: the suite is still going, so continue it with the
+`cd <dir> && ck-lite-qa wait T-05` line it prints (runs are per checkout) and never start it a
+second time.
 
 **Inner loop = the task's own tests.** When `## Commands` has a `test-one` line, RED and GREEN
 run only the task's test files through it (`{files}` → the paths, space-separated). The full
@@ -36,7 +37,8 @@ Absolute.
 
 **No test runner.** `test: (none)` stops the cycle. The caller presents the choice (name a
 test command, or record a documented exception) — never pick the exception, and never proceed
-as though RED happened.
+as though RED happened. Under a recorded exception, RED and the Close run are skipped and
+cleanup still applies; QA is told so with `exception: <reason>`.
 
 **Write the tests.** At least one per `### Acceptance` checkbox, following the nearest existing
 test file — same framework, naming and layout. Add the obvious edge case per criterion (empty
@@ -91,5 +93,6 @@ Anything larger than a few minutes is its own task, not cleanup.
 
 Last step, after cleanup, with nothing left to edit: `ck-lite-qa run T-05 test="<test>"`. A
 failure here is a break the task's own tests did not see — fix it and run it again. Its pass is
-stamped on this exact code state; an edit after it, however small, voids the stamp and QA
-runs the suite again.
+stamped on this exact code state; a code edit after it, however small, voids the stamp and QA
+runs the suite again. Plan writes (`ck-lite files`, `note`, `set`) are not code and never void
+it.

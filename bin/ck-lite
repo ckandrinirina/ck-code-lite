@@ -12,6 +12,7 @@
 #   ck-lite files <T-NN> <path>…       append paths to the task's files: list
 #   ck-lite note <T-NN> <text>         append a dated line under the task's ### Notes
 #   ck-lite done <T-NN> [<path>…]      tick every checkbox, append paths, status done
+#   ck-lite drop <T-NN>                remove a todo/blocked task nothing depends on
 #   ck-lite next-id                    the next free task ID
 #   ck-lite init <project name>        create an empty tasks/PLAN.md
 #   ck-lite add                        append task sections from stdin; table rows are generated
@@ -23,21 +24,40 @@
 #   ck-lite retire <target> <branch>   remove a fully merged branch's worktree, then the branch
 #
 # Reads the whole plan in a pipe and prints only what was asked, so a caller's cost is the
-# same at 5 tasks or 500. Writes go through a temp file and a rename, then are re-verified
-# against the three-line rule. Exit 0 ok, 1 defect found, 2 usage error.
-# Paths: CK_LITE_PLAN (tasks/PLAN.md), CK_LITE_ARCH (docs/ARCHITECTURE.md); area docs resolve
-# against the directory above the ARCHITECTURE.md folder. Bash 3.2, BWK awk.
+# same at 5 tasks or 500. Writes hold a lock, build the new plan in a temp file, and replace
+# the plan only when that adds no defect `check` would report — a refused write changes
+# nothing. Exit 0 ok, 1 defect found, 2 usage error.
+# Paths: CK_LITE_PLAN (tasks/PLAN.md), CK_LITE_ARCH (docs/ARCHITECTURE.md), relative to the
+# repository top when run from a subdirectory; area docs resolve against the directory above
+# the ARCHITECTURE.md folder. CRLF plans are read as LF and written back as LF. Bash 3.2, BWK awk.
 
 set -uo pipefail
 
 PLAN="${CK_LITE_PLAN:-tasks/PLAN.md}"
 ARCH="${CK_LITE_ARCH:-docs/ARCHITECTURE.md}"
+# Run from a subdirectory: the defaults resolve against the nearest directory up to the
+# repository top that holds tasks/PLAN.md — a project in a monorepo folder keeps its own.
+if [ -z "${CK_LITE_PLAN:-}" ] && [ ! -f "$PLAN" ] && TOP="$(git rev-parse --show-toplevel 2>/dev/null)"; then
+  d="$(pwd -P)"
+  while :; do
+    if [ -f "$d/tasks/PLAN.md" ]; then
+      PLAN="$d/tasks/PLAN.md"; [ -n "${CK_LITE_ARCH:-}" ] || ARCH="$d/docs/ARCHITECTURE.md"; break
+    fi
+    [ "$d" != "$TOP" ] && [ "$d" != / ] || break
+    d="$(dirname "$d")"
+  done
+fi
 WIDTH=4
 STATUSES="todo doing done blocked"
 
+TMPS=""; LOCKED=""
+cleanup() { [ -z "$TMPS" ] || rm -f $TMPS; [ -z "$LOCKED" ] || rm -f "$PLAN.lock"; }
+trap cleanup EXIT
 die() { echo "ck-lite: ERROR — $*" >&2; exit 2; }
 need_plan() { [ -f "$PLAN" ] || die "no $PLAN — run /ck-code-lite:start first"; }
-is_id() { case "$1" in T-[0-9][0-9]*) case "${1#T-}" in *[!0-9]*) return 1 ;; esac; return 0 ;; esac; return 1; }
+# T-NN, two digits at least, never over-padded (T-05, T-100 — not T-005).
+is_id() { case "$1" in T-[0-9][0-9]*) case "${1#T-}" in *[!0-9]*) return 1 ;; esac
+  [ "$1" = "$(printf 'T-%02d' "$((10#${1#T-}))")" ]; return ;; esac; return 1; }
 need_id() { is_id "${1:-}" || die "expected a task ID like T-05, got: ${1:-<nothing>}"; }
 
 # One TSV line per ID: id rows hdrs metas row_status meta_status size needs files title.
@@ -46,6 +66,7 @@ index() {
   awk '
     function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
     function see(id) { if (!(id in seen)) { seen[id] = 1; ids[++n] = id } }
+    { sub(/\r$/, "") }
     /^\| T-[0-9]+ \|/ {
       split($0, f, "|"); id = trim(f[2]); see(id); rows[id]++
       title[id] = trim(f[3]); rs[id] = trim(f[4]); sz[id] = trim(f[5])
@@ -78,7 +99,47 @@ three_lines() {
 
 status_of() { index | awk -F'\t' -v id="$1" '$1 == id { print $5 }'; }
 
-replace_plan() { mv "$1" "$PLAN" || die "could not write $PLAN"; }
+# One writer at a time: a read-edit-write racing another would drop its update. The lock is a
+# symlink whose target is the holder's pid, so it never exists without one. A dead holder's
+# lock is broken under a second lock and re-read inside it, so a waiter can never remove a
+# lock another waiter has just taken.
+lock() {
+  [ -z "$LOCKED" ] || return 0
+  local i=0 pid
+  while ! ln -s "$$" "$PLAN.lock" 2>/dev/null; do
+    pid="$(readlink "$PLAN.lock" 2>/dev/null)"
+    if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
+      if mkdir "$PLAN.lock.break" 2>/dev/null; then
+        [ "$(readlink "$PLAN.lock" 2>/dev/null)" = "$pid" ] && rm -f "$PLAN.lock"
+        rmdir "$PLAN.lock.break"; continue
+      fi
+      [ "$i" -lt 30 ] || rmdir "$PLAN.lock.break" 2>/dev/null   # a breaker that died mid-break
+    fi
+    i=$((i + 1)); [ "$i" -lt 300 ] || die "$PLAN is locked by another ck-lite call (remove $PLAN.lock if none is running)"
+    sleep 0.1
+  done
+  LOCKED=1
+}
+
+# A temp file beside the plan with the plan's own mode, removed on exit if never used.
+mk_tmp() {
+  tmp="$(mktemp "${PLAN}.XXXXXX")" || die "mktemp failed"
+  TMPS="$TMPS $tmp $tmp.n"; cp -p "$PLAN" "$tmp" 2>/dev/null || true
+}
+
+defects() { ( PLAN="$1"; cmd_check ) 2>/dev/null | grep -v '^ck-lite check:' | sort; }
+
+# Replaces the plan with $1 only when that adds no defect check would report; otherwise the
+# plan is left exactly as it was.
+replace_plan() {
+  local new
+  new="$(comm -13 <(defects "$PLAN") <(defects "$1"))"
+  if [ -n "$new" ]; then
+    printf 'ck-lite: refused — nothing written; the change would add:\n%s\n' "$new" >&2
+    exit 1
+  fi
+  mv "$1" "$PLAN" || die "could not write $PLAN"
+}
 
 cmd_open() {
   need_plan
@@ -111,7 +172,8 @@ cmd_open() {
 
 cmd_show() {
   need_plan; need_id "${1:-}"
-  awk -v id="$1" '$0 ~ "^## " id " " {f = 1; print; next} f && /^## T-/ {exit} f' "$PLAN"
+  awk -v id="$1" '{ sub(/\r$/, "") } $0 ~ "^## " id " " {f = 1; print; next} f && /^## T-/ {exit} f {print} END {exit !f}' "$PLAN" \
+    || { echo "ck-lite: $1 is not in the plan" >&2; return 1; }
 }
 
 cmd_criteria() {
@@ -119,6 +181,7 @@ cmd_criteria() {
   for i in "$@"; do need_id "$i"; done
   awk -v ids="$*" 'BEGIN { n = split(ids, a, " "); for (i = 1; i <= n; i++) w[a[i]] = 1 }
     /^## T-/ { t = $2; p = 0 }
+    { sub(/\r$/, "") }
     /^### Acceptance/ { if (w[t]) { p = 1; print "== " t } next }
     /^### / { p = 0 }
     p && /^- \[/ { print }' "$PLAN"
@@ -126,7 +189,7 @@ cmd_criteria() {
 
 cmd_commands() {
   [ -f "$ARCH" ] || die "no $ARCH — run /ck-code-lite:start first"
-  awk '/^## Commands/ {f = 1; next} f && /^## / {exit} f && /^- [A-Za-z-]+: / {sub(/^- /, ""); print}' "$ARCH"
+  awk '/^## Commands/ {f = 1; next} f && /^## / {exit} f && /^- [A-Za-z0-9_:-]+: / {sub(/^- /, ""); print}' "$ARCH"
 }
 
 cmd_context() {
@@ -171,11 +234,13 @@ cmd_set() {
   to="${1:-}"; shift || true
   case " $STATUSES " in *" $to "*) [ -n "$to" ] ;; *) false ;; esac || die "status must be one of: $STATUSES"
   [ "$#" -gt 0 ] || die "set needs at least one task ID"
+  lock
   for i in "$@"; do need_id "$i"; three_lines "$i" >&2 || exit 1; done
   for i in "$@"; do
     from="$(status_of "$i")"
-    tmp="$(mktemp "${PLAN}.XXXXXX")" || die "mktemp failed"
+    mk_tmp
     awk -v id="$i" -v to="$to" '
+      { sub(/\r$/, "") }
       $0 ~ "^\\| " id " \\|" { n = split($0, f, "|"); f[4] = " " to " "; s = f[1]; for (k = 2; k <= n; k++) s = s "|" f[k]; print s; next }
       $0 ~ "^" id " · " { sub(/status: [a-z]+/, "status: " to); print; next }
       { print }' "$PLAN" >"$tmp" && replace_plan "$tmp"
@@ -188,15 +253,18 @@ cmd_set() {
 add_files() {
   id="$1"; shift
   [ "$#" -gt 0 ] || return 0
-  tmp="$(mktemp "${PLAN}.XXXXXX")" || die "mktemp failed"
-  ADD="$*" awk -v id="$id" '
-    BEGIN { add = ENVIRON["ADD"] }
+  mk_tmp
+  # One argument per path — a path may hold spaces; a comma-joined argument is split on commas.
+  ADD="$(printf '%s\n' "$@")" awk -v id="$id" '
+    function trim(x) { gsub(/^[ \t]+|[ \t]+$/, "", x); return x }
+    BEGIN { add = ENVIRON["ADD"]; gsub(/\n/, ",", add) }
+    { sub(/\r$/, "") }
     $0 ~ "^" id " · " {
       if (match($0, / · files: /)) { head = substr($0, 1, RSTART - 1); cur = substr($0, RSTART + RLENGTH) } else { head = $0; cur = "" }
       if (cur == "—" || cur == "-") cur = ""
       n = split(cur, c, /, */); for (k = 1; k <= n; k++) if (c[k] != "") have[c[k]] = 1
-      m = split(add, a, /[ ,]+/)
-      for (k = 1; k <= m; k++) { p = a[k]; if (p == "" || (p in have)) continue; have[p] = 1; cur = cur (cur ? ", " : "") p; added++ }
+      m = split(add, a, ",")
+      for (k = 1; k <= m; k++) { p = trim(a[k]); if (p == "" || (p in have)) continue; have[p] = 1; cur = cur (cur ? ", " : "") p; added++ }
       print head " · files: " (cur ? cur : "—"); next }
     { print }
     END { print added + 0 > "/dev/stderr" }' "$PLAN" >"$tmp" 2>"$tmp.n" && replace_plan "$tmp"
@@ -206,7 +274,7 @@ add_files() {
 cmd_files() {
   need_plan; need_id "${1:-}"; id="$1"; shift
   [ "$#" -gt 0 ] || die "files needs at least one path"
-  three_lines "$id" >&2 || exit 1
+  lock; three_lines "$id" >&2 || exit 1
   ADDED=0; add_files "$id" "$@"
   echo "$id: files +${ADDED:-0}"
 }
@@ -214,13 +282,14 @@ cmd_files() {
 cmd_note() {
   need_plan; need_id "${1:-}"; id="$1"; shift
   [ "$#" -gt 0 ] || die "note needs text"
-  three_lines "$id" >&2 || exit 1
-  tmp="$(mktemp "${PLAN}.XXXXXX")" || die "mktemp failed"
+  lock; three_lines "$id" >&2 || exit 1
+  mk_tmp
   # Inserts after the last line of an existing ### Notes block, else opens one at the
   # section's end; blank lines between sections are kept as they were.
-  NOTE="- $(date +%F): $*" awk -v id="$id" '
+  # One line, always: a newline in the text could forge a header or a meta line.
+  NOTE="- $(date +%F): $(printf '%s' "$*" | tr '\r\n' '  ')" awk -v id="$id" '
     BEGIN { txt = ENVIRON["NOTE"] }
-    { L[NR] = $0 }
+    { sub(/\r$/, ""); L[NR] = $0 }
     END {
       for (i = 1; i <= NR; i++) { if (L[i] ~ "^## " id " ") { s = i; continue } if (s && L[i] ~ /^## T-/) { e = i - 1; break } }
       if (!e) e = NR
@@ -237,10 +306,11 @@ cmd_note() {
 
 cmd_done() {
   need_plan; need_id "${1:-}"; id="$1"; shift
-  three_lines "$id" >&2 || exit 1
+  lock; three_lines "$id" >&2 || exit 1
   ADDED=0; add_files "$id" "$@"
-  tmp="$(mktemp "${PLAN}.XXXXXX")" || die "mktemp failed"
+  mk_tmp
   awk -v id="$id" '
+    { sub(/\r$/, "") }
     $0 ~ "^## " id " " { f = 1; print; next }
     f && /^## T-/ { f = 0 }
     f && /^- \[ \]/ { sub(/^- \[ \]/, "- [x]"); t++ }
@@ -249,6 +319,25 @@ cmd_done() {
   ticked="$(cat "$tmp.n" 2>/dev/null)"; rm -f "$tmp.n"
   out="$(cmd_set "done" "$id")" || { echo "$out"; exit 1; }
   echo "$out · ticked ${ticked:-0} · files +${ADDED:-0}"
+}
+
+# Removes a mistaken task: its row and its section. Only todo or blocked, and only when no
+# other task needs it — a done task is history, a doing one has work behind it.
+cmd_drop() {
+  need_plan; need_id "${1:-}"; [ "$#" -eq 1 ] || die "drop takes one task ID"
+  lock; three_lines "$1" >&2 || exit 1
+  case "$(status_of "$1")" in todo|blocked) ;; *) echo "ck-lite: $1 is $(status_of "$1") — only a todo or blocked task can be dropped"; exit 1 ;; esac
+  by="$(index | awk -F'\t' -v id="$1" '{ n = split($8, d, ","); for (j = 1; j <= n; j++) if (d[j] == id) printf "%s%s", (c++ ? "," : ""), $1 }')"
+  [ -z "$by" ] || { echo "ck-lite: $by needs $1 — drop or re-plan those first"; exit 1; }
+  mk_tmp
+  awk -v id="$1" '
+    { sub(/\r$/, "") }
+    $0 ~ "^\\| " id " \\|" { next }
+    $0 ~ "^## " id " " { skip = 1; next }
+    skip && /^## / { skip = 0 }
+    !skip { print }' "$PLAN" | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' >"$tmp"
+  replace_plan "$tmp"
+  echo "$1: dropped"
 }
 
 cmd_next_id() {
@@ -268,35 +357,41 @@ cmd_init() {
 # stdin: task sections in plan-format shape, IDs already assigned (start from ck-lite next-id).
 cmd_add() {
   need_plan
+  # stdin first: a slow producer must not hold the lock other writers wait on
   in="$(mktemp "${PLAN}.in.XXXXXX")" || die "mktemp failed"
-  cat >"$in"
+  TMPS="$TMPS $in"
+  tr -d '\r' >"$in"
+  lock
+  last="$(awk '{ sub(/\r$/, "") } /^## / {exit} /^\|/ {n = NR} END {print n}' "$PLAN")"
+  [ -n "$last" ] || die "$PLAN has no table — it must open with the | ID | Title | Status | Size | Needs | table"
   existing="$(index | cut -f1 | tr '\n' ' ')"
   rows="$(awk -v existing="$existing" '
     BEGIN { n = split(existing, e, " "); for (i = 1; i <= n; i++) { have[e[i]] = 1; v = e[i]; sub(/^T-/, "", v); if (v + 0 > max) max = v + 0 } }
     /^## T-[0-9]+ / { id = $2; t = $0; sub(/^## T-[0-9]+ /, "", t)
+      v = id; sub(/^T-/, "", v); if (sprintf("T-%02d", v + 0) != id) { print "ERR " id " is over-padded — use ck-lite next-id"; bad = 1 }
+      if (t ~ /\|/) { print "ERR " id " title contains |, which would split its table row"; bad = 1 }
       if (id in have) { print "ERR " id " already exists in the plan"; bad = 1 }
       v = id; sub(/^T-/, "", v); if (v + 0 <= max) { print "ERR " id " is not above the highest existing ID — use ck-lite next-id"; bad = 1 }
       max = v + 0; have[id] = 1; cur = id; title[id] = t; ids[++k] = id; next }
-    cur != "" && meta[cur] == "" && /[^ ]/ {
-      if ($0 !~ "^" cur " · status: todo · size: (S|M) · needs: .* · files: ") { print "ERR " cur " meta line must follow the header: " cur " · status: todo · size: S|M · needs: … · files: …"; bad = 1 }
+    cur != "" && meta[cur] == "" && /[^ \t]/ {
+      if ($0 ~ "^" cur " · status: todo · size: [^SM ]") { print "ERR " cur " size must be S or M — split a larger task in two"; bad = 1 }
+      else if ($0 !~ "^" cur " · status: todo · size: (S|M) · needs: .* · files: ") { print "ERR " cur " meta line must follow the header: " cur " · status: todo · size: S|M · needs: … · files: …"; bad = 1 }
       meta[cur] = $0; next }
+    cur != "" && (/^\| T-[0-9]+ \|/ || /^T-[0-9]+ · /) { print "ERR " cur " body line looks like a plan row or meta line: " $0; bad = 1 }
     END {
       if (k == 0) { print "ERR no ## T-NN sections on stdin"; exit 1 }
       for (i = 1; i <= k; i++) { id = ids[i]; m = meta[id]
         if (m == "") { print "ERR " id " has no meta line"; bad = 1; continue }
         split(m, p, " · "); sz = p[3]; sub(/^size: /, "", sz); nd = p[4]; sub(/^needs: /, "", nd)
-        c = nd; gsub(/ /, "", c); if (c != "—" && c != "-" && c != "") { q = split(c, d, ","); for (j = 1; j <= q; j++) if (!(d[j] in have)) { print "ERR " id " needs " d[j] ", which does not exist"; bad = 1 } }
+        c = nd; gsub(/ /, "", c); if (c != "—" && c != "-" && c != "") { q = split(c, d, ","); for (j = 1; j <= q; j++) if (d[j] == id) { print "ERR " id " needs itself"; bad = 1 } else if (!(d[j] in have)) { print "ERR " id " needs " d[j] ", which does not exist"; bad = 1 } }
         rows[i] = "| " id " | " title[id] " | todo | " sz " | " ((nd == "-" || nd == "") ? "—" : nd) " |" }
       if (bad) exit 1
-      for (i = 1; i <= k; i++) print rows[i] }' "$in")" || { printf '%s\n' "$rows" | sed 's/^ERR /ck-lite: /' >&2; rm -f "$in"; exit 1; }
-  tmp="$(mktemp "${PLAN}.XXXXXX")" || die "mktemp failed"
-  last="$(awk '/^## / {exit} /^\|/ {n = NR} END {print n}' "$PLAN")"
-  [ -n "$last" ] || die "$PLAN has no table — it must open with the | ID | Title | Status | Size | Needs | table"
-  { head -n "$last" "$PLAN"; printf '%s\n' "$rows"; tail -n +"$((last + 1))" "$PLAN" | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}'
+      for (i = 1; i <= k; i++) print rows[i] }' "$in")" || { printf '%s\n' "$rows" | sed 's/^ERR /ck-lite: /' >&2; exit 1; }
+  mk_tmp
+  { head -n "$last" "$PLAN" | tr -d '\r'; printf '%s\n' "$rows"
+    tail -n +"$((last + 1))" "$PLAN" | tr -d '\r' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}'
     echo; cat "$in"; } >"$tmp"
-  rm -f "$in"
   replace_plan "$tmp"
-  for id in $(printf '%s\n' "$rows" | awk -F'|' '{gsub(/ /, "", $2); print $2}'); do three_lines "$id" || exit 1; done
   first="$(printf '%s\n' "$rows" | head -1 | awk -F'|' '{gsub(/ /, "", $2); print $2}')"
   lastid="$(printf '%s\n' "$rows" | tail -1 | awk -F'|' '{gsub(/ /, "", $2); print $2}')"
   n="$(printf '%s\n' "$rows" | wc -l | tr -d ' ')"
@@ -316,7 +411,7 @@ cmd_waves() {
     { st[$1] = $5; nd[$1] = $8; fl[$1] = $9; ti[$1] = $10; id[++n] = $1; ok[$1] = ($2 == 1 && $3 == 1 && $4 == 1 && $5 == $6) }
     END {
       if (all) { for (i = 1; i <= n; i++) if (st[id[i]] == "todo") { S[id[i]] = 1; order[++m] = id[i] } }
-      else { q = split(scope, sc, " "); for (i = 1; i <= n; i++) for (j = 1; j <= q; j++) if (id[i] == sc[j]) { S[id[i]] = 1; order[++m] = id[i] }
+      else { q = split(scope, sc, " "); for (i = 1; i <= n; i++) for (j = 1; j <= q; j++) if (id[i] == sc[j] && !(id[i] in S)) { S[id[i]] = 1; order[++m] = id[i] }
         for (j = 1; j <= q; j++) if (!(sc[j] in S)) { if (!(sc[j] in st)) why[sc[j]] = "not in the plan"; else why[sc[j]] = "status " st[sc[j]] ", not todo"; bad[sc[j]] = 1; unl[++u] = sc[j] } }
       for (i = 1; i <= m; i++) { t = order[i]
         if (!ok[t]) { why[t] = "corrupt — run ck-lite check"; bad[t] = 1; continue }
@@ -404,10 +499,24 @@ cmd_worktrees() {
   done
 }
 
+# Prefers git merge-tree (2.38+), which never touches the index or the working tree. The
+# fallback really merges, so it refuses first when staged work could be lost to the abort.
+# A path the branch changes that is uncommitted here would make the real merge refuse: DIRTY.
 cmd_try_merge() {
   need_git; [ "$#" -eq 1 ] || die "try-merge needs <branch>"
-  if git merge --no-commit --no-ff "$1" >/dev/null 2>&1; then r=CLEAN; else r=CONFLICT; fi
-  git merge --abort >/dev/null 2>&1 || git reset --merge >/dev/null 2>&1
+  git rev-parse -q --verify "$1^{commit}" >/dev/null || die "no branch or commit named $1"
+  hit="$(comm -12 <(git diff --name-only HEAD..."$1" | sort -u) \
+    <({ git diff --name-only HEAD; git ls-files --others --exclude-standard; } | sort -u) | paste -sd, -)"
+  if [ -n "$hit" ]; then echo "DIRTY $1 — uncommitted here and changed by the branch: $hit"; return 1; fi
+  git merge-tree --write-tree HEAD "$1" >/dev/null 2>&1; rc=$?
+  case "$rc" in
+    0) r=CLEAN ;;
+    1) r=CONFLICT ;;
+    *) git diff --cached --quiet || die "staged changes present — commit or unstage them before try-merge"
+       [ ! -f "$(git rev-parse --git-path MERGE_HEAD)" ] || die "a merge is already in progress"
+       if git merge --no-commit --no-ff "$1" >/dev/null 2>&1; then r=CLEAN; else r=CONFLICT; fi
+       if [ -f "$(git rev-parse --git-path MERGE_HEAD)" ]; then git merge --abort >/dev/null 2>&1; fi ;;
+  esac
   echo "$r $1"; [ "$r" = CLEAN ]
 }
 
@@ -417,6 +526,10 @@ cmd_retire() {
   [ -n "$line" ] || die "$2 has no linked worktree (the main checkout is never retired)"
   path="$(printf '%s\n' "$line" | cut -f2)"
   case "$(printf '%s\n' "$line" | cut -f3)" in merged) ;; *) echo "NOT MERGED — $2 kept at $path"; return 1 ;; esac
+  # 0 commits ahead with uncommitted edits or new unignored files is unfinished work, not a
+  # merged branch. Past this check only ignored files remain — build output — and --force
+  # discards exactly those (and lets a worktree holding a submodule go).
+  [ -z "$(git -C "$path" status --porcelain 2>/dev/null)" ] || { echo "UNCOMMITTED — $2 has uncommitted changes at $path; kept"; return 1; }
   git worktree remove --force "$path" || { echo "remove failed — $2 kept at $path"; return 1; }
   git branch -d "$2" >/dev/null || { echo "worktree removed, branch $2 kept"; return 1; }
   echo "retired $2 ($path)"
@@ -433,6 +546,7 @@ case "${1:-}" in
   files) shift; cmd_files "$@" ;;
   note) shift; cmd_note "$@" ;;
   done) shift; cmd_done "$@" ;;
+  drop) shift; cmd_drop "$@" ;;
   next-id) shift; cmd_next_id "$@" ;;
   init) shift; cmd_init "$@" ;;
   add) shift; cmd_add "$@" ;;
@@ -442,6 +556,6 @@ case "${1:-}" in
   worktrees) shift; cmd_worktrees "$@" ;;
   try-merge) shift; cmd_try_merge "$@" ;;
   retire) shift; cmd_retire "$@" ;;
-  -h|--help|"") sed -n '3,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -h|--help|"") sed -n '3,33p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) die "unknown command: $1 (ck-lite --help)" ;;
 esac
