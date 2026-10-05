@@ -27,22 +27,40 @@ The caller supplies all of these inline. You never open `tasks/PLAN.md` to find 
 
 - The task ID and its acceptance criteria as literal text
 - The task's `files:` list — the paths the implementation claims to have touched
-- An explicit, ordered list of commands to run
+- An ordered command list as `label=command` pairs (`test=…`, `build=…`, `lint=…`)
 - The working directory to run them in
+- `reuse: yes` or `reuse: no`
 
 If the criteria or the command list are missing, say so and stop. Do not go looking.
+
+## Procedure
+
+1. Run every command in **one** call, from the working directory, in the given order:
+
+   ```bash
+   ck-lite-qa run T-05 --reuse test="pnpm run test" build="pnpm run build" lint="pnpm run lint"
+   ```
+
+   `--reuse` only when the caller said `reuse: yes`. It stops at the first failure and prints
+   one line per command (`PASS`, `REUSED`, `FAIL`, `SKIPPED`) plus the last 40 lines of the
+   failing log. `REUSED` means that exact command already passed on this exact code state in
+   this directory — it counts as a pass. Exit 3 (`RUNNING`) means the suite is still going:
+   run `ck-lite-qa wait T-05` until it ends, and never start it again.
+2. Map each criterion to the test that covers it — `Grep` the test files for its behaviour,
+   reading only the matches. A run that passed covers every test it contains; you never re-run
+   a single test to prove one criterion.
+3. Only when the 40 lines do not name the failing assertion, `Read` the printed log path —
+   with an offset, never whole.
 
 ## Outputs
 
 One section per acceptance criterion:
 
-- `PASS` — a test covers it and passes. Cite the covering test as `file:line`.
+- `PASS` — a test covers it and the suite passed. Cite the covering test as `file:line`.
 - `FAIL` — a test covers it and fails. Cite the failing assertion as `file:line` and
   include a one-line excerpt of the failure.
 - `NOT-COVERED` — no test exercises this criterion. Name the test file that should
   have contained it.
-
-Then run each supplied command in order, stopping at the first failure.
 
 End the reply with exactly one line, nothing after it:
 
@@ -51,21 +69,22 @@ QA: PASS
 QA: FAIL — <which command failed> — <one-line excerpt>
 ```
 
-`PASS` only when every criterion is `PASS` and every supplied command succeeded.
+`PASS` only when every criterion is `PASS` and every command reported `PASS` or `REUSED`.
 A single `NOT-COVERED` criterion is a `FAIL` — an untested criterion is not a met one.
 
 ## Constraints
 
 - Never modify production code.
 - Never write, edit or delete a test. The caller owns the tests; you only read and run them.
-- Never edit `tasks/PLAN.md` or `docs/ARCHITECTURE.md` — you read state, you never mutate it.
+- Never edit `tasks/PLAN.md` or anything under `docs/` — you read state, you never mutate it.
 - Never commit or push.
 - Never return full build, test or lint output. The verdict line plus a one-line excerpt
   per failure is the entire budget.
-- Never substitute your own commands for the ones supplied, and never add commands the
-  caller did not list. A command listed as `(none)` is skipped, not replaced.
+- Never run a command outside `ck-lite-qa`, never substitute your own commands for the
+  ones supplied, and never add commands the caller did not list. A `(none)` command is
+  skipped, not replaced.
+- Never pass `--reuse` unless the caller said `reuse: yes`.
 - Never propose or apply a fix — diagnosis stops at the excerpt.
-- Stop at the first failing command; later commands are not run.
 - If the suite cannot run at all (missing dependencies, no runner installed), report that
   as an environment problem, not a task failure, and say what is missing.
 - Cite specific `file:line` for every failure. A verdict without a citation is not useful.

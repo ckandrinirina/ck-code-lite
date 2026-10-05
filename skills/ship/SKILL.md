@@ -3,7 +3,7 @@ name: ship
 description: Use when finished work needs committing and a pull request opened or updated, whether or not a tasks/PLAN.md task sits behind it. Project-agnostic — works standalone on any git repo. Argument is an optional task ID such as T-03.
 argument-hint: "[T-NN]"
 effort: medium
-allowed-tools: Bash(git status*) Bash(git diff*) Bash(git log*) Bash(git branch*) Bash(git remote*) Bash(git rev-parse*) Bash(git checkout*) Bash(git add*) Bash(git commit*) Bash(git push*) Bash(gh auth status*) Bash(gh repo view*) Bash(gh pr*) Skill
+allowed-tools: Bash(git status*) Bash(git diff*) Bash(git log*) Bash(git branch*) Bash(git remote*) Bash(git rev-parse*) Bash(git checkout*) Bash(git add*) Bash(git commit*) Bash(git push*) Bash(gh auth status*) Bash(gh repo view*) Bash(gh pr*) Bash(ck-lite*) Skill
 ---
 
 # Ship — Commit and PR
@@ -66,17 +66,28 @@ The last five commits fix the repo's style: conventional vs free-form, scope usa
 imperative vs past tense. Match what is already there; default to conventional commits
 when no pattern is established.
 
-When a task ID resolved, extract only that section for the plain-language copy:
+When a task ID resolved, print only that section for the plain-language copy:
 
 ```bash
-awk '/^## T-05 /{f=1} f&&/^## T-/&&!/^## T-05 /{exit} f' tasks/PLAN.md
+ck-lite show T-05
 ```
 
-Substitute the real ID in both places, keeping the trailing space that separates `T-05`
-from `T-050`. Its title and acceptance criteria describe what a user can now do — that is
-the commit body and PR body.
+Its title and acceptance criteria describe what a user can now do — that is the commit body
+and PR body.
 
 ## PHASE 3: COMMIT
+
+### 3.0 Close the task first
+
+If a task resolved and `/ck-code-lite:build` did not already close it, close it **before**
+staging, so the status change lands in this commit instead of dirtying the tree after it:
+
+```bash
+ck-lite set done T-05
+```
+
+Leave its boxes as they are — ticking is `build`'s call, made against QA and the manual test.
+If the commit is then aborted at 3.3, put the status back with `ck-lite set <previous> T-05`.
 
 ### 3.1 Group the files
 
@@ -174,15 +185,6 @@ If `gh` is unavailable, print the manual compare URL
 **Task:** T-NN → done | standalone
 ```
 
-If a task resolved and `/ck-code-lite:build` did not already close it, flip its status to
-`done` in **both** the table row and the meta line in one Edit, then verify:
-
-```bash
-grep -nE "^(\| T-05 \||## T-05 |T-05 · )" tasks/PLAN.md
-```
-
-Exactly three hits, with the table row and meta line agreeing.
-
 Then point at the next step: `/ck-code-lite:build` for the next ready task.
 
 ## RULES
@@ -202,8 +204,6 @@ Then point at the next step: `/ck-code-lite:build` for the next ready task.
 - **Never push without confirming** — Phase 4's question is mandatory.
 - **Never amend or force-push** unless the user explicitly asks.
 - **Never block the commit because `gh` is missing** — degrade to commit-only.
-- **Never change a status in one place only** — the table row and the meta line move
-  together, verified by `grep`.
-- **Never read `tasks/PLAN.md` whole** — the chosen section via the `awk` extractor, which
-  costs the same at any plan size.
+- **Never `Read` or `Edit` `tasks/PLAN.md`** — `ck-lite show` reads the task, `ck-lite set`
+  moves its status; both cost the same at any plan size.
 - **Always match the repo's established commit style** when one exists.

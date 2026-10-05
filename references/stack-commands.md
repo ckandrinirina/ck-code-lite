@@ -54,11 +54,29 @@ the test suite is the largest output this workflow produces. See [rtk.md](rtk.md
 `pytest` only when `pyproject.toml` declares a `[tool.pytest…]` table or a `tests/`
 directory exists. Otherwise `python -m unittest discover`.
 
+### 4. `test-one` — the test command narrowed to files
+
+Written only when the runner takes test paths, so RED/GREEN runs a task's own tests and the
+full suite runs once per task. `{files}` is replaced by space-separated test paths.
+
+| Runner | `test-one` |
+|---|---|
+| vitest, jest, mocha (via a `test` script) | `<runner> run test -- {files}` |
+| pytest | `pytest {files}` |
+| rspec | `bundle exec rspec {files}` |
+| phpunit | `vendor/bin/phpunit {files}` |
+| go | `go test {files}` — package paths such as `./internal/count/...` |
+| cargo, ctest, `python -m unittest` | omit — filters are by test name, not by path |
+
+A `test` script that already pins files or runs several tools (`"test": "lint && vitest"`)
+gets no `test-one`: appending paths would change what it means.
+
 ## Writing the result
 
 ```markdown
 ## Commands
 - test: pnpm run test
+- test-one: pnpm run test -- {files}
 - build: pnpm run build
 - lint: pnpm run lint
 ```

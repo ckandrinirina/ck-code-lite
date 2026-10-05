@@ -7,7 +7,7 @@ primitive with a real cost (a cold dependency install, a branch to merge, a dire
 retire) that buys nothing when nothing runs beside it.
 
 Read by `start`, `build` and `ship`. The commands that implement the lifecycle live in
-[parallel-dispatch.md](../skills/build/references/parallel-dispatch.md#worktree-lifecycle);
+[parallel-mode.md](../skills/build/references/parallel-mode.md#worktree-lifecycle);
 this file owns the rules.
 
 ## Who may create one
@@ -21,8 +21,8 @@ this file owns the rules.
 | `/ck-code-lite:build` — PARALLEL MODE, wave of ≥ 2 (fan-out) | **One per dispatched task** |
 
 Only the last row creates worktrees, only the `build` orchestrator creates them, and it
-creates them one way: by passing `isolation: "worktree"` to `Agent`, so the harness owns
-the directory and its lifecycle.
+creates them one way: by passing `isolation: "worktree"` to `Agent` when dispatching
+`ck-code-lite:task-builder`, so the harness owns the directory and its lifecycle.
 
 ## Never enter one yourself
 

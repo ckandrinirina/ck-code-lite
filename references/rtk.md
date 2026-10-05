@@ -37,9 +37,9 @@ Check any command's rewrite with `rtk hook check "<command>"`.
 
 ## Where lite gains most
 
-`build` runs the `test` command on every RED and GREEN cycle, then again in the isolated
-QA pass, then again per worktree in `--waves`. That one command is where nearly all of the
-saving is.
+Full test, build and lint runs go through `ck-lite-qa`, which already keeps their output in a
+log and prints one line per command — RTK has nothing left to filter there. Its saving is in
+the commands run directly — `git` and `gh`.
 
 ## Rules
 

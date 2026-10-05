@@ -3,7 +3,7 @@ name: start
 description: Use when a project needs its ck-code-lite artifacts — creating docs/ARCHITECTURE.md and tasks/PLAN.md for a new idea, adopting an existing codebase into the workflow, or adding new tasks to an existing plan. Argument is an optional feature description or spec-file path.
 argument-hint: "[feature description | path/to/spec.md]"
 effort: medium
-allowed-tools: Bash(git status*) Bash(git ls-files*) Bash(git rev-parse*) Bash(mkdir*) Bash(ls*) Skill
+allowed-tools: Bash(git status*) Bash(git ls-files*) Bash(git rev-parse*) Bash(mkdir*) Bash(ls*) Bash(ck-lite*) Skill
 ---
 
 # Start — Architecture and Plan in One Pass
@@ -16,7 +16,8 @@ This skill writes two files in the checkout it was invoked from. It never branch
 dispatches, and **never creates or enters a git worktree** — see
 [worktree-policy.md](../../references/worktree-policy.md).
 
-Format contract: [plan-format.md](../../references/plan-format.md).
+Format contract: [plan-format.md](../../references/plan-format.md) — every plan read and
+write is a `ck-lite` call; this skill never `Read`s or `Edit`s `tasks/PLAN.md`.
 Command resolution: [stack-commands.md](../../references/stack-commands.md).
 Output filtering (optional): [rtk.md](../../references/rtk.md).
 
@@ -61,17 +62,18 @@ the picture (`tsconfig.json`, `pyproject.toml`, a framework config). Stop at fiv
 even if curiosity says otherwise — the goal is an accurate `## Stack` and `## Commands`,
 not a full understanding of the codebase.
 
-**EXTEND** — read `docs/ARCHITECTURE.md`, then the plan's **open rows only**:
+**EXTEND** — read `docs/ARCHITECTURE.md` (the core only — an area doc is read when a new
+task will work in that area), then:
 
 ```bash
-grep -nE '^\| T-[0-9]+ \|.*\| (todo|doing|blocked) \|' tasks/PLAN.md
+ck-lite open
+ck-lite stats
 ```
 
-That is everything needed to avoid planning work already queued. `done` tasks are not
-read: their titles cost a line each and change nothing about what to add next. Never read
-`tasks/PLAN.md` whole, and never read the whole table.
+Open work is everything needed to avoid planning what is already queued; `done` tasks are
+never read. `stats` reports the core's size — past 150 lines, Phase 4 splits an area out.
 
-In every mode, resolve `test` / `build` / `lint` using
+In every mode, resolve `test` / `test-one` / `build` / `lint` using
 [stack-commands.md](../../references/stack-commands.md), including the lockfile and
 declared-scripts refinements.
 
@@ -114,8 +116,13 @@ Never `Write` over the file.
 
 A decision that **reverses** an existing one folds into that line rather than appending
 beside it, and one the toolchain now enforces is deleted — see the Decisions rules in
-[architecture-template.md](references/architecture-template.md). This keeps the section
-proportional to live choices, which matters because `build` reads the whole file every run.
+[architecture-template.md](references/architecture-template.md). A decision only one area's
+code obeys goes into that area's doc, not the core.
+
+**Split when the core outgrows a page.** `ck-lite stats` past 150 lines → move the largest
+self-contained area out, verbatim, into `docs/areas/<area>.md` and add its `## Areas` row,
+following [architecture-template.md § Areas](references/architecture-template.md#areas). One
+area per run, announced in the report. Never split below the threshold.
 
 ## PHASE 5: WRITE OR EXTEND PLAN
 
@@ -145,18 +152,30 @@ API client (Postman, curl) is a planning defect: the check belongs in the task's
 tests, and the human check goes through the surface. A project with no human-facing
 surface (a library, a daemon, a pure API) says so in one line and orders core code first.
 
-**NEW / ADOPT** — write `tasks/PLAN.md` in the format from
-[plan-format.md](../../references/plan-format.md).
-
-**EXTEND** — find the highest existing ID and continue from it:
+Write the sections in the format from [plan-format.md](../../references/plan-format.md) and
+hand them to `ck-lite`, which generates the table rows:
 
 ```bash
-grep -o '^## T-[0-9]*' tasks/PLAN.md | tail -1
+ck-lite init "Word count CLI"     # NEW / ADOPT only — creates the heading and empty table
+ck-lite next-id                   # first free ID: T-01 on a new plan
+ck-lite add <<'EOF'
+## T-01 Count words in a file
+
+T-01 · status: todo · size: S · needs: — · files: src/count.js, test/count.test.js
+
+### Acceptance
+- [ ] A file of three words reports 3
+
+### Tasks
+- [ ] Failing tests for the criterion
+- [ ] Implement the counter
+EOF
 ```
 
-Append new rows to the end of the table and new sections to the end of the file. Never
-renumber, never reorder, never rewrite an existing section — a task already in `doing`
-or `done` is history.
+IDs continue from `next-id` in creation order, and a new task may `need` another new one. `add`
+refuses the whole batch on a duplicate or out-of-order ID, an unknown `needs`, or a size other
+than `S`/`M` — fix the batch and pipe it again. Never renumber, never reorder, never rewrite an
+existing section: a task already `doing` or `done` is history.
 
 ## PHASE 6: REPORT
 
@@ -176,27 +195,18 @@ Next: /ck-code-lite:build
 If any command resolved to `(none)`, say so plainly here and note that `test: (none)`
 will stop the first build until a test runner is chosen.
 
-### Graduation check
+### Size check
 
-Both artifacts are read on every `build` run, so their size is a running cost. Measure
-once, here:
-
-```bash
-grep -cE '^\| T-[0-9]+ \|.*\| (todo|doing|blocked) \|' tasks/PLAN.md
-wc -l < docs/ARCHITECTURE.md
-```
-
-More than **40 open tasks**, or an architecture doc over **150 lines**, means the project
-has outgrown a flat plan and a single doc. Add one line to the report saying so and naming
-`/ck-code:migrate`, which converts both artifacts in place. Under both thresholds, print
-nothing — a size notice on a small project is noise.
-
-This is a notice, never a block. The user decides when to graduate.
+`ck-lite stats` (already run in EXTEND; run it once now in NEW/ADOPT). Relay a `graduation:`
+line (past 40 open tasks) as one line naming `/ck-code:migrate`; a `split:` line was acted on
+in Phase 4 — report the area moved. Under both thresholds, print nothing: a size notice on a
+small project is noise. Never a block — the user decides when to graduate.
 
 ## RULES
 
-- **Never `Write` over an existing `docs/ARCHITECTURE.md` or `tasks/PLAN.md`** — always `Edit`.
-  This single rule makes every re-run safe.
+- **Never `Write` over an existing `docs/ARCHITECTURE.md`** — always `Edit` — and never
+  `Read`, `Write` or `Edit` `tasks/PLAN.md`: `ck-lite init|add` are its only writers. This makes
+  every re-run safe.
 - **Never dispatch a subagent.** This skill is one pass; a dispatch costs more than the
   five reads it would save, and the clarify round needs that context resident.
 - **Never create or enter a git worktree, and never create or switch a branch.** No
@@ -207,7 +217,7 @@ This is a notice, never a block. The user decides when to graduate.
 - **Never ask more than one round of questions**, and never more than 4 questions in it.
 - **Never ask what the manifest, README, or an existing architecture doc already answers.**
 - **Never create a file under `tasks/` other than `PLAN.md`.** No epics, no per-task files,
-  no index. If the project needs that structure, it has outgrown lite — install `ck-code`
+  no index, no archive. If the project needs that structure, it has outgrown lite — install `ck-code`
   and run `/ck-code:migrate`, which converts this plan and architecture doc in place.
 - **Never renumber or reorder existing tasks.** New IDs continue from the highest present.
 - **Never write a task larger than M.** Split it.
@@ -217,6 +227,6 @@ This is a notice, never a block. The user decides when to graduate.
   the surface already built, never through a manual API client.
 - **Never invent a command a manifest does not declare** — `(none)` is the correct answer
   when there is no command.
-- **Never read `tasks/PLAN.md` whole, and never read the whole table** — open rows via the
-  status-filtered `grep`, a single section via the `awk` extractor in
-  [plan-format.md](../../references/plan-format.md).
+- **Never split the core below 150 lines, never rewrite text while moving it to an area doc,
+  and never put an area doc under `docs/architecture/`** — that directory marks a ck-code
+  project.
