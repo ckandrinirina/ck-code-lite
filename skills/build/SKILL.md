@@ -3,7 +3,7 @@ name: build
 description: Use when a task from tasks/PLAN.md needs implementing end-to-end with tests, when a task left in progress needs finishing, when several independent tasks can be built at once in isolated worktrees, or when the remaining plan should run in dependency-ordered waves. Argument is an optional task ID such as T-03, several IDs, or `--waves`; with no argument, picks interactively.
 argument-hint: "[T-NN | T-NN T-NN … | --waves]"
 effort: high
-allowed-tools: Bash(git status*) Bash(git diff*) Bash(git log*) Bash(git branch*) Bash(git rev-parse*) Bash(git checkout*) Bash(git switch*) Bash(git add*) Bash(git commit*) Bash(git merge*) Bash(git worktree*) Skill
+allowed-tools: Bash(git status*) Bash(git diff*) Bash(git log*) Bash(git branch*) Bash(git rev-parse*) Bash(git checkout*) Bash(git switch*) Bash(git add*) Bash(git commit*) Bash(git merge*) Bash(git worktree*) Bash(ck-lite-reclaim*) Skill
 ---
 
 # Build — One Task, Test First
@@ -487,7 +487,9 @@ with its task, its state and its commit count, offering:
 - `MERGE NOW` — re-run QA on that branch, then P7's dry-run and merge; a conflict comes
   straight back here
 - `KEEP` — a deliberate hand-off; the report prints the branch, the worktree path and
-  `/ck-code-lite:build T-NN` as the way to finish it
+  `/ck-code-lite:build T-NN` as the way to finish it. Run `ck-lite-reclaim <path>…` on every
+  kept worktree first: it deletes the rebuildable build output (`target/`, `node_modules/`, …)
+  and keeps source and commits — put its one `freed` line in the report
 - `DISCARD` — only for a 🚫 blocked branch whose diff is empty; force-remove and delete
 
 The run may end with a worktree standing only through an explicit `KEEP`. Reaching the
@@ -584,6 +586,8 @@ are conventional (`test(T-NN):`, `feat(T-NN):`) with no AI references.
 - **Never leave a merged task's worktree standing.** Removal happens in P7 beside the
   status flip, not deferred to the end of the run. `git worktree prune` is not removal —
   it only clears records for directories that are already gone.
+- **Never keep a worktree with its build output** — every `KEEP` passes through
+  `ck-lite-reclaim`; a Rust/Tauri `target/` alone runs to several GB per worktree.
 - **Never remove a worktree whose branch is not fully merged into `$TARGET`**, and never
   force-remove before `git branch --merged` has confirmed it — that discards work no
   commit holds.

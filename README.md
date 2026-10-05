@@ -171,6 +171,9 @@ the table above.
 - **Never guess a command.** `(none)` is a valid answer; an invented npm script is not.
 - **Append, never rewrite.** Re-running `start` adds tasks; it never clobbers your edits.
 - **Isolate expensive output.** QA runs somewhere else and comes back with a verdict.
+- **Leave no disk behind.** A merged worktree is removed as it lands; one you keep sheds its
+  rebuildable build output (`target/`, `node_modules/`, …) through `ck-lite-reclaim` and keeps
+  its source — a Tauri `target/` alone can be 5–20 GB per worktree.
 - **Cheap to filter.** Commands are written in the long `pnpm run test` form so an optional
   [RTK](https://github.com/ckandrinirina/rtk) hook can compress their output. Never required,
   never hardcoded — see `references/rtk.md`.

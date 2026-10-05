@@ -224,7 +224,13 @@ The question is asked once for the whole run, listing each worktree with its tas
 commit count. Only a `KEEP` answer lets one survive the run; a `MERGE NOW` answer re-enters
 QA and the P7 dry-run, and `DISCARD` is offered only for a blocked branch with an empty diff.
 
-Kept worktrees are printed in the report with the command that removes them:
+Kept worktrees first shed their rebuildable output — source and commits stay:
+
+```bash
+ck-lite-reclaim "<path>"…
+```
+
+Then they are printed in the report with the command that removes them:
 
 ```
 git worktree remove --force <path> && git branch -D <branch>

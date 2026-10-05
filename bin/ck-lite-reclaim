@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# ck-lite-reclaim — free the disk a kept build worktree's output holds, keeping its source.
+#
+# A worktree kept past a run (held, conflicted, blocked) must keep its commits and working
+# tree, but its target/, node_modules/ and other rebuildable output can run to several GB
+# each — a Tauri target/ alone is often 5–20 GB. Only a directory with a build-output name
+# that git ignores AND that holds no tracked file is deleted, so nothing a rebuild cannot
+# restore is lost. Prints one line per worktree.
+#
+# Usage:
+#   ck-lite-reclaim <worktree-path>…
+#
+# Refuses the main checkout: its build cache is the user's. Exit 1 when any path was refused.
+# Self-contained (ck-code ships its own ck-reclaim); bash 3.2 compatible.
+
+set -uo pipefail
+
+NAMES="target node_modules dist build out .next .nuxt .svelte-kit .turbo .parcel-cache .angular coverage .gradle .venv venv __pycache__ .pytest_cache .mypy_cache .ruff_cache DerivedData"
+
+case "${1:-}" in
+  -h|--help|"") sed -n '3,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+esac
+
+abs() { CDPATH='' cd -- "$1" 2>/dev/null && pwd -P; }
+
+linked() {  # 0 when $1 is a linked worktree, never the main checkout
+  local gd cd
+  gd="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
+  cd="$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
+  [ "$(abs "$gd")" != "$(abs "$cd")" ]
+}
+
+rc=0
+for wt in "$@"; do
+  root="$(abs "$wt")" || { echo "ck-lite-reclaim: $wt — no such directory, skipped"; rc=1; continue; }
+  if ! linked "$root"; then
+    echo "ck-lite-reclaim: $wt — not a linked worktree, refused (the main checkout's build cache is never touched)"
+    rc=1; continue
+  fi
+  expr=""; for n in $NAMES; do expr="$expr${expr:+ -o} -name $n"; done
+  dirs=()
+  # shellcheck disable=SC2086  # $expr is the word-split -name list
+  while IFS= read -r d; do
+    git -C "$root" check-ignore -q "$d" 2>/dev/null || continue
+    [ -z "$(git -C "$root" ls-files -- "$d" 2>/dev/null | head -1)" ] || continue
+    dirs+=("$d")
+  done < <(find "$root" -mindepth 1 -maxdepth 4 -name .git -prune -o -type d \( $expr \) -prune -print 2>/dev/null)
+  if [ "${#dirs[@]}" -eq 0 ]; then echo "ck-lite-reclaim: nothing to free in $wt"; continue; fi
+  kb="$(du -sk "${dirs[@]}" 2>/dev/null | awk '{s+=$1} END{print s+0}')"
+  rm -rf "${dirs[@]}"
+  awk -v kb="$kb" -v n="${#dirs[@]}" -v wt="$wt" 'BEGIN{
+    if (kb >= 1048576) s = sprintf("%.1f GB", kb/1048576); else s = sprintf("%d MB", kb/1024)
+    printf "ck-lite-reclaim: freed %s (%d build dir(s)) in %s — source and commits kept\n", s, n, wt }'
+done
+exit "$rc"
