@@ -5,6 +5,11 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] — 2026-10-08
+
+### Added
+- **build**: `--auto` runs the waves unattended, with no question until the run ends. Each question takes its recommended answer: every task kept, `CONTINUE` at checkpoints, the narrowest reading of an ambiguous criterion (recorded as a note), and `KEEP` for anything left unmerged. QA and the integrity checks still gate every merge. The manual sign-off is deferred to a checklist in the final report, and each task gets a `manual test pending` note. With no test command the run refuses to start rather than record a test exception.
+
 ## [1.0.1] — 2026-10-05
 
 A stabilization pass from three audits of 1.0.0 (scripts stress-tested on macOS and Linux, every skill cross-checked, a full run on a real project) and a review of the fixes. Plan format unchanged — no migration.
