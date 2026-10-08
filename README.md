@@ -27,6 +27,7 @@ Independent tasks do not have to wait in line:
 ```
 /ck-code-lite:build T-02 T-05     # both at once, one git worktree each
 /ck-code-lite:build --waves       # the whole remaining plan, dependency-ordered
+/ck-code-lite:build --auto        # the same, unattended — no question until it finishes
 ```
 
 Waves come from the plan's own `needs` column (`ck-lite waves` works them out), and two tasks
@@ -50,6 +51,13 @@ wave at a time, each finished task collapsed to a single ledger row, and a check
 three waves offering to stop. Stopping costs nothing — status lives in `tasks/PLAN.md`, so
 `--waves` resumes from it in a fresh context. The four guarantees below hold in a parallel
 run exactly as they do in a single one.
+
+`--auto` (alone, or after task IDs) runs the waves unattended: every question takes its
+recommended answer — all tasks kept, `CONTINUE` at checkpoints, the narrowest reading of an
+ambiguous criterion (recorded as a note), `KEEP` for anything left unmerged. QA and the
+integrity checks still gate every merge. The manual sign-off is deferred, not dropped: each
+task gets a `manual test pending` note and the final report carries one checklist of steps to
+try. With no test command it refuses to start rather than build without a failing test.
 
 ### Every prompt goes through the workflow
 
