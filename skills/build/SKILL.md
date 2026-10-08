@@ -1,7 +1,7 @@
 ---
 name: build
-description: Use when a task from tasks/PLAN.md needs implementing end-to-end with tests, when a task left in progress needs finishing, when several independent tasks can be built at once in isolated worktrees, or when the remaining plan should run in dependency-ordered waves. Argument is an optional task ID such as T-03, several IDs, or `--waves`; with no argument, picks interactively.
-argument-hint: "[T-NN | T-NN T-NN … | --waves]"
+description: Use when a task from tasks/PLAN.md needs implementing end-to-end with tests, when a task left in progress needs finishing, when several independent tasks can be built at once in isolated worktrees, or when the remaining plan should run in dependency-ordered waves. Argument is an optional task ID such as T-03, several IDs, or `--waves`, optionally with `--auto` to run to the end without asking anything; with no argument, picks interactively.
+argument-hint: "[T-NN | T-NN T-NN … | --waves] [--auto]"
 effort: high
 allowed-tools: Bash(git status*) Bash(git diff*) Bash(git log*) Bash(git branch*) Bash(git rev-parse*) Bash(git checkout*) Bash(git switch*) Bash(git add*) Bash(git commit*) Bash(git merge*) Bash(git worktree*) Bash(cd*) Bash(ck-lite*) Skill
 ---
@@ -12,9 +12,10 @@ Implements a task from `tasks/PLAN.md`: failing test, minimum code, cleanup, iso
 manual sign-off, done. Four gates are non-negotiable and appear below in bold:
 **clarify**, **RED**, **QA**, **manual test**.
 
-**Two or more tasks** — two IDs, `--waves`, or a batch answer at Phase 1 — run through
+**Two or more tasks** — two IDs, `--waves`, `--auto`, or a batch answer at Phase 1 — run through
 PARALLEL MODE: `Read` [parallel-mode.md](references/parallel-mode.md) and follow it in place of
-Phases 2–7. Every gate above still applies there.
+Phases 2–7. Every gate above still applies there; under `--auto` the manual test is deferred
+to a checklist in the final report, never dropped.
 
 **A single task never gets a worktree.** Phases 2–7 run inline, in the checkout this skill was
 invoked from, on a branch created in place. Isolation is cut only for tasks that run
@@ -26,11 +27,15 @@ through `ck-lite-qa` ([tdd-cycle.md](../../references/tdd-cycle.md#running-tests
 
 ## INPUT
 
-`$ARGUMENTS` is empty, one task ID, several task IDs, or `--waves`.
+`$ARGUMENTS` is empty, one task ID, several task IDs, or `--waves` — any of the last three
+optionally with `--auto`.
 
 - **One `T-NN`** — Phases 1–7.
 - **Two or more IDs, or `--waves`** — PARALLEL MODE. `--waves` always orchestrates, even when
   one task remains: that wave is dispatched solo, never built inline here.
+- **`--auto`** — PARALLEL MODE with no question until the run ends: every question takes its
+  recommended default ([auto mode](references/parallel-mode.md#auto-mode----auto)). Alone it
+  means `--waves --auto`; with one ID it orchestrates that task solo, like `--waves`.
 - **Empty** — the Phase 1 menu.
 
 ## PHASE 1: TASK SELECTION

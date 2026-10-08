@@ -1,6 +1,6 @@
 # PARALLEL MODE — the orchestrator
 
-Read once, when `build` gets two or more task IDs, `--waves`, or a batch answer from the
+Read once, when `build` gets two or more task IDs, `--waves`, `--auto`, or a batch answer from the
 Phase 1 menu. From here on this file is the procedure; the skill's Phases 2–7 never run in
 this context.
 
@@ -16,6 +16,31 @@ peer there is nothing to isolate from, and a worktree's cold dependency install 
 This context **never enters isolation**: no `git worktree add`, no `EnterWorktree`, no checkout
 away from `$TARGET`. Rules for who may create a worktree and what may outlive a run:
 [worktree-policy.md](../../../references/worktree-policy.md).
+
+## Auto mode — `--auto`
+
+`--auto` runs the whole scope to the end with **no `AskUserQuestion` at all**. Every question
+below is replaced by its default — the recommended answer — announced in one line
+(`Auto: <decision>`) where the question would have been:
+
+| Question                 | Auto decision                                                                                                                                                                                                                                                                            |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0 checkpoint            | print the ledger, `CONTINUE`                                                                                                                                                                                                                                                             |
+| P2 more than three waves | announce the count, no re-scope                                                                                                                                                                                                                                                          |
+| P3 wave selection        | every task kept                                                                                                                                                                                                                                                                          |
+| P3 `test: (none)`        | settled **before P1 writes anything**: `ck-lite commands`; `(none)` → resolve it via [stack-commands.md](../../../references/stack-commands.md) and write it into `## Commands`; still none → refuse the run in one line (`--auto needs a test command`) — never record a test exception |
+| P3 ambiguity             | take the narrowest reading closest to the literal criteria and the existing code's conventions; `ck-lite note T-NN "auto: assumed <reading>"`, then pass it as `Settled at P3`                                                                                                           |
+| P7 manual gate           | deferred: `ck-lite note T-NN "manual test pending (auto run)"`, then complete the task as on `PASS` so its dependents schedule                                                                                                                                                           |
+| P8 unmerged worktree     | `KEEP` (through `ck-lite-reclaim`) for any branch with commits; `DISCARD` only for a 🚫 blocked branch with an empty diff; never `MERGE NOW`                                                                                                                                             |
+
+Everything else is unchanged: QA with `reuse: no`, the integrity checks, the merged-suite
+verification, held branches never merged. A hard stop (dirty tree, drift, a failing merged
+suite, an unaccounted worktree) still ends the run — reported, never asked. A task-builder
+`blocked` verdict is excluded as usual and the run carries on.
+
+The final report adds a **Manual test checklist**: `ck-lite criteria <IDs completed this run>`,
+then the build skill's Phase 6 steps for each task, plus every `auto: assumed` note. An issue
+the user finds there is a new task (`/ck-code-lite:start`), never a reopened one.
 
 ## P0 Context budget — enforced, not advisory
 
@@ -76,7 +101,7 @@ one `AskUserQuestion`, at most 4 questions**:
   from this run (it stays `todo`); unchecking all of them aborts
 - `test: (none)`, first wave only — name a test command (written into `## Commands` before
   dispatch) or record a documented exception for the run: `ck-lite note T-NN "test exception:
-  <reason>"`, one call per task (`note` takes one ID), passed to every agent as settled and to QA as `exception: <reason>`
+<reason>"`, one call per task (`note` takes one ID), passed to every agent as settled and to QA as `exception: <reason>`
 - any genuine ambiguity in those criteria
 
 The agents have no user to ask, so all of it is settled here or not at all, and each answer goes
@@ -205,11 +230,11 @@ each with its reason — a task never drops out of a run silently.
 Then **reconcile before reporting**: return to base, `ck-lite worktrees "$TARGET"`, and classify
 every worktree **this run created** (the ledger names each one):
 
-| Survivor | Action |
-|---|---|
-| merged | retire it here — a P7 miss; say so |
-| unmerged, ledger says held / conflicted / blocked | goes to the question below |
-| unmerged, in no ledger row | unaccounted work — report it and stop; never delete |
+| Survivor                                          | Action                                              |
+| ------------------------------------------------- | --------------------------------------------------- |
+| merged                                            | retire it here — a P7 miss; say so                  |
+| unmerged, ledger says held / conflicted / blocked | goes to the question below                          |
+| unmerged, in no ledger row                        | unaccounted work — report it and stop; never delete |
 
 A worktree in no ledger row that P1 already listed was there before the run: report it again,
 never touch it.
@@ -247,12 +272,12 @@ checkout's files, which hold this run's status edits; a worktree's own copy is t
 
 Every git step with a safety rule is a `ck-lite` call, so the rule is code rather than prose:
 
-| Call | Guarantee |
-|---|---|
-| `ck-lite worktrees "$TARGET"` | prunes stale records, never lists the main checkout; `merged` means 0 commits ahead of `$TARGET` |
-| `ck-lite try-merge "<branch>"` | `DIRTY` when a path the branch changes is uncommitted here; else `git merge-tree`, which never touches the index or the tree — on an older git it refuses staged work, then aborts its dry run |
-| `ck-lite retire "$TARGET" "<branch>"` | removes only a clean linked worktree whose branch is fully merged, then `git branch -d`; uncommitted work or a failure keeps both and says so |
-| `ck-lite base "$ROOT" "$TARGET"` | exit 1 and the real location on drift |
+| Call                                  | Guarantee                                                                                                                                                                                      |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ck-lite worktrees "$TARGET"`         | prunes stale records, never lists the main checkout; `merged` means 0 commits ahead of `$TARGET`                                                                                               |
+| `ck-lite try-merge "<branch>"`        | `DIRTY` when a path the branch changes is uncommitted here; else `git merge-tree`, which never touches the index or the tree — on an older git it refuses staged work, then aborts its dry run |
+| `ck-lite retire "$TARGET" "<branch>"` | removes only a clean linked worktree whose branch is fully merged, then `git branch -d`; uncommitted work or a failure keeps both and says so                                                  |
+| `ck-lite base "$ROOT" "$TARGET"`      | exit 1 and the real location on drift                                                                                                                                                          |
 
 A kept worktree is printed in the report with its removal command:
 `git worktree remove --force <path> && git branch -D <branch>`.
@@ -288,7 +313,10 @@ Final report: the ledger, then
 - **Never trust a self-report** — done is a non-empty diff plus a `QA: PASS` with `reuse: no`.
 - **Never re-dispatch a ◐ partial from scratch** — resume it with `SendMessage`.
 - **Never merge a branch that failed QA or conflicted**, and never into a protected branch.
-- **Never skip the manual gate** — once per wave, on `$TARGET`.
+- **Never skip the manual gate** — once per wave, on `$TARGET`. Under `--auto` it is deferred,
+  never dropped: a pending note per task and the checklist in the final report.
+- **Never ask under `--auto`** — every question takes its row in the auto table; never record a
+  test exception, never merge a held branch, never discard one with commits.
 - **Never leave a merged task's worktree standing**, and never remove one whose branch is not
   fully merged into `$TARGET` — retire through `ck-lite retire` only. `git worktree prune` is
   not removal.
