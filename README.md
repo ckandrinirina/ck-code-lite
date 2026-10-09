@@ -91,7 +91,11 @@ and cannot be skipped:
 
 `docs/ARCHITECTURE.md` — stack, folder structure, decisions with their reasons, and a
 `## Commands` block holding the project's real test/build/lint commands. `build` reads it
-every run and passes those commands to QA. Past 150 lines, `start` moves the largest area out
+every run and passes those commands to QA. Each `## Stack` line holds a version `start` looked
+up in the package registry (never from model memory), its verified date, and a few current
+best-practice bullets from context7. That makes it a cache: `build` codes to those bullets
+without fetching anything, looks up only a dependency a task adds, and `start` refreshes a
+line once it is 90 days old. Past 150 lines, `start` moves the largest area out
 into `docs/areas/<area>.md` and lists it under `## Areas`; from then on a task reads the core
 plus only the area docs its files touch.
 
