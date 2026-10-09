@@ -1,6 +1,6 @@
 # ck-code-lite
 
-Three skills. Two files. Ship an app fast without losing the steps that keep it correct.
+Four skills. Two files. Ship an app fast without losing the steps that keep it correct.
 
 `ck-code-lite` is the fast path: describe what you want, get an architecture doc and a
 flat task list, then build tasks one at a time — each with a failing test first, a bounded
@@ -13,6 +13,7 @@ scripted, so a run's cost tracks the work in front of it, not the age of the pro
 | Skill | Use it when | Produces |
 |---|---|---|
 | `/ck-code-lite:start` | A project needs its plan — new idea, existing codebase, or more tasks | `docs/ARCHITECTURE.md`, `tasks/PLAN.md` |
+| `/ck-code-lite:design` | A project with a UI should be designed with Claude Design first — or you have a claude.ai/design URL to link | `docs/design-brief.md`, `docs/design-system/` |
 | `/ck-code-lite:build` | Implementing one task end to end — or several at once, in waves | Code, tests, tasks marked `done` |
 | `/ck-code-lite:ship` | Committing finished work | A conventional commit and a PR |
 
@@ -21,6 +22,30 @@ scripted, so a run's cost tracks the work in front of it, not the age of the pro
 /ck-code-lite:build
 /ck-code-lite:ship
 ```
+
+### Design first with Claude Design
+
+A project with a UI is offered a design-first step before anything is built — once, in
+`start`'s single question round. Say yes and Claude describes the product back to you, asks
+only what the design depends on (brand, platform, dark mode), and writes
+`docs/design-brief.md`: a complete prompt for [claude.ai/design](https://claude.ai/design),
+with real screens, real content, every empty, loading and error state, and output conventions
+that make the result machine-readable. The brief is copied to your clipboard.
+
+```
+/ck-code-lite:design "a habit tracker for runners"   # describe → brief (or let start chain it)
+# paste the brief at claude.ai/design, iterate, copy the project URL
+/ck-code-lite:design https://claude.ai/design/p/…    # link: tokens + every card cached in the repo
+/ck-code-lite:build                                  # UI tasks port the cached components exactly
+```
+
+Linking caches the whole design system under `docs/design-system/` — foundations as tokens,
+every component and screen card verbatim — so builds never touch the network. The first UI
+task writes the token file; every UI task reads the screen's card, then each component's card,
+and ports markup, class names and CSS exactly; QA fails a literal color, size or spacing value a
+token covers. A UI task reached while the design is still pending asks once: paste the URL to
+link now, build without it, or stop. `/ck-code-lite:design` again refreshes the cache — one call
+when nothing changed.
 
 Independent tasks do not have to wait in line:
 
@@ -73,7 +98,7 @@ whose own router owns the prompt. Pure local read, always exits 0.
 
 ### Wrong-plugin guard
 
-`start`, `build` and `ship` refuse to run in a full ck-code project (`tasks/VERSION.md` or
+`start`, `design`, `build` and `ship` refuse to run in a full ck-code project (`tasks/VERSION.md` or
 `docs/architecture/` at the repo root). They print a ⛔ warning naming the `/ck-code:` command
 to use, and stop before reading or writing anything, so a mistyped command never writes a
 second plan beside the stories. ck-code does the same in the other direction.
@@ -177,10 +202,11 @@ and `ship`, and running a project through both layouts will not end well.
 
 | | ck-code-lite | ck-code |
 |---|---|---|
-| Skills | 3 | 12 |
+| Skills | 4 | 15 |
 | Planning artefacts | 2 files | epics, per-story files, generated indexes |
 | Architecture | 1 core doc + optional area docs | per-feature docs + shared globals |
 | Parallel builds | yes, inside `build` | yes, a dedicated skill with conflict analysis |
+| Claude Design | brief, link, full cache (`design`) | brief (`spec`), link, lazy cache (`design ds`) |
 | Generated expert skills | no | yes (`team`) |
 | Bug triage workflow | no | yes (`fix`) |
 | Best for | getting an app working | a codebase several people maintain |
