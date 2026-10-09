@@ -71,6 +71,13 @@ hook stays silent on a slash command, on a reply shorter than 12 characters (an 
 running skill), in a repo that never adopted the workflow, and in a full ck-code project,
 whose own router owns the prompt. Pure local read, always exits 0.
 
+### Wrong-plugin guard
+
+`start`, `build` and `ship` refuse to run in a full ck-code project (`tasks/VERSION.md` or
+`docs/architecture/` at the repo root). They print a ⛔ warning naming the `/ck-code:` command
+to use, and stop before reading or writing anything, so a mistyped command never writes a
+second plan beside the stories. ck-code does the same in the other direction.
+
 ## The four guarantees
 
 Speed comes from deleting ceremony, not from deleting checks. These four are hard gates
