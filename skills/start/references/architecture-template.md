@@ -51,6 +51,10 @@ One line each, always with the reason. New decisions append at the bottom.
 - Every route handler returns a typed result, never a raw response object
 - Errors carry a machine-readable `code` alongside the message
 
+## Design
+
+- Claude Design: linked — Acme UI (docs/design-system/)
+
 ## Areas
 
 | Area | Doc | Paths |
@@ -59,6 +63,7 @@ One line each, always with the reason. New decisions append at the bottom.
 ```
 
 `## Areas` is absent until the first split — a small project never has it.
+`## Design` is absent until the design question has been answered — a CLI or library never has it.
 
 ## Section rules
 
@@ -97,6 +102,10 @@ decision that only one area's code obeys moves to that area's doc at the next sp
 
 **Conventions** — only rules a reader could not infer from the code in a minute. Skip
 anything the linter already enforces.
+
+**Design** — exactly one line, `Claude Design: linked | pending | none`, mirroring the files
+that carry the state ([design-system.md § Design state](../../../references/design-system.md#design-state)).
+`start` and `design` are its only writers. It stays in the core: every UI task needs it.
 
 ## Areas
 

@@ -101,6 +101,19 @@ missing, resolve it now via [stack-commands.md](../../references/stack-commands.
 Then read the files in `files:` that already exist, plus the nearest existing test file —
 its conventions govern the tests written in Phase 3.
 
+**Design — UI tasks only** ([§ UI task](../../references/design-system.md#ui-task)). The
+`## Design` line `ck-lite context` printed (or `ls -d docs/design-system docs/design-brief.md`)
+gives the state:
+
+- **linked** → `Read` `docs/design-system/index.md` and follow
+  [§ Component lookup order](../../references/design-system.md#component-lookup-order) and the
+  fidelity rules through Phases 3–4 — a `Screens` card first, then each component's card,
+  ported exactly. `tokensPath` `"pending"` → this task materializes the tokens
+  ([§ Token materialization](../../references/design-system.md#token-materialization)).
+- **pending** → the design is being made at claude.ai/design. Add the design question to
+  Phase 2.3's round — asked even when nothing else is ambiguous.
+- **none / undecided / not a UI task** → nothing; build from the architecture doc.
+
 ### 2.2 Branch — decided, announced, not asked
 
 First, when resuming a `doing` task, look for its earlier work: a `branch: … · worktree: …`
@@ -128,6 +141,21 @@ moves the working tree for the rest of the run.
 **At most one `AskUserQuestion`, at most 4 questions**, and only where two readings of the
 acceptance criteria would produce materially different code. Unambiguous criteria → no
 question at all; a ceremonial round is a defect.
+
+The one exception is a UI task whose design is **pending** (Phase 2.1). The round then carries:
+
+```
+Question: The Claude Design system for this UI is not linked yet. Build against it?
+Header:   Design
+Options:
+  - Paste the claude.ai/design URL (Other) — links it now, then builds this task against it.
+  - Build without it — UI from the architecture doc; restyle later from the design.
+  - Stop — I'll finish the design first.
+```
+
+A URL → invoke `/ck-code-lite:design <url>` via the Skill tool, then continue as **linked**.
+`Build without it` → `ck-lite note T-05 "built before the design was linked"` and continue.
+`Stop` → leave the task `todo` and end the run.
 
 ### 2.4 Mark it started
 
@@ -157,6 +185,7 @@ Delegate to `ck-code-lite:qa-validator`, supplying inline:
 - the `## Commands` as ordered `label=command` pairs — `test`, `build`, `lint`, dropping `(none)`
 - the working directory, and `reuse: yes`
 - under a recorded test exception only, `exception: <reason>`
+- for a UI task with a linked design only, `design: docs/design-system/index.md`
 
 `reuse: yes` lets it report the closing `test` run as `REUSED` when not a byte of code changed
 since — that suite already passed on this exact state. Build and lint always run, and every
@@ -235,4 +264,8 @@ that command as the next step.
   memory** — the bullets are the cache; only a new dependency costs a lookup
   ([stack-research.md](../../references/stack-research.md)).
 - **Never create a file under `tasks/` other than `PLAN.md`.**
+- **Never write a literal visual value a linked design defines a token for, and never build a
+  component a cached card covers without reading the card** — the design is the spec.
+- **Never call `DesignSync` here** except through `/ck-code-lite:design` after the user pasted a
+  URL — UI builds from the committed cache.
 - **Never commit or push here** — that is `/ck-code-lite:ship`.

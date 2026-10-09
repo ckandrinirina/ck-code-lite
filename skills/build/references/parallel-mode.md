@@ -29,6 +29,7 @@ below is replaced by its default — the recommended answer — announced in one
 | P2 more than three waves | announce the count, no re-scope                                                                                                                                                                                                                                                          |
 | P3 wave selection        | every task kept                                                                                                                                                                                                                                                                          |
 | P3 `test: (none)`        | settled **before P1 writes anything**: `ck-lite commands`; `(none)` → resolve it via [stack-commands.md](../../../references/stack-commands.md) and write it into `## Commands`; still none → refuse the run in one line (`--auto needs a test command`) — never record a test exception |
+| P3 design pending        | build without it: `ck-lite note T-NN "built before the design was linked"` on each UI task — never stop the run for it |
 | P3 ambiguity             | take the narrowest reading closest to the literal criteria and the existing code's conventions; `ck-lite note T-NN "auto: assumed <reading>"`, then pass it as `Settled at P3`                                                                                                           |
 | P7 manual gate           | deferred: `ck-lite note T-NN "manual test pending (auto run)"`, then complete the task as on `PASS` so its dependents schedule                                                                                                                                                           |
 | P8 unmerged worktree     | `KEEP` (through `ck-lite-reclaim`) for any branch with commits; `DISCARD` only for a 🚫 blocked branch with an empty diff; never `MERGE NOW`                                                                                                                                             |
@@ -57,15 +58,15 @@ the user finds there is a new task (`/ck-code-lite:start`), never a reopened one
 ## P1 Freeze the target
 
 ```bash
-git status --porcelain -- . ':!tasks/PLAN.md' ':!docs/ARCHITECTURE.md' ':!docs/areas' && git branch --show-current && git rev-parse --show-toplevel
+git status --porcelain -- . ':!tasks/PLAN.md' ':!docs/ARCHITECTURE.md' ':!docs/areas' ':!docs/design-system' ':!docs/design-brief.md' && git branch --show-current && git rev-parse --show-toplevel
 ```
 
 Anything else uncommitted, or a detached HEAD, stops the run: a worktree is cut from the last
 commit, so uncommitted code would be invisible to its agent. Say so and point at
 `/ck-code-lite:ship` — or, when the dirty files are a `doing` task's work, at
-`/ck-code-lite:build T-NN` to finish it first. The plan and the architecture docs may be dirty
-(a fresh `start` leaves them so): agents read both from `$ROOT` through their `Context` line,
-never from their worktree. The branch becomes `$TARGET` and the toplevel
+`/ck-code-lite:build T-NN` to finish it first. The plan, the architecture docs and the design files
+may be dirty (a fresh `start` or `design` leaves them so): agents read them from `$ROOT` through
+their `Context` and `Design` lines, never from their worktree. The branch becomes `$TARGET` and the toplevel
 `$ROOT`, recorded once and never re-derived — a value read again later reports wherever the
 run drifted to, which is what the checks exist to catch. On `main`, `master`, `develop` or
 `release/*`, create `batch/<slug>` in place (`git checkout -b`) and announce it; that branch is
@@ -92,6 +93,12 @@ a later wave, caps each wave at 4, and lists every unschedulable task with its r
 `todo`, a need outside scope, a cycle, a corrupt entry). Print its output as the wave plan.
 More than three waves means many sequential merge cycles — say so and offer a re-scope.
 
+**Design tokens not yet materialized.** When `docs/design-system/manifest.json` has
+`"tokensPath": "pending"` and a wave holds two or more UI tasks
+([§ UI task](../../../references/design-system.md#ui-task)), keep the lowest-ID one and move
+the others to the next wave, announced in one line — only one task may write the token file.
+Once `tokensPath` is set (P7), later waves fan out normally.
+
 ## P3 Confirm — one question call
 
 `ck-lite criteria <this wave's IDs>` and, on the first wave, `ck-lite commands`. Then **exactly
@@ -103,6 +110,9 @@ one `AskUserQuestion`, at most 4 questions**:
   dispatch) or record a documented exception for the run: `ck-lite note T-NN "test exception:
 <reason>"`, one call per task (`note` takes one ID), passed to every agent as settled and to QA as `exception: <reason>`
 - any genuine ambiguity in those criteria
+- design **pending** and the wave holds a UI task — the build skill's Phase 2.3 design question,
+  asked once per run: a pasted URL runs `/ck-code-lite:design <url>` before dispatch, so the
+  wave builds against the link; `Build without it` notes each UI task; `Stop` drops them
 
 The agents have no user to ask, so all of it is settled here or not at all, and each answer goes
 into the matching dispatch prompt.
@@ -162,7 +172,8 @@ One `ck-code-lite:qa-validator` per ✓ task, all in a single message, each with
 and criteria, the returned `files:`, the `## Commands` as `label=command` pairs (`(none)`
 dropped), `reuse: no`, the working directory — the branch's worktree path from
 `git worktree list` (fan-out) or `$ROOT` (solo) — and `exception: <reason>` for a task under a
-recorded test exception.
+recorded test exception, and `design: <$ROOT>/docs/design-system/index.md` for a UI task with a
+linked design.
 
 `reuse: no` always: an agent's own runs are never QA's evidence. A fan-out branch without
 `QA: PASS` is **held** — never merged and fixed later. A solo task without `QA: PASS` already
@@ -217,6 +228,10 @@ A verdict with `stack:` lines → `Edit` each into `docs/ARCHITECTURE.md` `## St
 line for the same technology is replaced, never duplicated). The agent never writes the file:
 two peers appending to one section is a merge conflict.
 
+A verdict with `tokens:` → set `tokensPath` in `docs/design-system/manifest.json` to that path;
+with `design:` lines → `ck-lite note T-NN "<line>"` for each. Same reason: the agent never
+writes either file.
+
 Record its ledger row and drop the wave's detail. Close the wave with the return-to-base check and one line:
 `Base: <$ROOT> on <$TARGET> · worktrees standing: N`.
 
@@ -263,13 +278,14 @@ Task T-NN · placement: worktree            ← solo: "placement: solo on <TARGE
 Commands: test: <cmd> · test-one: <cmd or (none)> · build: <cmd> · lint: <cmd>
 Context: CK_LITE_PLAN=<$ROOT>/tasks/PLAN.md CK_LITE_ARCH=<$ROOT>/docs/ARCHITECTURE.md ck-lite context T-NN
 TDD rules: <absolute path of references/tdd-cycle.md>
+Design: <absolute path of $ROOT/docs/design-system/index.md and of references/design-system.md, tokensPath: pending|set>   ← UI task with a linked design only
 Settled at P3: <the user's answer for this task, or "nothing">
 
 Return only the verdict block.
 ```
 
 The `tdd-cycle.md` path is this skill's base directory + `../../references/tdd-cycle.md`,
-resolved to an absolute path once per run. The `Context` line points `ck-lite` at the main
+resolved to an absolute path once per run; `design-system.md` sits beside it. The `Context` line points `ck-lite` at the main
 checkout's files, which hold this run's status edits; a worktree's own copy is the last commit.
 
 ## Worktree lifecycle

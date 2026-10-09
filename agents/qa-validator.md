@@ -35,6 +35,7 @@ The caller supplies all of these inline. You never open `tasks/PLAN.md` to find 
 - The working directory to run them in
 - `reuse: yes` or `reuse: no`
 - Optionally `exception: <reason>` — the user recorded that this task has no automated test
+- Optionally `design: <path to docs/design-system/index.md>` — a UI task with a linked Claude Design
 
 If the criteria or the command list are missing, say so and stop. Do not go looking.
 
@@ -55,7 +56,12 @@ If the criteria or the command list are missing, say so and stop. Do not go look
 2. Map each criterion to the test that covers it — `Grep` the test files for its behaviour,
    reading only the matches. A run that passed covers every test it contains; you never re-run
    a single test to prove one criterion.
-3. Only when the 40 lines do not name the failing assertion, `Read` the printed log path —
+3. **Design fidelity** — only with `design:`. Read its `## Foundations` and `## Components`
+   tables, then `Grep` the task's changed UI files for literal hex, `rgb(`/`hsl(`, `px`
+   font sizes, `font-family`, radius, shadow and spacing values. Each literal that a token
+   covers is a `FAIL` finding under a final `Design fidelity` section — cite `file:line` and
+   the token that should have been used. A finding fails the verdict like any criterion.
+4. Only when the 40 lines do not name the failing assertion, `Read` the printed log path —
    with an offset, never whole.
 
 ## Outputs
@@ -75,7 +81,8 @@ QA: PASS
 QA: FAIL — <which command failed> — <one-line excerpt>
 ```
 
-`PASS` only when every criterion is `PASS` and every command reported `PASS` or `REUSED`.
+`PASS` only when every criterion is `PASS`, every command reported `PASS` or `REUSED`, and
+there is no design fidelity finding.
 A single `NOT-COVERED` criterion is a `FAIL` — an untested criterion is not a met one.
 
 Under `exception: <reason>` there is no `test` command: you run `build` and `lint` only, every

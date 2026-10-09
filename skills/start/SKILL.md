@@ -20,6 +20,7 @@ Format contract: [plan-format.md](../../references/plan-format.md) — every pla
 write is a `ck-lite` call; this skill never `Read`s or `Edit`s `tasks/PLAN.md`.
 Command resolution: [stack-commands.md](../../references/stack-commands.md).
 Versions and idioms: [stack-research.md](../../references/stack-research.md).
+Design state and the design-first offer: [design-system.md](../../references/design-system.md).
 Output filtering (optional): [rtk.md](../../references/rtk.md).
 
 ## INPUT
@@ -28,8 +29,9 @@ Output filtering (optional): [rtk.md](../../references/rtk.md).
 
 - **A path that exists** — read it as the source of requirements.
 - **Free text** — treat it as the requirement itself.
-- **Empty** — ask for the goal in Phase 3, or in EXTEND mode list what is already planned
-  and ask what to add.
+- **Empty** — `docs/design-brief.md` exists → it is the requirement (the user described the
+  project in `/ck-code-lite:design` first). Otherwise ask for the goal in Phase 3, or in
+  EXTEND mode list what is already planned and ask what to add.
 
 ## PHASE 0: PLUGIN GUARD
 
@@ -50,6 +52,7 @@ command, with no offer to continue anyway:
 
 ```bash
 ls docs/ARCHITECTURE.md tasks/PLAN.md 2>/dev/null
+ls -d docs/design-system docs/design-brief.md 2>/dev/null; grep -h 'Claude Design:' docs/ARCHITECTURE.md 2>/dev/null
 ls package.json Cargo.toml pyproject.toml setup.py requirements.txt go.mod Gemfile composer.json CMakeLists.txt 2>/dev/null
 ```
 
@@ -67,7 +70,8 @@ Announce the mode in one line, e.g. `Mode: ADOPT — package.json found, no plan
 
 Scope depends on the mode. **Hard cap: 5 file reads in this phase.**
 
-**NEW** — read the spec file if `$ARGUMENTS` was a path. Nothing else exists to read.
+**NEW** — read the spec file if `$ARGUMENTS` was a path, else `docs/design-brief.md` when it
+exists, plus `docs/design-system/index.md` when linked. Nothing else exists to read.
 
 **ADOPT** — a bounded survey, no more:
 
@@ -125,7 +129,28 @@ Never ask:
 - Preference questions with an obvious default — pick the default and say so
 
 **If nothing is genuinely ambiguous, skip this phase silently.** A ceremonial question
-round is a defect, not diligence.
+round is a defect, not diligence — with one exception, below.
+
+### 3.1 Design first — always offered once
+
+When the project has a human-facing visual surface (a web page, an app screen, a desktop UI —
+not a CLI, library, daemon or pure API) and the design state from Phase 1 is `undecided`
+([§ Design state](../../references/design-system.md#design-state)), the round **always**
+includes this question, in every mode, even when nothing else is asked:
+
+```
+Question: Design the UI with Claude Design before building it?
+Header:   Design
+Options:
+  - Design first (Recommended) — after the plan, I describe the product with you and write the
+    prompt for claude.ai/design. UI tasks then build against its exact tokens and components.
+  - I already have one — link my claude.ai/design design system (paste its URL as Other).
+  - Skip — build the UI from the architecture doc alone.
+```
+
+It is one of the 4 questions, never a second round. `pending`, `linked` or `declined` → never
+asked: the decision is made. The answer is applied in Phase 4 (`Skip`) and Phase 6 (the
+other two).
 
 ## PHASE 4: WRITE ARCHITECTURE
 
@@ -140,6 +165,13 @@ EXTEND refreshes a stale line by `Edit`ing it in place.
 In ADOPT mode, `## Stack` and `## Folder structure` describe what the survey actually
 found. Do not invent structure the repository does not have, and do not propose a
 restructure — this skill records reality, it does not reorganise it.
+
+**`## Design`** — when the design state is not `undecided`, or Phase 3.1 was answered, the doc
+carries the one-line `## Design` section after `## Conventions`, per
+[§ Design state](../../references/design-system.md#design-state): `Skip` writes
+`- Claude Design: none — declined at start`; an existing brief or cache writes `pending` or
+`linked`. `Design first` and `I already have one` write nothing here — `/ck-code-lite:design`
+sets the line in Phase 6.
 
 **EXTEND** — targeted `Edit` of the affected sections only (with no `docs/ARCHITECTURE.md` yet,
 write it as NEW / ADOPT does). A new feature typically adds
@@ -227,8 +259,21 @@ Print:
 **Commands:** test: <cmd> · build: <cmd> · lint: <cmd>
 **Stack:** <n> versions verified (<name> <version>, …) · <n> refreshed · <n> idioms unverified
 
+**Design:** linked (<project>) | pending — brief docs/design-brief.md | none | n/a
+
 Next: /ck-code-lite:build
 ```
+
+### Design hand-off
+
+Applies the Phase 3.1 answer, after the report, without asking again:
+
+- **Design first** → invoke `/ck-code-lite:design` via the Skill tool, no argument. It reads the
+  architecture and plan just written, describes the product with the user and writes the brief.
+- **I already have one** → invoke `/ck-code-lite:design <the URL>` when the answer carried one,
+  else `/ck-code-lite:design link` (the picker).
+- **Skip**, not asked, or already decided → nothing. A `pending` design gets one line: the brief
+  is at `docs/design-brief.md`, link it with `/ck-code-lite:design <url>` when ready.
 
 If any command resolved to `(none)`, say so plainly here and note that `test: (none)`
 will stop the first build until a test runner is chosen.
@@ -255,6 +300,9 @@ small project is noise. Never a block — the user decides when to graduate.
   worktree here strands both artifacts on a branch the next `build` run never reads
   ([worktree-policy.md](../../references/worktree-policy.md)).
 - **Never ask more than one round of questions**, and never more than 4 questions in it.
+- **Never skip the design-first question** (Phase 3.1) for a project with a visual surface and
+  an `undecided` design state, and **never ask it again** once the state is `pending`, `linked`
+  or `declined`.
 - **Never ask what the manifest, README, or an existing architecture doc already answers.**
 - **Never create a file under `tasks/` other than `PLAN.md`.** No epics, no per-task files,
   no index, no archive. If the project needs that structure, it has outgrown lite — install `ck-code`
