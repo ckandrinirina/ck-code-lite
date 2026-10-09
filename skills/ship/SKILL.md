@@ -29,6 +29,21 @@ Absolute and non-overridable, even if explicitly asked.
 - **Empty** — resolve from the branch name `task/T-NN-*`; if that fails, **STANDALONE
   MODE**: describe the change from the diff alone.
 
+## PHASE 0: PLUGIN GUARD
+
+ck-code markers: !`cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && ls -d tasks/VERSION.md docs/architecture 2>/dev/null | grep . || echo none`
+
+`none` → continue. Anything else (`tasks/VERSION.md` is ck-code's layout stamp,
+`docs/architecture` its feature docs) is a full ck-code project, whose state ck-code-lite
+cannot read or keep in step. Print exactly this, then **stop** before any read, write or
+command, with no offer to continue anyway:
+
+```
+⛔ This is a ck-code project, not a ck-code-lite one.
+   /ck-code-lite:ship would commit without moving the story's status or its linked issue.
+   Use /ck-code:ship instead.
+```
+
 ## PHASE 1: BRANCH AND EXISTING PR
 
 ```bash
@@ -192,6 +207,8 @@ Then point at the next step: `/ck-code-lite:build` for the next ready task.
 
 ## RULES
 
+- **Never run in a full ck-code project** — Phase 0 stops on `tasks/VERSION.md` or
+  `docs/architecture/` and names the `/ck-code:*` command to use instead.
 - **Never add AI references** to commits, PRs, branch names, or comments. Absolute.
 - **Never commit to `main`, `master`, `develop`, or `release/*`** without an explicit
   Phase 1 override.

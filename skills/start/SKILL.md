@@ -31,6 +31,21 @@ Output filtering (optional): [rtk.md](../../references/rtk.md).
 - **Empty** — ask for the goal in Phase 3, or in EXTEND mode list what is already planned
   and ask what to add.
 
+## PHASE 0: PLUGIN GUARD
+
+ck-code markers: !`cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && ls -d tasks/VERSION.md docs/architecture 2>/dev/null | grep . || echo none`
+
+`none` → continue. Anything else (`tasks/VERSION.md` is ck-code's layout stamp,
+`docs/architecture` its feature docs) is a full ck-code project, whose state ck-code-lite
+cannot read or keep in step. Print exactly this, then **stop** before any read, write or
+command, with no offer to continue anyway:
+
+```
+⛔ This is a ck-code project, not a ck-code-lite one.
+   /ck-code-lite:start would write a second plan in tasks/PLAN.md beside the stories.
+   Use /ck-code:plan (or /ck-code:guide to pick the step) instead.
+```
+
 ## PHASE 1: MODE DETECT
 
 ```bash
@@ -227,6 +242,8 @@ small project is noise. Never a block — the user decides when to graduate.
 
 ## RULES
 
+- **Never run in a full ck-code project** — Phase 0 stops on `tasks/VERSION.md` or
+  `docs/architecture/` and names the `/ck-code:*` command to use instead.
 - **Never `Write` over an existing `docs/ARCHITECTURE.md`** — always `Edit` — and never
   `Read`, `Write` or `Edit` `tasks/PLAN.md`: `ck-lite init|add` are its only writers. This makes
   every re-run safe.
