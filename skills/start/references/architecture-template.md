@@ -4,6 +4,9 @@ One core file, plus optional area docs once it grows. `build` reads the core and
 docs a task's `files:` touch (`ck-lite context T-NN`), so every line in the core is paid on
 every build and every line in an area doc only by the tasks that work there.
 
+The versions below show the format only — never copy them; every one is looked up
+([stack-research.md](../../../references/stack-research.md)).
+
 ```markdown
 # ARCHITECTURE — <project name>
 
@@ -11,11 +14,12 @@ every build and every line in an area doc only by the tasks that work there.
 
 ## Stack
 
-- **Language:** TypeScript 5.x (Node 22)
-- **Framework:** Hono
-- **Storage:** SQLite via better-sqlite3
-- **Testing:** Vitest
-- **Package manager:** pnpm
+- **Language:** TypeScript 5.9 (Node 24 LTS) — verified 2026-10-08
+- **Framework:** Hono 4.9 — verified 2026-10-08
+  - Chain routes off one `app` so the RPC client infers their types
+- **Storage:** SQLite via better-sqlite3 12.4 — verified 2026-10-08
+- **Testing:** Vitest 3.2 — verified 2026-10-08
+- **Package manager:** pnpm 10 — verified 2026-10-08
 
 ## Commands
 
@@ -60,7 +64,10 @@ One line each, always with the reason. New decisions append at the bottom.
 
 **Stack** — what is actually installed, resolved from the manifest and lockfile. Never
 list something aspirational; if it is not a dependency yet, it belongs under Decisions
-as an intent.
+as an intent. Each line carries its version, a `verified` date, and up to 4 idiom bullets — the
+project's cache of current practice, filled and refreshed per
+[stack-research.md](../../../references/stack-research.md). `build` reads these bullets
+instead of looking anything up, so they are the coding style every task follows.
 
 **Commands** — verbatim runnable commands, resolved via
 [stack-commands.md](../../../references/stack-commands.md). This section is read by

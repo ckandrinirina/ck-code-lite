@@ -3,7 +3,7 @@ name: build
 description: Use when a task from tasks/PLAN.md needs implementing end-to-end with tests, when a task left in progress needs finishing, when several independent tasks can be built at once in isolated worktrees, or when the remaining plan should run in dependency-ordered waves. Argument is an optional task ID such as T-03, several IDs, or `--waves`, optionally with `--auto` to run to the end without asking anything; with no argument, picks interactively.
 argument-hint: "[T-NN | T-NN T-NN … | --waves] [--auto]"
 effort: high
-allowed-tools: Bash(git status*) Bash(git diff*) Bash(git log*) Bash(git branch*) Bash(git rev-parse*) Bash(git checkout*) Bash(git switch*) Bash(git add*) Bash(git commit*) Bash(git merge*) Bash(git worktree*) Bash(cd*) Bash(ck-lite*) Skill
+allowed-tools: Bash(git status*) Bash(git diff*) Bash(git log*) Bash(git branch*) Bash(git rev-parse*) Bash(git checkout*) Bash(git switch*) Bash(git add*) Bash(git commit*) Bash(git merge*) Bash(git worktree*) Bash(cd*) Bash(ck-lite*) Bash(npm view*) Bash(pip index*) Bash(cargo search*) Bash(go list*) Bash(gem search*) Bash(npx -y ctx7*) WebSearch mcp__context7__resolve-library-id mcp__context7__query-docs mcp__plugin_context7_context7__resolve-library-id mcp__plugin_context7_context7__query-docs Skill
 ---
 
 # Build — One Task, Test First
@@ -125,7 +125,8 @@ ck-lite set doing T-05
 `Read` [tdd-cycle.md](../../references/tdd-cycle.md) and follow it whole: **RED** (no
 implementation file before an observed failing test), GREEN, the bounded cleanup pass, and the
 closing full `test` run. Inline, each touched path not yet in `files:` is recorded with
-`ck-lite files T-05 <path>…`.
+`ck-lite files T-05 <path>…`, and a dependency researched under GREEN gets its `## Stack`
+line `Edit`ed into `docs/ARCHITECTURE.md` here.
 
 `test: (none)` stops at RED. Ask (`AskUserQuestion`): name a test command — record it in
 `## Commands` and continue — or record a documented exception with `ck-lite note T-05
@@ -213,5 +214,8 @@ that command as the next step.
 - **Never run the full suite in this context once QA is delegated** — beyond the one closing
   run, the subagent absorbs that output.
 - **Never write code beyond the acceptance criteria.** Anything extra is a new task.
+- **Never look up a technology `## Stack` already lists, and never install a version from
+  memory** — the bullets are the cache; only a new dependency costs a lookup
+  ([stack-research.md](../../references/stack-research.md)).
 - **Never create a file under `tasks/` other than `PLAN.md`.**
 - **Never commit or push here** — that is `/ck-code-lite:ship`.

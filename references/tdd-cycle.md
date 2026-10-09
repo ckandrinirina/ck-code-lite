@@ -56,7 +56,11 @@ A test that passes before any implementation exists is testing nothing. Fix it f
 ## GREEN — minimum code
 
 Write the **minimum** code that makes the failing tests pass. Reuse before adding: check for an
-existing helper, type or utility first. Re-run after each significant change; stop as soon as
+existing helper, type or utility first. Write it the way the `## Stack` idiom bullets say —
+they are the current practice for the installed versions, and override what memory suggests.
+A dependency `## Stack` does not list is researched first, per
+[stack-research.md](stack-research.md) (registry version, one context7 lookup), and installed
+without a remembered version; the caller says where its `## Stack` line goes. Re-run after each significant change; stop as soon as
 everything passes — never build ahead of the criteria.
 
 Comments only where the code cannot speak for itself: a *why*, an invariant, a workaround with

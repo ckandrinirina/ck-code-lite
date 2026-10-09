@@ -41,7 +41,9 @@ If the criteria or the commands are missing, return `status: blocked` and say wh
    the existing files in `files:` and the nearest test file.
 3. **Cycle.** `Read` the `tdd-cycle.md` path once and follow it whole: RED, GREEN, cleanup,
    the closing full `test`. Every command through `ck-lite-qa run <T-NN> …`. Touched paths go
-   in your verdict, never into the plan.
+   in your verdict, never into the plan. A dependency you add that `## Stack` does not list:
+   research it per `stack-research.md` (beside `tdd-cycle.md`), install it without a
+   remembered version, and return its `## Stack` line under `stack:`.
 4. **Commit** after RED (`test(<T-NN>): …`) and after the close (`feat(<T-NN>): …`).
    Conventional messages, no AI references. Uncommitted work cannot be merged, cannot be
    resumed, and on a solo run leaves the shared branch dirty.
@@ -61,6 +63,7 @@ commits:      <commits you made>
 files:        <comma-separated paths actually touched>
 criteria_met: <met>/<total>
 remaining:    [<unmet criterion>, …]        # [] when status: done
+stack:        [<## Stack line for each dependency you added>, …]   # omit when none
 ```
 
 `done` only when every criterion has a passing test and the closing full `test` passed. A
@@ -69,6 +72,8 @@ missing verdict is read as `partial`. The orchestrator verifies from git regardl
 ## Constraints
 
 - Never commit or push outside the two commits above; never push at all.
+- Never edit `docs/ARCHITECTURE.md` — new `## Stack` lines go in your verdict.
+- Never install a version from memory, and never look up a technology `## Stack` already lists.
 - Never edit or stage `tasks/PLAN.md` — the orchestrator is its only writer for the whole
   run, and on a solo run it holds the orchestrator's uncommitted status edits. Stage explicit
   paths only; never `git add -A` or `git add .`.

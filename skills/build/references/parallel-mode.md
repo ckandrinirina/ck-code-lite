@@ -213,6 +213,10 @@ flips it to done, verified by the script:
 ck-lite done T-NN <paths from the verdict>
 ```
 
+A verdict with `stack:` lines → `Edit` each into `docs/ARCHITECTURE.md` `## Stack` (an existing
+line for the same technology is replaced, never duplicated). The agent never writes the file:
+two peers appending to one section is a merge conflict.
+
 Record its ledger row and drop the wave's detail. Close the wave with the return-to-base check and one line:
 `Base: <$ROOT> on <$TARGET> · worktrees standing: N`.
 

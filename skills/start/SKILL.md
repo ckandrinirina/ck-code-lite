@@ -3,7 +3,7 @@ name: start
 description: Use when a project needs its ck-code-lite artifacts — creating docs/ARCHITECTURE.md and tasks/PLAN.md for a new idea, adopting an existing codebase into the workflow, or adding new tasks to an existing plan. Argument is an optional feature description or spec-file path.
 argument-hint: "[feature description | path/to/spec.md]"
 effort: medium
-allowed-tools: Bash(git status*) Bash(git ls-files*) Bash(git rev-parse*) Bash(mkdir*) Bash(ls*) Bash(head*) Bash(node -e*) Bash(ck-lite*) Skill
+allowed-tools: Bash(git status*) Bash(git ls-files*) Bash(git rev-parse*) Bash(mkdir*) Bash(ls*) Bash(head*) Bash(node -e*) Bash(ck-lite*) Bash(npm view*) Bash(pip index*) Bash(cargo search*) Bash(go list*) Bash(gem search*) Bash(npx -y ctx7*) WebSearch mcp__context7__resolve-library-id mcp__context7__query-docs mcp__plugin_context7_context7__resolve-library-id mcp__plugin_context7_context7__query-docs Skill
 ---
 
 # Start — Architecture and Plan in One Pass
@@ -19,6 +19,7 @@ dispatches, and **never creates or enters a git worktree** — see
 Format contract: [plan-format.md](../../references/plan-format.md) — every plan read and
 write is a `ck-lite` call; this skill never `Read`s or `Edit`s `tasks/PLAN.md`.
 Command resolution: [stack-commands.md](../../references/stack-commands.md).
+Versions and idioms: [stack-research.md](../../references/stack-research.md).
 Output filtering (optional): [rtk.md](../../references/rtk.md).
 
 ## INPUT
@@ -80,6 +81,14 @@ In every mode, resolve `test` / `test-one` / `build` / `lint` using
 [stack-commands.md](../../references/stack-commands.md), including the lockfile and
 declared-scripts refinements.
 
+### 2.1 Stack research
+
+Follow [stack-research.md](../../references/stack-research.md) for this mode: registry for the
+version, context7 for the idioms, one lookup per technology, run in parallel. **NEW** runs it
+once Phase 3 has settled the stack (straight away when `$ARGUMENTS` already names it); **ADOPT**
+uses the installed versions; **EXTEND** only covers new technologies and lines that are not fresh (older than 90 days, or
+marked `unverified`). These lookups do not count toward the five-read cap.
+
 ## PHASE 3: CLARIFY — HARD GATE
 
 **Exactly one `AskUserQuestion` call, at most 4 questions, and only on genuine ambiguity.**
@@ -108,6 +117,10 @@ round is a defect, not diligence.
 **NEW / ADOPT** — write `docs/ARCHITECTURE.md` from
 [architecture-template.md](references/architecture-template.md), with `## Commands`
 filled from the Phase 2 resolution.
+
+`## Stack` lines carry the version, the verified date and the idiom bullets from Phase 2.1, in
+the format of [stack-research.md § The cache](../../references/stack-research.md#the-cache--stack).
+EXTEND refreshes a stale line by `Edit`ing it in place.
 
 In ADOPT mode, `## Stack` and `## Folder structure` describe what the survey actually
 found. Do not invent structure the repository does not have, and do not propose a
@@ -142,7 +155,9 @@ Each task carries:
 - `### Tasks` — the implementation steps, first of which is always the failing tests
 - `files:` — the paths expected to change, as a starting estimate
 
-Order tasks so dependencies flow forward, and record them in `needs`.
+Order tasks so dependencies flow forward, and record them in `needs`. A task that scaffolds
+the project or adds a dependency names the version `## Stack` records in its acceptance — e.g.
+`package.json declares react ^19.2` — so QA catches a scaffolder that pinned an older one.
 
 **Order demo-first.** The first task makes the app run — its entry point (the `bin/`
 script, the server, the page) is in that task's `files:` — and its user-facing surface (a
@@ -195,6 +210,7 @@ Print:
 **Architecture:** docs/ARCHITECTURE.md — created | updated (<sections touched>)
 **Plan:** tasks/PLAN.md — <n> tasks created | <n> tasks appended (T-04 … T-07)
 **Commands:** test: <cmd> · build: <cmd> · lint: <cmd>
+**Stack:** <n> versions verified (<name> <version>, …) · <n> refreshed · <n> idioms unverified
 
 Next: /ck-code-lite:build
 ```
@@ -232,6 +248,12 @@ small project is noise. Never a block — the user decides when to graduate.
 - **Never plan a backend task before the surface that exercises it** (Phase 5) — the app
   runs on fixtures first; each backend task replaces one fixture and is verified through
   the surface already built, never through a manual API client.
+- **Never write a version or an idiom from memory** — every `## Stack` version comes from the
+  registry and every idiom bullet from context7 or the web (Phase 2.1). Neither reachable → mark
+  the line `· idioms unverified` (or `— unverified` with no registry); a remembered "latest" is
+  how a new project ships a major behind.
+- **Never upgrade an installed dependency in ADOPT mode** — record the gap as a decision; the
+  upgrade is a task the user asks for.
 - **Never invent a command a manifest does not declare** — `(none)` is the correct answer
   when there is no command.
 - **Never split the core below 150 lines, never rewrite text while moving it to an area doc,
