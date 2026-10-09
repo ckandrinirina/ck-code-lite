@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] — 2026-10-09
+
+### Added
+- **design** (new skill): design the UI with Claude Design before anything is built. With no argument or an idea, Claude describes the project back to you in one question round, then writes `docs/design-brief.md`. The brief is a complete prompt for claude.ai/design: real screens, real content, every empty, loading and error state, accessibility, and output conventions that make the result machine-readable. It is copied to the clipboard. `/ck-code-lite:design <url>` links the finished design system and caches every card and token under `docs/design-system/` (pull-only, same format as ck-code). Running it again refreshes the cache, which costs one call when nothing changed.
+- **start**: a project with a UI is always offered "design first" once, inside the existing question round. Choosing it chains straight into the brief after the plan is written. A brief written before `start` becomes its requirement. The decision is recorded as a one-line `## Design` section in `docs/ARCHITECTURE.md`, and a decline is never asked again.
+- **build**, **task-builder**: UI tasks build against the linked design. Each reads the screen's card first, then each component's card, and ports markup, class names and CSS exactly. The first UI task writes the token file, and parallel mode never fans out two UI tasks while the tokens are pending. A UI task reached while the design is still pending asks once: paste the URL to link it now, build without it, or stop. `--auto` builds without it and records a note.
+- **qa-validator**: design fidelity. A literal color, size, radius, shadow or spacing value that a token covers fails QA.
+
 ## [1.1.2] — 2026-10-09
 
 ### Added
