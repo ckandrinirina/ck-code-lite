@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] — 2026-10-09
+
+### Fixed
+- **start**: a new project no longer gets the stack versions the model remembers (React 18 when 19 is current). Every `## Stack` version now comes from the package registry (one parallel lookup with a 15 s timeout), and the current coding idioms come from context7 (MCP, the `ctx7` CLI, then WebSearch). Each line records the date it was checked plus up to 4 best-practice bullets. A task that scaffolds the project or adds a dependency names those versions in its acceptance criteria. ADOPT keeps the installed versions and records a major-version gap as a decision without upgrading. EXTEND re-checks lines older than 90 days or marked `unverified`.
+- **build**, **task-builder**: code follows the `## Stack` bullets, which act as the project's cache, so a build makes no lookups. The only exception is a dependency a task adds that `## Stack` does not list yet. A dependency is never installed at a version from memory. In parallel mode the builder returns the new `## Stack` line in its verdict and the orchestrator writes it.
+
 ## [1.1.0] — 2026-10-08
 
 ### Added
