@@ -5,6 +5,11 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] — 2026-10-12
+
+### Changed
+- **start**, **design**, **build**, **ship**: the wrong-plugin guard now redirects instead of blocking. In a full ck-code project the skill runs its ck-code counterpart for you (`build` → `/ck-code:build`, `ship` → `/ck-code:ship`, `start "<text>"` → `/ck-code:plan --quick`, `design <url>` → `/ck-code:design ds <url>`, an idea → `/ck-code:spec`), dropping lite-only arguments such as `T-NN`. A redirect happens once and never bounces back. The guard now treats `docs/architecture/` beside a `tasks/PLAN.md` as lite's own, so it can never disagree with ck-code's gate. It falls back to the ⛔ warning when ck-code is not installed.
+
 ## [1.2.0] — 2026-10-09
 
 ### Added
