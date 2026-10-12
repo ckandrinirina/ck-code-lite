@@ -40,18 +40,15 @@ optionally with `--auto`.
 
 ## PHASE 0: PLUGIN GUARD
 
-ck-code markers: !`cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && ls -d tasks/VERSION.md docs/architecture 2>/dev/null | grep . || echo none`
+Plan markers: !`cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && ls -d tasks/VERSION.md docs/architecture tasks/PLAN.md 2>/dev/null | grep . || echo none`
 
-`none` → continue. Anything else (`tasks/VERSION.md` is ck-code's layout stamp,
-`docs/architecture` its feature docs) is a full ck-code project, whose state ck-code-lite
-cannot read or keep in step. Print exactly this, then **stop** before any read, write or
-command, with no offer to continue anyway:
+A full ck-code project — `tasks/VERSION.md` listed, or `docs/architecture` listed without
+`tasks/PLAN.md` — is ck-code's, whose state ck-code-lite cannot read or keep in step.
+[Redirect](../../references/plugin-redirect.md) before any read, write or command:
 
-```
-⛔ This is a ck-code project, not a ck-code-lite one.
-   /ck-code-lite:build would build outside the stories, and no story status would move.
-   Use /ck-code:build instead.
-```
+- `ck-code:build`, no argument — a `T-NN`, `--waves` or `--auto` is lite only, dropped
+
+Anything else → continue.
 
 ## PHASE 1: TASK SELECTION
 
@@ -241,8 +238,8 @@ that command as the next step.
 
 ## RULES
 
-- **Never run in a full ck-code project** — Phase 0 stops on `tasks/VERSION.md` or
-  `docs/architecture/` and names the `/ck-code:*` command to use instead.
+- **Never run in a full ck-code project** — Phase 0 hands it to the `/ck-code:*`
+  counterpart, once; a skill reached by a ck-code redirect BLOCKs instead of bouncing back.
 - **Never edit or create an implementation file before a test run has been observed
   failing.** No test runner → stop and ask; never assume the exception.
 - **Never mark a task `done` without a `QA: PASS`** or an explicitly recorded ACCEPT AS-IS.

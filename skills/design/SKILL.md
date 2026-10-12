@@ -36,14 +36,17 @@ This skill never branches, commits, or creates a worktree, and never reads or ed
 
 ## PHASE 0: PLUGIN GUARD
 
-ck-code markers: !`cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && ls -d tasks/VERSION.md docs/architecture 2>/dev/null | grep . || echo none`
+Plan markers: !`cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && ls -d tasks/VERSION.md docs/architecture tasks/PLAN.md docs/design-system 2>/dev/null | grep . || echo none`
 
-`none` → continue. Anything else is a full ck-code project. Print exactly this, then **stop**:
+A full ck-code project — `tasks/VERSION.md` listed, or `docs/architecture` listed without
+`tasks/PLAN.md` — is ck-code's, whose state ck-code-lite cannot read or keep in step.
+[Redirect](../../references/plugin-redirect.md) before any read, write or command:
 
-```
-⛔ This is a ck-code project, not a ck-code-lite one.
-   Use /ck-code:spec (it writes the Claude Design brief) or /ck-code:design ds <url>.
-```
+- a uuid or claude.ai/design URL → `ck-code:design ds <url>`
+- `link`, or empty with `docs/design-system` listed → `ck-code:design ds`
+- anything else → `ck-code:spec <text or path>` (it writes the Claude Design brief)
+
+Anything else → continue.
 
 ## PHASE 1: STATE
 
@@ -167,7 +170,8 @@ it.
 
 ## RULES
 
-- **Never run in a full ck-code project** — Phase 0 stops and names the ck-code command.
+- **Never run in a full ck-code project** — Phase 0 hands it to `/ck-code:design ds` or
+  `/ck-code:spec`, once; never bounce a request ck-code just redirected here.
 - **Never call a `DesignSync` write method** — pull-only.
 - **Never ask more than one question round in BRIEF**, never more than 4 questions, and never
   ask what the project already answers.

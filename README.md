@@ -96,12 +96,16 @@ hook stays silent on a slash command, on a reply shorter than 12 characters (an 
 running skill), in a repo that never adopted the workflow, and in a full ck-code project,
 whose own router owns the prompt. Pure local read, always exits 0.
 
-### Wrong-plugin guard
+### Plugin redirect
 
-`start`, `design`, `build` and `ship` refuse to run in a full ck-code project (`tasks/VERSION.md` or
-`docs/architecture/` at the repo root). They print a ⛔ warning naming the `/ck-code:` command
-to use, and stop before reading or writing anything, so a mistyped command never writes a
-second plan beside the stories. ck-code does the same in the other direction.
+`start`, `design`, `build` and `ship` never run in a full ck-code project (`tasks/VERSION.md`,
+or `docs/architecture/` with no `tasks/PLAN.md`). Before reading or writing anything they run
+the ck-code counterpart for you — `build` → `/ck-code:build`, `ship` → `/ck-code:ship`,
+`start "<text>"` → `/ck-code:plan --quick`, `design <url>` → `/ck-code:design ds <url>` — so a
+mistyped command never writes a second plan beside the stories. ck-code does the same in the
+other direction: `/ck-code:build T-03` in a lite project runs `/ck-code-lite:build T-03`. A
+redirect happens once, never back, and falls back to a ⛔ warning when the other plugin is
+not installed.
 
 ## The four guarantees
 
