@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/smoke.sh — drives ck-code-lite's bin/ and hook scripts against throwaway projects.
+# tests/smoke.sh — drives ck-code-lite's bin/ scripts against throwaway projects.
 #
 # Assertions encode the contract in references/plan-format.md and
 # skills/start/references/architecture-template.md: a FAIL means the script and the contract disagree.
@@ -252,14 +252,7 @@ has "qa --reuse: bytecode is not a code change" "test: REUSED" "$(QA2 run T-01 -
 QA2 run T-77 test='true' >/dev/null
 has "qa: runs are keyed per checkout" "no ck-lite-qa run for T-77" "$(cd "$WORK/qa" && QA wait T-77)"
 
-# ---- prompt router ------------------------------------------------------------------------
-echo "=== prompt router ==="
-fresh router; R="$ROOT/scripts/prompt-router.sh"
-eq  "router: silent outside an adopted project" "" "$(echo '{"prompt":"implement the parser please"}' | bash "$R")"
-ck-lite init R >/dev/null
-has "router: routes a free-text prompt" "ck-code-lite router" "$(echo '{"prompt":"implement the parser please"}' | bash "$R")"
-eq  "router: silent on a slash command" "" "$(echo '{"prompt":"/ck-code-lite:build T-01"}' | bash "$R")"
-eq  "router: silent on a short reply" "" "$(echo '{"prompt":"yes"}' | bash "$R")"
+# The prompt router is the mod's prompt.submit hook since 1.3.0: tests/mod/hooks.test.ts.
 
 # ---- reclaim ----------------------------------------------------------------------------
 echo "=== reclaim ==="

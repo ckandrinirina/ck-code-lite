@@ -1,14 +1,6 @@
 {
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/prompt-router.sh"
-          }
-        ]
-      }
-    ]
-  }
+  "description": "ck-code-lite hooks: the mod (hooks module) for routing, the PLAN.md guard, the band and zero-model commands",
+  "modules": [
+    "./mod/register.tsx"
+  ]
 }

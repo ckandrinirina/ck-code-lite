@@ -14,3 +14,7 @@ node_modules/
 /target/
 .claude/
 .claude.local.json
+
+# Written by Claude Code beside the mod when it loads from --plugin-dir (type declarations)
+/.claude-plugin/types/
+/tsconfig.json

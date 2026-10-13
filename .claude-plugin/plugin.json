@@ -20,5 +20,14 @@
     "design",
     "minimal"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "band": {
+      "type": "boolean",
+      "title": "Band above the prompt",
+      "description": "Show the task in progress, the plan's counts and the next build command above the prompt.",
+      "default": true
+    }
+  }
 }
