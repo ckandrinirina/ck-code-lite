@@ -8,7 +8,8 @@
 //   attribution.text   no AI attribution in commits and PRs (skills/ship rule)
 //   tool.call          tasks/PLAN.md is written only through ck-lite
 //   commands           /lite-status, /lite-waves, /lite-check with no model turn; /lite-band
-//   AbovePrompt band   the task in progress, the counts, the next build command
+//   AbovePrompt band   a progress bar, the task in progress, the next build command
+//   toasts             a cheer when a task is done, a bigger one when the plan is
 //   session.compact    compacts the session once a wave run of builders has finished
 //
 // Pure rules live in logic.ts. `$` never leaves this file except into the state helpers.
@@ -19,17 +20,20 @@ import type { EngineInterface, Register } from "claude-code";
 import type { LiteBand } from "../../types";
 import {
   COMPACT_INSTRUCTIONS,
+  celebration,
   countsLine,
   isRoutable,
   isWaveRunOver,
   nextCommand,
   parseOpen,
+  percent,
   planWriteReason,
+  progressBar,
   splitArgs,
   stripRouting,
   taskSuggestions,
 } from "./logic";
-import type { OpenTask } from "./logic";
+import type { OpenTask, Progress } from "./logic";
 
 const band = atom({ plugin: "ck-code-lite", key: "band" } as const, null);
 const bandHidden = atom(
@@ -43,6 +47,7 @@ let compactOn = true;
 let builders = 0;
 let routingCache: string | undefined;
 let tasks: OpenTask[] = [];
+let progress: Progress | undefined;
 let isRefreshing = false;
 
 // The shell router's markers: tasks/PLAN.md or docs/ARCHITECTURE.md, and not a full ck-code
@@ -90,10 +95,20 @@ async function refreshBand($: EngineInterface): Promise<void> {
     const plan = parseOpen((await ckLite($, ["open"])).stdout);
     if (plan === null) return;
     tasks = plan.tasks;
+    const now: Progress = {
+      done: plan.done,
+      total: plan.total,
+      open: plan.tasks.map((t) => t.id),
+    };
+    const cheer = celebration(progress, now, "tasks");
+    progress = now;
+    if (cheer) $.ui.toast(`ck-code-lite: ${cheer}`);
     const doing = plan.tasks.find((t) => t.state === "doing");
     const next: LiteBand = {
-      current: doing ? `doing ${doing.id} ${doing.title}` : "",
+      current: doing ? `${doing.id} ${doing.title}` : "",
       counts: countsLine(plan),
+      done: plan.done,
+      total: plan.total,
       next: nextCommand(plan),
     };
     await update($, band, () => next);
@@ -271,22 +286,43 @@ export const register: Register = (on, options) => {
     if (data === null || e.props.hasSurvey || (await read($, bandHidden)))
       return next(e);
     const { Box, Button, Text } = $.ui.resolve(e);
+    const score = `${data.done}/${data.total}`;
     if (e.props.isWorking) {
       return data.current ? (
         <Text dimColor wrap="truncate-end">
-          ck-lite · {data.current}
+          ⚡ ck-lite · {data.current} · {score}
         </Text>
       ) : (
         next(e)
       );
     }
-    return (
-      <Box gap={1}>
-        <Text wrap="truncate-end">
-          <Text bold>ck-lite</Text>
-          {data.current ? ` · ${data.current}` : ""} · {data.counts}
-          {data.next ? ` · next: ${data.next}` : ""}
+    const isComplete = data.total > 0 && data.done >= data.total;
+    const header = (
+      <Box key="head" gap={1}>
+        <Text bold color="claude">
+          ◆ ck-lite
         </Text>
+        <Text color="success">{progressBar(data.done, data.total)}</Text>
+        <Text bold>
+          {score} {percent(data.done, data.total)}%
+        </Text>
+        <Text dimColor wrap="truncate-end">
+          {isComplete ? "🎉 all done" : data.counts}
+        </Text>
+      </Box>
+    );
+    const actions = (
+      <Box key="next" gap={1}>
+        {data.current !== "" && (
+          <Text color="warning" wrap="truncate-end">
+            ⚡ {data.current}
+          </Text>
+        )}
+        {data.next !== "" && (
+          <Text color="suggestion" wrap="truncate-end">
+            → {data.next}
+          </Text>
+        )}
         {data.next !== "" && (
           <Button
             key="fill"
@@ -299,6 +335,14 @@ export const register: Register = (on, options) => {
           label="Hide"
           onPress={() => update($, bandHidden, () => true)}
         />
+      </Box>
+    );
+    // One row left above the prompt: the next step matters more than the bar.
+    if (e.props.maxRows < 2) return actions;
+    return (
+      <Box flexDirection="column">
+        {header}
+        {actions}
       </Box>
     );
   });

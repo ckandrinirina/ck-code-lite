@@ -1,10 +1,13 @@
 // The ck-code-lite mod's $.state contract: what its band draws from.
 
 export type LiteBand = {
-  // "doing T-01 Count words", or "" when nothing is in progress.
+  // "T-01 Count words", the task in progress, or "" when there is none.
   current: string;
-  // "2 open · 1 ready · 0/2 done"
+  // "2 open · 1 ready", drawn beside the progress bar.
   counts: string;
+  // The progress bar's tasks: done, and every task in the plan.
+  done: number;
+  total: number;
   // "/ck-code-lite:build T-01", or "" when every open task waits on another.
   next: string;
 };

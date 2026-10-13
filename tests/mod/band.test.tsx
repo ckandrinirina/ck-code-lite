@@ -31,9 +31,33 @@ test('the band shows the task in progress and fills its build command', async ($
   await $.command.run(RUN)
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'ck-code-lite', surface, component: 'AbovePrompt', props: PROPS as never })
-    expect(await ui.find({ text: /doing T-01 Count words · 2 open · 0 ready · 1\/3 done/ })).toBeDefined()
+    expect(await ui.find({ text: /T-01 Count words/ })).toBeDefined()
+    expect(await ui.find({ text: /1\/3 33%/ })).toBeDefined()
+    expect(await ui.find({ text: /2 open · 0 ready/ })).toBeDefined()
     await ui.press({ key: 'fill' })
     await ui.unmount()
   }
   expect(filled).toEqual(['/ck-code-lite:build T-01 ', '/ck-code-lite:build T-01 '])
+})
+
+test('a task finished between two refreshes raises a toast', async ($, on) => {
+  const toasts: string[] = []
+  let stdout = OPEN
+  mock.store(on)
+  on('session.cwd', () => ({ value: '/p' }))
+  on('fs.exists', (_$, e) => ({ value: e.path === '/p/tasks/PLAN.md' }))
+  on('process.run', () => ({
+    value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
+  }))
+  on('ui.toast', (_$, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  // Hide then show: each show refreshes the band.
+  await $.command.run(RUN)
+  await $.command.run(RUN)
+  stdout = ['T-02 todo READY S · needs: T-01 · files: src/b.js · Missing file error', 'open 1 · ready 1 · done 2 · total 3'].join('\n')
+  await $.command.run(RUN)
+  await $.command.run(RUN)
+  expect(toasts).toEqual(['ck-code-lite: ✨ T-01 done — 2/3 (66%)'])
 })

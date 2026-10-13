@@ -95,8 +95,9 @@ export function nextCommand(plan: OpenPlan): string {
   return plan.open === 0 ? "/ck-code-lite:start" : "";
 }
 
+// The done/total part is the band's progress bar.
 export function countsLine(plan: OpenPlan): string {
-  return `${plan.open} open · ${plan.ready} ready · ${plan.done}/${plan.total} done`;
+  return `${plan.open} open · ${plan.ready} ready`;
 }
 
 export type Suggestion = { text: string; label: string; description: string };
@@ -141,3 +142,41 @@ export const COMPACT_INSTRUCTIONS =
   "every branch named, the manual test checklist and any deferred manual tests word for " +
   "word, and the next command the run recommended. Drop per-wave agent reports, QA output " +
   "and diffs: tasks/PLAN.md and git hold them.";
+
+// ---- progress bar and celebrations ----------------------------------------------------
+
+// Kept word for word in both plugins' mods, so the two bands look like one family.
+
+export function progressBar(done: number, total: number, width = 10): string {
+  const filled =
+    total > 0 ? Math.round((Math.min(done, total) / total) * width) : 0;
+  return "▰".repeat(filled) + "▱".repeat(width - filled);
+}
+
+// Floored, so 100% means every item is done, never 199 of 200.
+export function percent(done: number, total: number): number {
+  return total > 0 ? Math.floor((Math.min(done, total) / total) * 100) : 0;
+}
+
+// `open` lists the IDs not done yet; a refresh compares it with the one before.
+export type Progress = { done: number; total: number; open: readonly string[] };
+
+// The toast for work finished between two refreshes. None on the first look (a session
+// start or a mod reload), and none when nothing new is done.
+export function celebration(
+  before: Progress | undefined,
+  after: Progress,
+  nouns: string,
+): string | undefined {
+  if (!before || after.total === 0 || after.done <= before.done)
+    return undefined;
+  const score = `${after.done}/${after.total}`;
+  if (after.done >= after.total)
+    return `🎉 Plan complete — ${score} ${nouns} done!`;
+  const finished = before.open.filter((id) => !after.open.includes(id));
+  const what =
+    finished.length > 0 && finished.length <= 3
+      ? finished.join(", ")
+      : `${after.done - before.done} more`;
+  return `✨ ${what} done — ${score} (${percent(after.done, after.total)}%)`;
+}

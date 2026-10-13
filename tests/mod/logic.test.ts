@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import {
+  celebration,
   isWaveRunOver,
+  percent,
+  progressBar,
   countsLine,
   isRoutable,
   nextCommand,
@@ -42,7 +45,7 @@ describe('ck-lite open', () => {
     const plan = parseOpen(OPEN)!
     expect(plan.tasks.map(t => t.state)).toEqual(['doing', 'todo wait(T-01)', 'todo READY'])
     expect(plan.tasks[2]?.title).toBe('Help text')
-    expect(countsLine(plan)).toBe('3 open · 1 ready · 4/7 done')
+    expect(countsLine(plan)).toBe('3 open · 1 ready')
   })
   test('the task in progress comes before a ready one', async () => {
     expect(nextCommand(parseOpen(OPEN)!)).toBe('/ck-code-lite:build T-01')
@@ -73,5 +76,24 @@ describe('compaction after a wave run', () => {
     expect(isWaveRunOver({ reason: 'aborted', builders: 3, inProgress: 0 })).toBe(false)
     expect(isWaveRunOver({ reason: 'error', builders: 3, inProgress: 0 })).toBe(false)
     expect(isWaveRunOver({ reason: 'answer', builders: 3, inProgress: 1 })).toBe(false)
+  })
+})
+
+describe('progress and celebrations', () => {
+  test('the bar fills in proportion and never overflows', async () => {
+    expect(progressBar(0, 0)).toBe('▱▱▱▱▱▱▱▱▱▱')
+    expect(progressBar(3, 7)).toBe('▰▰▰▰▱▱▱▱▱▱')
+    expect(progressBar(9, 7)).toBe('▰▰▰▰▰▰▰▰▰▰')
+    expect(percent(199, 200)).toBe(99)
+  })
+  test('no cheer on the first look or when nothing new is done', async () => {
+    const now = { done: 3, total: 7, open: ['T-04'] }
+    expect(celebration(undefined, now, 'tasks')).toBe(undefined)
+    expect(celebration(now, now, 'tasks')).toBe(undefined)
+  })
+  test('a finished task is named, a finished plan is cheered', async () => {
+    const before = { done: 3, total: 7, open: ['T-04', 'T-05'] }
+    expect(celebration(before, { done: 4, total: 7, open: ['T-05'] }, 'tasks')).toBe('✨ T-04 done — 4/7 (57%)')
+    expect(celebration(before, { done: 7, total: 7, open: [] }, 'tasks')).toBe('🎉 Plan complete — 7/7 tasks done!')
   })
 })
