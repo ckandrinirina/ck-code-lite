@@ -104,10 +104,12 @@ Claude Code ≥ 2.1.287). It acts only in a lite project and calls `ck-lite`, th
 skills call, so nothing in it is load-bearing: under `--bare`, `--safe-mode` or an older
 Claude Code every skill still works.
 
-- **Band above the prompt** — `ck-lite · doing T-01 Count words · 2 open · 1 ready · 4/7 done
-  · next: /ck-code-lite:build T-01`, with **Use** (fills the prompt, never sends it) and
-  **Hide**. It refreshes after every turn; `/lite-band` toggles it, and the choice is kept. The
-  `band` setting turns it off.
+- **Band above the prompt** — `◆ ck-lite ▰▰▰▰▱▱▱▱▱▱ 4/7 57% 2 open · 1 ready`, then
+  `⚡ T-05 Count words → /ck-code-lite:build T-05`, with **Use** (fills the prompt, never sends
+  it) and **Hide**. It refreshes after every turn; `/lite-band` toggles it, and the choice is
+  kept. The `band` setting turns it off.
+- **Cheers** — a toast when a task is done (`✨ T-04 done — 4/7 (57%)`), and a bigger one when
+  the whole plan is (`🎉 Plan complete — 7/7 tasks done!`).
 - **Compact after a wave run** — when a turn that dispatched two or more task builders ends
   cleanly with no task left `doing`, the session is compacted between turns, keeping the tasks
   built, the branches, the manual-test checklist and the next command. Skipped after an
