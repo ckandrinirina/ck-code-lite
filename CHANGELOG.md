@@ -5,6 +5,27 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [1.4.0] — 2026-10-13
+
+### Added
+- **mod**: the session is compacted by itself after a `/ck-code-lite:build` wave run. When a turn that dispatched two or more `task-builder` agents ends cleanly and `ck-lite open` shows no task `doing`, the mod calls `$.session.compact` between turns, with a hint to keep the tasks built, branches, the manual-test checklist and the next command. An interrupt, an error, a held task or a prompt already typed leaves the session as it is. The new `compact_after_waves` setting (on by default) turns it off.
+
+## [1.3.0] — 2026-10-13
+
+### Added
+- **mod**: ck-code-lite ships a small mod, an in-process hooks module (`hooks/mod/register.tsx`, Claude Code ≥ 2.1.287) that acts only in a lite project and calls `ck-lite`, so nothing in it is load-bearing:
+  - a **band above the prompt** with the task in progress, the counts and the next `/ck-code-lite:build T-NN` (**Use** fills the prompt; `/lite-band` toggles; the `band` setting turns it off);
+  - **commands with no model turn**: `/lite-status` (`ck-lite open`), `/lite-waves [T-NN…]`, `/lite-check`;
+  - a **guard**: a `Write` or `Edit` of `tasks/PLAN.md` is refused with the `ck-lite` command to use;
+  - **no AI attribution** in commits and PRs, as `ship` requires;
+  - **task-id completion** for `T-` in the prompt box.
+- **tests**: `tests/mod/` (13 offline tests, `claude plugin test`), run in CI's new `mod` job.
+
+### Changed
+- **prompt router**: now the mod's `prompt.submit` hook; `scripts/prompt-router.sh` and its `UserPromptSubmit` entry are removed. It also skips prompts that are not the person's own. Ships alongside ck-code 7.13.1, whose mod uses the same rule for what a lite project is.
+
 ## [1.2.1] — 2026-10-12
 
 ### Changed
@@ -129,22 +150,6 @@ A run's cost now tracks the work in front of it, not the age of the project, and
 - **build / ship / start**: `allowed-tools` frontmatter pre-approving the git and `gh` commands each skill actually runs, so a normal run no longer stops on permission prompts.
 - **qa-validator**: `effort: low` and `experimental.cacheTtl: "1h"` — the agent is re-dispatched once per task in a wave, so a 1-hour prompt cache avoids re-caching its system prompt on every call.
 
-
-## [Unreleased]
-
-## [1.3.0] — 2026-10-13
-
-### Added
-- **mod**: ck-code-lite ships a small mod, an in-process hooks module (`hooks/mod/register.tsx`, Claude Code ≥ 2.1.287) that acts only in a lite project and calls `ck-lite`, so nothing in it is load-bearing:
-  - a **band above the prompt** with the task in progress, the counts and the next `/ck-code-lite:build T-NN` (**Use** fills the prompt; `/lite-band` toggles; the `band` setting turns it off);
-  - **commands with no model turn**: `/lite-status` (`ck-lite open`), `/lite-waves [T-NN…]`, `/lite-check`;
-  - a **guard**: a `Write` or `Edit` of `tasks/PLAN.md` is refused with the `ck-lite` command to use;
-  - **no AI attribution** in commits and PRs, as `ship` requires;
-  - **task-id completion** for `T-` in the prompt box.
-- **tests**: `tests/mod/` (13 offline tests, `claude plugin test`), run in CI's new `mod` job.
-
-### Changed
-- **prompt router**: now the mod's `prompt.submit` hook; `scripts/prompt-router.sh` and its `UserPromptSubmit` entry are removed. It also skips prompts that are not the person's own. Ships alongside ck-code 7.13.1, whose mod uses the same rule for what a lite project is.
 
 ## [0.2.5] — 2026-08-12
 
