@@ -15,7 +15,7 @@ scripted, so a run's cost tracks the work in front of it, not the age of the pro
 | `/ck-code-lite:start` | A project needs its plan — new idea, existing codebase, or more tasks | `docs/ARCHITECTURE.md`, `tasks/PLAN.md` |
 | `/ck-code-lite:design` | A project with a UI should be designed with Claude Design first — or you have a claude.ai/design URL to link | `docs/design-brief.md`, `docs/design-system/` |
 | `/ck-code-lite:build` | Implementing one task end to end — or several at once, in waves | Code, tests, tasks marked `done` |
-| `/ck-code-lite:ship` | Committing finished work | A conventional commit and a PR |
+| `/ck-code-lite:ship` | Committing finished work | A conventional commit, an area test check before the push, and a PR |
 
 ```
 /ck-code-lite:start "a CLI that counts words in a file"
@@ -213,9 +213,15 @@ change no longer needs the file loaded to edit it. The plan is never split: an a
 buy no tokens and add a lookup to every dependency check.
 
 **Fast without fewer checks.** RED and GREEN run only the task's own tests (the optional
-`test-one` command); the full suite runs once, after cleanup. Every test, build and lint run
+`test-one` command). After cleanup, the closing run covers every test the task can reach: the
+tests of each changed file, then of every file importing it — a service's test, the test of
+the controller that uses it, and on up the chain. `ck-lite-affected` works that out with `git`
+and `grep`, at no token cost. A wave's merged result and `ship`, before the first push, run
+every test of each **area** the change touches — a workspace package or a row of `## Areas` —
+so a backoffice change never runs the client's suite. The whole suite runs only for repo-root
+config, a lockfile alone, migrations, fixtures or env files. Every test, build and lint run
 goes through `ck-lite-qa`, which prints one line per command and keeps the output in a log,
-and an inline QA pass reuses that full-suite run when not a byte of code changed since. A
+and an inline QA pass reuses the closing run when not a byte of code changed since. A
 parallel wave's QA never reuses anything.
 
 Past ~40 open tasks, `start` and `build` say once that the project has outgrown a flat plan
