@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.1] — 2026-10-13
+
+### Fixed
+- **ck-lite-affected**: `--command` single-quotes every file and folder it splices into `{files}`/`{dirs}`, so a file name holding `$(…)`, `;` or a quote is passed as data and never run by the shell. A `<base>` starting with `-` is refused instead of reaching `git` as an option, and is used only once resolved to a commit.
+- **ck-lite-affected**: pathspecs such as `*.ts` are no longer expanded against files in the repo root. A root `main.ts` or `eslint.config.js` had narrowed the import trace to that one file and dropped real importers.
+
 ## [1.5.0] — 2026-10-13
 
 ### Added
