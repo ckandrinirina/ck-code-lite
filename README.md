@@ -87,14 +87,37 @@ try. With no test command it refuses to start rather than build without a failin
 ### Every prompt goes through the workflow
 
 You do not have to type the slash command. In an adopted project (one with `tasks/PLAN.md`
-or `docs/ARCHITECTURE.md`) a `UserPromptSubmit` hook (`scripts/prompt-router.sh`) injects
+or `docs/ARCHITECTURE.md`) the mod's `prompt.submit` hook ([below](#the-mod)) injects
 [`references/prompt-routing.md`](references/prompt-routing.md) — a three-line intent → skill
 table — as context for each free-text prompt, so "implement T-03" runs `build`, "the parser
 crashes on empty input" runs `start` to add the task and then `build`, and "ship it" runs
 `ship`. The chosen skill is announced in one line and invoked; the prompt is the consent. The
 hook stays silent on a slash command, on a reply shorter than 12 characters (an answer to a
 running skill), in a repo that never adopted the workflow, and in a full ck-code project,
-whose own router owns the prompt. Pure local read, always exits 0.
+whose own router owns the prompt. It also skips anything that is not your own prompt (a task
+notification, another session's message). Pure local read; a failure lets the prompt through.
+
+### The mod
+
+ck-code-lite ships a small **mod**, an in-process hooks module (`hooks/mod/register.tsx`,
+Claude Code ≥ 2.1.287). It acts only in a lite project and calls `ck-lite`, the script the
+skills call, so nothing in it is load-bearing: under `--bare`, `--safe-mode` or an older
+Claude Code every skill still works.
+
+- **Band above the prompt** — `ck-lite · doing T-01 Count words · 2 open · 1 ready · 4/7 done
+  · next: /ck-code-lite:build T-01`, with **Use** (fills the prompt, never sends it) and
+  **Hide**. It refreshes after every turn; `/lite-band` toggles it, and the choice is kept. The
+  `band` setting turns it off.
+- **Commands with no model turn** — `/lite-status` (`ck-lite open`), `/lite-waves [T-NN…]`
+  (the wave plan) and `/lite-check` (validates the plan) print at once, even mid-turn.
+- **The plan is written only through `ck-lite`** — a `Write` or `Edit` of `tasks/PLAN.md` is
+  refused with the `ck-lite` command to use ([plan-format.md](references/plan-format.md)).
+- **No AI attribution** — the engine's commit and PR attribution text is dropped, as `ship`
+  requires.
+- **Task-id completion** — typing `T-0` in the prompt box offers the open tasks.
+
+`claude plugin validate .` and `claude plugin test .` check it offline (`tests/mod/`), and CI
+runs both.
 
 ### Plugin redirect
 
@@ -198,6 +221,9 @@ Per-project opt-in via `.claude/settings.json`:
 ```json
 { "enabledPlugins": { "ck-code-lite@ck-marketplace": true } }
 ```
+
+Tested against Claude Code 2.1.296. The skills run on any recent release; [the mod](#the-mod)
+needs 2.1.287 or later.
 
 ## ck-code-lite or ck-code?
 
