@@ -40,6 +40,34 @@ test('the band shows the task in progress and fills its build command', async ($
   expect(filled).toEqual(['/ck-code-lite:build T-01 ', '/ck-code-lite:build T-01 '])
 })
 
+test('Hide persists the hidden band and stops the refresh', async ($, on) => {
+  let runs = 0
+  const saved: Record<string, unknown> = {}
+  const clock = mock.clock(on)
+  on('turn.complete', () => ({ text: 'ok' }))
+  on('store.get', (_$, e) => ({ value: saved[e.key] }))
+  on('store.set', (_$, e) => {
+    saved[e.key] = e.value
+    return { value: undefined }
+  })
+  on('session.cwd', () => ({ value: '/p' }))
+  on('fs.exists', (_$, e) => ({ value: e.path === '/p/tasks/PLAN.md' }))
+  on('process.run', () => {
+    runs += 1
+    return { value: { exitCode: 0, stdout: OPEN, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  await $.command.run(RUN)
+  await $.command.run(RUN)
+  const ui = await $.ui.mount({ plugin: 'ck-code-lite', surface: 'terminal', component: 'AbovePrompt', props: PROPS as never })
+  await ui.press({ key: 'hide' })
+  await ui.unmount()
+  expect(saved.bandHidden).toBe(true)
+  const before = runs
+  await $.turn.complete({ reason: 'answer', answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1' })
+  await clock.advance(100)
+  expect(runs).toBe(before)
+})
+
 test('a task finished between two refreshes raises a toast', async ($, on) => {
   const toasts: string[] = []
   let stdout = OPEN

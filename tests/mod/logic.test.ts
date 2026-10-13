@@ -6,6 +6,7 @@ import {
   percent,
   progressBar,
   countsLine,
+  isLiteLayout,
   isRoutable,
   nextCommand,
   parseOpen,
@@ -21,6 +22,32 @@ const OPEN = [
   'open 3 · ready 1 · done 4 · total 7',
 ].join('\n')
 
+describe('the lite-project rule', () => {
+  test('all 16 marker combinations', async () => {
+    // [stamp, plan, architectureDir, architectureDoc] → lite?
+    const table: [boolean, boolean, boolean, boolean, boolean][] = [
+      [false, false, false, false, false],
+      [false, false, false, true, true],
+      [false, false, true, false, false],
+      [false, false, true, true, false],
+      [false, true, false, false, true],
+      [false, true, false, true, true],
+      [false, true, true, false, true],
+      [false, true, true, true, true],
+      [true, false, false, false, false],
+      [true, false, false, true, false],
+      [true, false, true, false, false],
+      [true, false, true, true, false],
+      [true, true, false, false, false],
+      [true, true, false, true, false],
+      [true, true, true, false, false],
+      [true, true, true, true, false],
+    ]
+    for (const [stamp, plan, architectureDir, architectureDoc, lite] of table)
+      expect(isLiteLayout({ stamp, plan, architectureDir, architectureDoc })).toBe(lite)
+  })
+})
+
 describe('routing', () => {
   test('free text from the person is routed; slash commands, replies, notifications are not', async () => {
     expect(isRoutable('add a dark mode toggle to settings', 'composer')).toBe(true)
@@ -35,6 +62,7 @@ describe('PLAN.md guard', () => {
   test('only tasks/PLAN.md is guarded', async () => {
     expect(planWriteReason('/p/tasks/PLAN.md')).toContain('ck-lite set')
     expect(planWriteReason('tasks/PLAN.md')).toContain('ck-lite')
+    expect(planWriteReason('/p/tasks/PLAN.md')).toContain('A CORRUPT task that `ck-lite check` names is repaired by the user')
     expect(planWriteReason('/p/docs/ARCHITECTURE.md')).toBe(undefined)
     expect(planWriteReason('/p/notes/PLAN.md')).toBe(undefined)
   })
@@ -46,6 +74,10 @@ describe('ck-lite open', () => {
     expect(plan.tasks.map(t => t.state)).toEqual(['doing', 'todo wait(T-01)', 'todo READY'])
     expect(plan.tasks[2]?.title).toBe('Help text')
     expect(countsLine(plan)).toBe('3 open · 1 ready')
+  })
+  test('a title holding " · " is kept whole', async () => {
+    const plan = parseOpen('T-01 todo READY S · needs: — · files: src/a.js · Count words · fast path\nopen 1 · ready 1 · done 0 · total 1')!
+    expect(plan.tasks[0]?.title).toBe('Count words · fast path')
   })
   test('the task in progress comes before a ready one', async () => {
     expect(nextCommand(parseOpen(OPEN)!)).toBe('/ck-code-lite:build T-01')

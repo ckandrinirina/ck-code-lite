@@ -22,6 +22,7 @@ import {
   COMPACT_INSTRUCTIONS,
   celebration,
   countsLine,
+  isLiteLayout,
   isRoutable,
   isWaveRunOver,
   nextCommand,
@@ -44,24 +45,56 @@ const bandHidden = atom(
 // Module variables start over on a reload; the band itself lives in $.state.
 let bandOn = true;
 let compactOn = true;
+// Task builders dispatched from the main loop since the last compaction. Not reset per turn:
+// background builders end in later notification turns, which dispatch none themselves.
 let builders = 0;
 let routingCache: string | undefined;
 let tasks: OpenTask[] = [];
 let progress: Progress | undefined;
 let isRefreshing = false;
 
-// The shell router's markers: tasks/PLAN.md or docs/ARCHITECTURE.md, and not a full ck-code
-// project (docs/architecture/ or tasks/VERSION.md), whose own plugin owns the prompt.
-async function isLiteProject($: EngineInterface): Promise<boolean> {
+// Kept word for word in both plugins' mods. The project is the nearest folder, from the
+// session's cwd up, holding tasks/ or docs/ — never past the repository's top (.git) — so a
+// shell cd into a subfolder keeps the band, the routing and the guards.
+async function projectRoot($: EngineInterface): Promise<string> {
   const cwd = await $.session.cwd();
-  if (await $.fs.exists(`${cwd}/docs/architecture`)) return false;
-  if (await $.fs.exists(`${cwd}/tasks/VERSION.md`)) return false;
-  if (await $.fs.exists(`${cwd}/tasks/PLAN.md`)) return true;
-  return $.fs.exists(`${cwd}/docs/ARCHITECTURE.md`);
+  for (let dir = cwd; ;) {
+    if (
+      (await $.fs.exists(`${dir}/tasks`)) ||
+      (await $.fs.exists(`${dir}/docs`))
+    )
+      return dir;
+    const up = dir.replace(/\/[^/]+$/, "");
+    if ((await $.fs.exists(`${dir}/.git`)) || up === dir || up === "")
+      return cwd;
+    dir = up;
+  }
+}
+
+// The lite-project rule (logic.ts isLiteLayout) on the four markers at the project's root;
+// a full ck-code project's own plugin owns the prompt.
+async function isLiteProject($: EngineInterface): Promise<boolean> {
+  const root = await projectRoot($);
+  return isLiteLayout({
+    stamp: await $.fs.exists(`${root}/tasks/VERSION.md`),
+    plan: await $.fs.exists(`${root}/tasks/PLAN.md`),
+    architectureDir: await $.fs.exists(`${root}/docs/architecture`),
+    architectureDoc: await $.fs.exists(`${root}/docs/ARCHITECTURE.md`),
+  });
+}
+
+// The guard's question: is this tasks/PLAN.md inside a lite project — its own, or a builder
+// worktree's copy under .claude/worktrees/? A relative path is the session cwd's, as the tool
+// reads it.
+async function isLitePlan($: EngineInterface, path: string): Promise<boolean> {
+  if (!(await isLiteProject($))) return false;
+  const abs = path.startsWith("/") ? path : `${await $.session.cwd()}/${path}`;
+  return abs.startsWith(`${await projectRoot($)}/`);
 }
 
 async function ckLite($: EngineInterface, args: readonly string[]) {
   return $.process.run([`${$.plugin.root}/bin/ck-lite`, ...args], {
+    cwd: await projectRoot($),
     timeoutMs: 30_000,
   });
 }
@@ -74,20 +107,28 @@ async function liteCommand(
     return {
       text: "Not a ck-code-lite project here (no tasks/PLAN.md). Run /ck-code-lite:start.",
     };
-  const ran = await ckLite($, args);
-  return {
-    text: (ran.stdout + ran.stderr).trim() || "ck-lite printed nothing.",
-  };
+  try {
+    const ran = await ckLite($, args);
+    return {
+      text: (ran.stdout + ran.stderr).trim() || "ck-lite printed nothing.",
+    };
+  } catch (err) {
+    return {
+      text: `ck-lite could not run: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
 }
 
 async function refreshBand($: EngineInterface): Promise<void> {
-  if (!bandOn || isRefreshing) return;
+  // A hidden band costs no `ck-lite open`. The cheers and the T- completions wait with it:
+  // /lite-band refreshes on show, and that refresh cheers whatever finished meanwhile.
+  if (!bandOn || isRefreshing || (await read($, bandHidden))) return;
   isRefreshing = true;
   try {
-    const cwd = await $.session.cwd();
+    const root = await projectRoot($);
     if (
       !(await isLiteProject($)) ||
-      !(await $.fs.exists(`${cwd}/tasks/PLAN.md`))
+      !(await $.fs.exists(`${root}/tasks/PLAN.md`))
     ) {
       await update($, band, () => null);
       return;
@@ -121,19 +162,28 @@ async function refreshBand($: EngineInterface): Promise<void> {
 
 // Runs between turns: $.session.compact rejects while one runs, and a person who has already
 // typed the next prompt keeps the session as it is. The next command (ship, a held task's
-// build) starts from tasks/PLAN.md, not from the transcript.
+// build) starts from tasks/PLAN.md, not from the transcript. Background builders end in later
+// turns, so the count runs since the last compaction and every clean turn end checks it,
+// once no builder is still live. An interrupt or an error keeps the count for a later turn.
 async function compactAfterWaves(
   $: EngineInterface,
   reason: string,
-  dispatched: number,
 ): Promise<void> {
   try {
     if (!(await isLiteProject($))) return;
+    const live = (await $.agent.list()).some(
+      (a) =>
+        a.type === "ck-code-lite:task-builder" &&
+        ["pending", "running", "waiting"].includes(a.status),
+    );
+    if (live) return;
     const plan = parseOpen((await ckLite($, ["open"])).stdout);
     if (plan === null) return;
     const inProgress = plan.tasks.filter((t) => t.state === "doing").length;
-    if (!isWaveRunOver({ reason, builders: dispatched, inProgress })) return;
+    if (!isWaveRunOver({ reason, builders, inProgress })) return;
     const out = await $.session.compact({ instructions: COMPACT_INSTRUCTIONS });
+    // Compacted, or skipped (the next prompt is typed): either way this run is spent.
+    builders = 0;
     $.ui.toast(
       out.skip
         ? `ck-code-lite: not compacted, ${out.skip}`
@@ -207,23 +257,21 @@ export const register: Register = (on, options) => {
 
   on("tool.call", { tool: "Write" }, async ($, e, next) => {
     const why = planWriteReason(e.file_path);
-    return why && (await isLiteProject($)) ? { deny: why } : next(e);
+    return why && (await isLitePlan($, e.file_path)) ? { deny: why } : next(e);
   }).catch(($, e, next) => next(e));
 
   on("tool.call", { tool: "Edit" }, async ($, e, next) => {
     const why = planWriteReason(e.file_path);
-    return why && (await isLiteProject($)) ? { deny: why } : next(e);
+    return why && (await isLitePlan($, e.file_path)) ? { deny: why } : next(e);
   }).catch(($, e, next) => next(e));
 
   // ---- after each turn, and in the prompt box ----
 
-  on("turn.start", async ($, e, next) => {
-    builders = 0;
-    return next(e);
-  });
-
   on("tool.call", { tool: "Agent" }, async ($, e, next) => {
-    if (e.agentId === undefined && e.subagent_type === "ck-code-lite:task-builder")
+    if (
+      e.agentId === undefined &&
+      e.subagent_type === "ck-code-lite:task-builder"
+    )
       builders += 1;
     return next(e);
   }).catch(($, e, next) => next(e));
@@ -232,11 +280,14 @@ export const register: Register = (on, options) => {
     const out = await next(e);
     if (e.agentId !== undefined) return out;
     $.clock.after(50, () => void refreshBand($));
-    const dispatched = builders;
-    builders = 0;
-    if (compactOn && dispatched >= 2)
-      $.clock.after(500, () => void compactAfterWaves($, e.reason, dispatched));
+    if (compactOn && builders >= 2 && e.reason === "answer")
+      $.clock.after(500, () => void compactAfterWaves($, e.reason));
     return out;
+  });
+
+  on("session.end", async ($, e, next) => {
+    if (e.reason === "clear") builders = 0;
+    return next(e);
   });
 
   on("prompt.autocomplete", { token: /^T-\d*$/ }, async ($, e, next) => {
@@ -333,7 +384,10 @@ export const register: Register = (on, options) => {
         <Button
           key="hide"
           label="Hide"
-          onPress={() => update($, bandHidden, () => true)}
+          onPress={async () => {
+            await update($, bandHidden, () => true);
+            await $.store.set("bandHidden", true);
+          }}
         />
       </Box>
     );

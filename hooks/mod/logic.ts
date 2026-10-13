@@ -1,6 +1,23 @@
-// Pure helpers of the ck-code-lite mod: routing rules, the PLAN.md guard, `ck-lite open`
-// parsing. Nothing here touches `$`; register.tsx makes every engine call
+// Pure helpers of the ck-code-lite mod: the lite-project rule, routing rules, the PLAN.md
+// guard, `ck-lite open` parsing. Nothing here touches `$`; register.tsx makes every engine call
 // (tests/mod/logic.test.ts covers these without a session).
+
+// ---- the lite-project rule -------------------------------------------------------------
+
+// Kept word for word in both plugins' mods, and agreeing with the skills' plugin guards
+// (version-gate.md, plugin-redirect.md): a stamped project is ck-code's; a lite plan stays
+// lite's even beside an unstamped docs/architecture/ (half-migrated); a bare
+// docs/ARCHITECTURE.md is lite's only when no docs/architecture/ sits beside it.
+export function isLiteLayout(has: {
+  stamp: boolean;
+  plan: boolean;
+  architectureDir: boolean;
+  architectureDoc: boolean;
+}): boolean {
+  if (has.stamp) return false;
+  if (has.plan) return true;
+  return has.architectureDoc && !has.architectureDir;
+}
 
 // ---- prompt routing (was scripts/prompt-router.sh) --------------------------------
 
@@ -29,13 +46,16 @@ export function stripRouting(md: string): string {
 
 // references/plan-format.md: `ck-lite` is the only thing that writes tasks/PLAN.md. A hand
 // edit skips the lock and the three-line check, and a plan corrupted that way is refused by
-// every later write.
+// every later write. A CORRUPT task is the exception no ck-lite write repairs: the user fixes
+// it by hand (references/plan-format.md).
 export function planWriteReason(path: string): string | undefined {
   if (!/(^|\/)tasks\/PLAN\.md$/.test(path)) return undefined;
   return (
     "ck-code-lite: tasks/PLAN.md is written only through `ck-lite` (references/plan-format.md). " +
     "Use `ck-lite set <status> <T-NN>`, `ck-lite done`, `ck-lite files`, `ck-lite note`, " +
-    "`ck-lite add` (new tasks on stdin) or `ck-lite drop`."
+    "`ck-lite add` (new tasks on stdin) or `ck-lite drop`. " +
+    "A CORRUPT task that `ck-lite check` names is repaired by the user in their editor — " +
+    "ask them to fix the named lines."
   );
 }
 
@@ -75,7 +95,8 @@ export function parseOpen(stdout: string): OpenPlan | null {
       id: head[0] ?? "",
       // The words between the ID and the size: `doing`, `todo READY`, `todo wait(T-01)`.
       state: head.slice(1, -1).join(" "),
-      title: parts.length > 1 ? (parts[parts.length - 1] ?? "") : "",
+      // Fields: head · needs · files · title; a title may hold ` · ` itself.
+      title: parts.slice(3).join(" · "),
     });
   }
   return summary === null ? null : { tasks, ...summary };
