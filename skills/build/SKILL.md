@@ -165,7 +165,7 @@ ck-lite set doing T-05
 
 `Read` [tdd-cycle.md](../../references/tdd-cycle.md) and follow it whole: **RED** (no
 implementation file before an observed failing test), GREEN, the bounded cleanup pass, and the
-closing full `test` run. Inline, each touched path not yet in `files:` is recorded with
+closing run (every test the task can reach). Inline, each touched path not yet in `files:` is recorded with
 `ck-lite files T-05 <path>…`, and a dependency researched under GREEN gets its `## Stack`
 line `Edit`ed into `docs/ARCHITECTURE.md` here.
 
@@ -180,17 +180,19 @@ Delegate to `ck-code-lite:qa-validator`, supplying inline:
 
 - the task ID and its acceptance criteria as literal text
 - its `files:` list
-- the `## Commands` as ordered `label=command` pairs — `test`, `build`, `lint`, dropping `(none)`
+- the `## Commands` as ordered `label=command` pairs — `test`, `build`, `lint`, dropping `(none)`;
+  `test` is the closing run's exact `$(ck-lite-affected auto --command …)` expression
+  ([tdd-cycle.md](../../references/tdd-cycle.md#running-tests)), never the bare `test`
 - the working directory, and `reuse: yes`
 - under a recorded test exception only, `exception: <reason>`
 - for a UI task with a linked design only, `design: docs/design-system/index.md`
 
 `reuse: yes` lets it report the closing `test` run as `REUSED` when not a byte of code changed
-since — that suite already passed on this exact state. Build and lint always run, and every
+since — those tests already passed on this exact state. Build and lint always run, and every
 criterion is still mapped to its covering test.
 
 **Iteration cap 3.** On `QA: FAIL`, fix the specific failure, re-run the task's tests and the
-closing full `test`, and re-delegate. At the third failure, escalate (`AskUserQuestion`):
+closing run, and re-delegate. At the third failure, escalate (`AskUserQuestion`):
 
 - `FIX MANUALLY` — hand back, task stays `doing`
 - `ACCEPT AS-IS` — `ck-lite note T-05 "<the shortfall>"`, then continue
@@ -217,7 +219,7 @@ Then **one `AskUserQuestion` carrying both questions** — "Manual test result?"
 `ISSUES`, and "Ship now?" `SHIP` / `SKIP` (used only on `PASS`).
 
 `ISSUES` → `ck-lite note T-05 "<what the user saw>"`, write a regression test that reproduces
-it, confirm it fails, apply the minimum fix, close with the full `test`, then **re-run Phase
+it, confirm it fails, apply the minimum fix, close with the closing run, then **re-run Phase
 5** — QA is mandatory after every fix. Back to this gate. **Cap 3 cycles**, then escalate with
 Phase 5's three options.
 
@@ -256,7 +258,8 @@ that command as the next step.
 - **Never run a test, build or lint command outside `ck-lite-qa`**, and never pipe one into
   `tail`/`grep` — the log already holds the output; a second run to slice it is pure waste.
 - **Never run the full suite in this context once QA is delegated** — beyond the one closing
-  run, the subagent absorbs that output.
+  run, the subagent absorbs that output. The closing run and QA's `test` are the
+  `ck-lite-affected` expression; the area backstop runs at the wave's merge and at ship.
 - **Never write code beyond the acceptance criteria.** Anything extra is a new task.
 - **Never look up a technology `## Stack` already lists, and never install a version from
   memory** — the bullets are the cache; only a new dependency costs a lookup

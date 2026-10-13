@@ -58,8 +58,9 @@ directory exists. Otherwise `python -m unittest discover`.
 
 ### 4. `test-one` — the test command narrowed to files
 
-Written only when the runner takes test paths, so RED/GREEN runs a task's own tests and the
-full suite runs once per task. `{files}` is replaced by space-separated test paths.
+Written only when the runner takes test paths, so RED/GREEN runs a task's own tests, and the
+closing run, the wave check and ship's area check run only the tests a change can reach
+(`ck-lite-affected` splices them into `{files}`). With no `test-one` each of those runs `test`. `{files}` is replaced by space-separated test paths.
 
 | Runner | `test-one` |
 |---|---|

@@ -128,7 +128,10 @@ returns — that, or the name, is what resumes a partial. Announce first.
 
 - **Fan-out (≥ 2)** — every task in a **single message**, one `Agent` call each with
   `isolation: "worktree"`, so they run concurrently. `Fan-out: N tasks → N worktree agents.`
-- **Solo (1)** — record `git rev-parse HEAD` as the baseline, then one `Agent` call with **no
+Record `git rev-parse HEAD` as the wave's `<base-sha>` first — the target before this wave,
+which every prompt's `Base:` line carries and the merged-result check scopes against.
+
+- **Solo (1)** — the baseline is that `<base-sha>`; then one `Agent` call with **no
   `isolation`**. `Solo: T-NN → 1 agent on <$TARGET> (no worktree).` Never edit files here, and
   never have a fan-out wave in flight, while a solo agent runs.
 
@@ -208,7 +211,10 @@ is reported and kept, never force-merged; it gets the same `branch:` note as P5.
 
 **Verify the merged result** (fan-out, two or more branches merged) — each branch passed QA
 alone; together they may not. One `ck-code-lite:qa-validator` on `$ROOT` with task ID `wave-N` (it names the run's logs, never
-a plan entry), the full command list, `reuse: no`, and the merged tasks' criteria. A `FAIL`
+a plan entry), the command list with `test` at **area scope** —
+`test=$(ck-lite-affected <base-sha> --area --command '<test>' '<test-one>')`, every test of
+each area the wave reaches and never one it does not — `reuse: no`, and the merged tasks'
+criteria. A `FAIL`
 ends the run: report which tasks merged, leave them `doing` for `/ck-code-lite:build T-NN`, and
 go straight to P8's reconcile — no later wave builds on a target that fails its own suite.
 
@@ -276,6 +282,7 @@ Task T-NN · placement: worktree            ← solo: "placement: solo on <TARGE
 <ck-lite show T-NN output, verbatim>
 
 Commands: test: <cmd> · test-one: <cmd or (none)> · build: <cmd> · lint: <cmd>
+Base: <base-sha>
 Context: CK_LITE_PLAN=<$ROOT>/tasks/PLAN.md CK_LITE_ARCH=<$ROOT>/docs/ARCHITECTURE.md ck-lite context T-NN
 TDD rules: <absolute path of references/tdd-cycle.md>
 Design: <absolute path of $ROOT/docs/design-system/index.md and of references/design-system.md, tokensPath: pending|set>   ← UI task with a linked design only

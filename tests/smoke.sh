@@ -254,6 +254,48 @@ has "qa: runs are keyed per checkout" "no ck-lite-qa run for T-77" "$(cd "$WORK/
 
 # The prompt router is the mod's prompt.submit hook since 1.3.0: tests/mod/hooks.test.ts.
 
+# ---- ck-lite-affected ---------------------------------------------------------------------
+echo "=== ck-lite-affected ==="
+fresh affected
+w() { mkdir -p "$(dirname "$1")"; printf '%s\n' "$2" >"$1"; }
+w package.json '{"name":"shop","scripts":{"test":"vitest run"}}'
+w src/admin/orders.service.ts 'export const total = () => 1'
+w src/admin/orders.service.test.ts "import { total } from './orders.service'"
+w src/admin/orders.controller.ts "import { total } from './orders.service'"
+w src/admin/orders.controller.test.ts "import { c } from './orders.controller'"
+w src/admin/users.ts 'export const u = 1'
+w src/admin/users.test.ts "import { u } from './users'"
+w src/client/cart.ts 'export const cart = 1'
+w src/client/cart.test.ts "import { cart } from './cart'"
+w e2e/admin/admin.spec.ts 'x'
+w e2e/client/shop.spec.ts 'x'
+git add -A; git commit -qm base
+echo '//' >>src/admin/orders.service.ts
+out="$(ck-lite-affected HEAD --command 'npm run test' 'npm run test -- {files}')"
+eq  "affected: a changed service runs its test and the test of the code that uses it" \
+    "npm run test -- src/admin/orders.controller.test.ts src/admin/orders.service.test.ts" "$out"
+has "affected: one package and no areas is the root, so area scope is FULL" "ck-lite-affected: FULL" "$(ck-lite-affected HEAD --area)"
+printf 'admin: src/admin/* e2e/admin/*\nclient: src/client/* e2e/client/*\n' >.ck-test-areas
+git add .ck-test-areas; git commit -qm areas
+echo '//' >>src/admin/orders.service.ts
+out="$(ck-lite-affected HEAD --area --command 'npm run test' 'npm run test -- {files}')"
+has "affected --area: a declared area runs whole, e2e specs included" "e2e/admin/admin.spec.ts" "$out"
+has "affected --area: every test of the area" "src/admin/users.test.ts" "$out"
+lacks "affected --area: never the other area" "client" "$out"
+git checkout -q -- .
+git rm -q .ck-test-areas; mkdir -p docs
+printf '# Shop\n\n## Areas\n\n| Area | Doc | Paths |\n|---|---|---|\n| admin | docs/areas/admin.md | src/admin/, e2e/admin/ |\n| client | docs/areas/client.md | src/client/, e2e/client/ |\n' >docs/ARCHITECTURE.md
+git add -A; git commit -qm arch-areas
+echo '//' >>src/client/cart.ts
+out="$(ck-lite-affected HEAD --area --command 'npm run test' 'npm run test -- {files}')"
+eq  "affected --area: ## Areas in ARCHITECTURE.md declares the areas" "npm run test -- e2e/client/shop.spec.ts src/client/cart.test.ts" "$out"
+git checkout -q -- .
+echo x >README.md
+eq  "affected: no code changed runs nothing" ": no code changed" "$(ck-lite-affected HEAD --command full 'one {files}')"
+rm README.md; echo '{}' >tsconfig.json
+eq  "affected: root config runs the full command" "full" "$(ck-lite-affected HEAD --command full 'one {files}')"
+rm tsconfig.json
+
 # ---- reclaim ----------------------------------------------------------------------------
 echo "=== reclaim ==="
 fresh reclaim; echo x >x; git add x; git commit -qm x

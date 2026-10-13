@@ -31,7 +31,10 @@ The caller supplies all of these inline. You never open `tasks/PLAN.md` to find 
 
 - The task ID and its acceptance criteria as literal text
 - The task's `files:` list — the paths the implementation claims to have touched
-- An ordered command list as `label=command` pairs (`test=…`, `build=…`, `lint=…`)
+- An ordered command list as `label=command` pairs (`test=…`, `build=…`, `lint=…`). A `test`
+  given as `$(ck-lite-affected …)` is passed into `ck-lite-qa` exactly so, double-quoted, and
+  expands inside the call — never run `ck-lite-affected` on its own, and never swap in the
+  bare suite
 - The working directory to run them in
 - `reuse: yes` or `reuse: no`
 - Optionally `exception: <reason>` — the user recorded that this task has no automated test

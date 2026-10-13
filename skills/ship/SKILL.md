@@ -153,6 +153,24 @@ Never `git add -A` or `git add .`.
 
 One `AskUserQuestion`: `Open/update PR` / `Push only` / `Nothing further`.
 
+### 4.0 Area check — before anything leaves the machine
+
+A build checks only the tests its task can reach, so before the first push the branch runs
+every test of each **area** it touches — never an area it does not. Only when `ck-lite
+commands` prints a `test` line other than `(none)`; with no `docs/ARCHITECTURE.md` (standalone)
+say `Area check: skipped (no ## Commands)` and push:
+
+```bash
+ck-lite-qa run ship --reuse test="$(ck-lite-affected auto --area --command '<test>' '<test-one>')"
+```
+
+`<test>` and `<test-one>` come from `ck-lite commands` (no `test-one` → `<test>` twice). An
+area is a workspace package or a row of `## Areas`; the whole suite runs only for repo-root
+config, a lockfile alone, migrations, fixtures or env files. `REUSED` or `PASS` → push. On
+`RUNNING`, `ck-lite-qa wait ship` until it prints a result. `FAIL` → **do not push**: show the
+failing command and its excerpt, keep the commit, and point at `/ck-code-lite:build T-NN` (or a
+fix on this branch) before shipping again.
+
 ```bash
 git push -u origin "$(git branch --show-current)"
 ```
@@ -197,6 +215,7 @@ If `gh` is unavailable, print the manual compare URL
 **Message:** <subject>
 **Files:** <count>
 **PR:** <url — created | updated | skipped>
+**Area check:** <PASS | REUSED | skipped — no ## Commands>
 **Task:** T-NN → done | stays doing | standalone
 ```
 
@@ -219,6 +238,8 @@ Then point at the next step: `/ck-code-lite:build` for the next ready task.
 - **Never ask which base branch to target** — resolve it from the remote default.
 - **Never add `Closes #N` unless the user supplied the issue number.**
 - **Never push without confirming** — Phase 4's question is mandatory.
+- **Never push a branch whose area check failed** (4.0) — the build checked only each task's
+  reach; this is the one run that sees the whole area before the PR.
 - **Never amend or force-push** unless the user explicitly asks.
 - **Never block the commit because `gh` is missing** — degrade to commit-only.
 - **Never `Read` or `Edit` `tasks/PLAN.md`** — `ck-lite show` reads the task, `ck-lite set`

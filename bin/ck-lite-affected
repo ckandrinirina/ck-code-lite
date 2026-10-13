@@ -1,0 +1,520 @@
+#!/usr/bin/env bash
+# ck-lite-affected — which areas and which tests a change can reach, so QA never runs the rest.
+# Ported from ck-code's scripts/ck-affected.sh; self-contained, lite never depends on ck-code.
+#
+# Usage:
+#   ck-lite-affected <base> [--area]                     the summary
+#   ck-lite-affected <base> [--area] --tests             runnable test files under the current
+#                                                   directory, relative to it, one per line
+#   ck-lite-affected <base> [--area] --command <full> <one>
+#                                                   the ready test command: <full> for a FULL
+#                                                   scope, <one> with {files} replaced by the
+#                                                   test files and {dirs} by their folders
+#                                                   (`./internal/api`, for go test), or `: …`
+#                                                   when no test is affected
+#
+# <base> is a commit, branch or `auto` (the merge-base of HEAD with the trunk). The changed
+# files are `git diff <base>` (working tree, committed or not) plus untracked files.
+#
+# Areas: a workspace package — the nearest package.json, pyproject.toml, setup.py, go.mod,
+# Cargo.toml, Gemfile or composer.json above a file — or a declared area in .ck-test-areas
+# (`name: glob glob…`, one per line, first match wins), which is how one package is split
+# into a backoffice and a client, or e2e specs are tied to the code they drive. With no
+# .ck-test-areas, the ## Areas table of docs/ARCHITECTURE.md declares them (its prefixes).
+#
+# Story scope (default): tests that import a changed file, directly or through any chain of
+#   imports (a service's test, the test of the controller that uses it, …). JS/TS and
+#   Python imports are resolved to the file (relative paths, `@/` aliases, workspace
+#   package names, dotted and relative modules); Ruby, PHP and Go match by name, and Go
+#   adds a package's own tests. An area whose change cannot be traced (its
+#   own manifest or config, a Rust/C++/JVM file, more than CK_LITE_AFFECTED_CAP files reached) is
+#   `all`: every test in it runs.
+# Area scope (--area): every test of every reached area, plus areas whose manifest depends on
+#   one. Areas nothing reaches are skipped.
+# FULL: a change no area owns — repo-root config or manifest, a lockfile with no manifest
+#   change, migrations, schema, seeds, fixtures, env files, .ck-test-areas.
+# NONE: only docs and plan files changed.
+
+set -uo pipefail
+
+die() { echo "ck-lite-affected: ERROR — $*" >&2; exit 2; }
+CAP="${CK_LITE_AFFECTED_CAP:-2000}"
+MAXF="${CK_LITE_AFFECTED_MAX_FILES:-800}"
+
+BASE=""; MODE=summary; SCOPE=story; FULLCMD=""; ONECMD=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --area) SCOPE=area ;;
+    --tests) MODE=tests ;;
+    --command) MODE="command"; [ "$#" -ge 3 ] || die "--command needs <full> <one>"
+               FULLCMD="$2"; ONECMD="$3"; shift 2 ;;
+    -*) die "unknown flag $1" ;;
+    *) [ -z "$BASE" ] || die "one <base> only"; BASE="$1" ;;
+  esac
+  shift
+done
+[ -n "$BASE" ] || die "usage: ck-lite-affected <base> [--area] [--tests | --command <full> <one>]"
+TOP="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not a git repository"
+CWD="$(pwd -P)"
+cd "$TOP" || die "cannot enter $TOP"
+TOP="$(pwd -P)"
+W="$(mktemp -d "${TMPDIR:-/tmp}/ck-lite-affected.XXXXXX")" || die "no temp dir"
+trap 'rm -rf "$W"' EXIT
+
+FULL_REASON=""
+full() { [ -n "$FULL_REASON" ] || FULL_REASON="$1"; }
+
+if [ "$BASE" = auto ]; then
+  t="$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null)"
+  for c in $t main master develop; do
+    if git rev-parse -q --verify "$c^{commit}" >/dev/null 2>&1; then BASE="$(git merge-base HEAD "$c" 2>/dev/null)"; break; fi
+  done
+  [ "$BASE" != auto ] || BASE=HEAD
+fi
+git rev-parse -q --verify "$BASE^{commit}" >/dev/null 2>&1 || full "base $BASE not found"
+
+# ---- inputs -------------------------------------------------------------------------------
+git ls-files --cached --others --exclude-standard | sort -u >"$W/all"
+{ git diff --name-only --diff-filter=d "$BASE" -- 2>/dev/null
+  git ls-files --others --exclude-standard; } | sort -u >"$W/changed"
+
+# Declared areas: "name<TAB>glob" lines.
+: >"$W/declared"
+if [ -f .ck-test-areas ]; then
+  sed -e 's/#.*//' .ck-test-areas | awk -F: 'NF >= 2 { n = $1; gsub(/[ \t]/, "", n); $1 = ""
+    m = split($0, g, /[ \t:]+/); for (i = 1; i <= m; i++) if (g[i] != "") print n "\t" g[i] }' >"$W/declared"
+fi
+
+# No .ck-test-areas: the ## Areas table of docs/ARCHITECTURE.md (| area | doc | prefixes |).
+if [ ! -s "$W/declared" ] && [ -f docs/ARCHITECTURE.md ]; then
+  awk '/^## Areas/ { f = 1; next } f && /^## / { exit }
+    f && /^\| / && !/^\|[- |]+\|$/ { split($0, c, "|"); a = c[2]; p = c[4]
+      gsub(/^[ \t`]+|[ \t`]+$/, "", a); gsub(/[ \t`]/, "", p)
+      if (a == "" || a == "Area") next
+      n = split(p, q, ","); for (i = 1; i <= n; i++) if (q[i] != "") { sub(/\/$/, "", q[i]); print a "\t" q[i] "/*" } }' \
+    docs/ARCHITECTURE.md >"$W/declared"
+fi
+
+# Manifest areas, deepest first so the first prefix match is the nearest.
+grep -E '(^|/)(package\.json|pyproject\.toml|setup\.py|go\.mod|Cargo\.toml|Gemfile|composer\.json)$' "$W/all" |
+  grep -vE '(^|/)(node_modules|vendor|\.venv|venv|dist|build|target)/' |
+  sed -e 's|^[^/]*$|./&|' -e 's|/[^/]*$||' | sort -u |
+  awk '{ print gsub(/\//, "/") "\t" $0 }' | sort -rn | cut -f2 | grep -vxF . >"$W/manifests"
+
+# "file<TAB>area" for every file: a declared glob first (`*` crosses `/`), else the nearest
+# manifest directory, else the root `.`.
+cat "$W/all" "$W/changed" | sort -u | awk -F'\t' -v D="$W/declared" -v M="$W/manifests" '
+  function rx(g,   r, i, c) { r = "^"
+    for (i = 1; i <= length(g); i++) { c = substr(g, i, 1)
+      if (c == "*") r = r ".*"; else if (c == "?") r = r "."
+      else if (index(".[]()+{}^$|\\", c)) r = r "\\" c; else r = r c }
+    return r "$" }
+  BEGIN { while ((getline l < D) > 0) { split(l, p, "\t"); nd++; dn[nd] = p[1]; dr[nd] = rx(p[2]) }
+          while ((getline l < M) > 0) { nm++; md[nm] = l } }
+  { a = "."
+    for (i = 1; i <= nd; i++) if ($0 ~ dr[i]) { a = dn[i]; break }
+    if (a == ".") for (i = 1; i <= nm; i++) if (index($0, md[i] "/") == 1) { a = md[i]; break }
+    print $0 "\t" a }' >"$W/areamap"
+
+area_of() { awk -F'\t' -v f="$1" '$1 == f { print $2; exit }' "$W/areamap"; }
+areas_of() { awk -F'\t' 'NR == FNR { a[$1] = $2; next } ($0 in a) { print a[$0] }' "$W/areamap" -; }
+in_areas() {  # stdin files → those whose area is listed in file $1
+  awk -F'\t' -v L="$1" 'BEGIN { while ((getline l < L) > 0) ok[l] = 1 }
+    NR == FNR { a[$1] = $2; next } (a[$0] in ok) { print }' "$W/areamap" -
+}
+
+is_test() {  # a file a runner executes as a test
+  local b="${1##*/}"
+  case "$b" in
+    *.test.* | *.spec.* | *.cy.* | test_*.py | *_test.py | *_test.go | *_spec.rb | *Test.php) return 0 ;;
+  esac
+  case "/$1" in */__tests__/*.[jt]s | */__tests__/*.[jt]sx | */__tests__/*.mjs) return 0 ;; esac
+  return 1
+}
+
+is_doc() {
+  case "$1" in
+    *.md | *.mdx | *.markdown | docs/* | tasks/* | .github/* | .claude/* | .vscode/* | .idea/* | \
+    LICENSE* | */LICENSE* | .env.example | */.env.example | .env.sample | */.env.sample | .gitignore | */.gitignore | .gitattributes | .editorconfig | CODEOWNERS) return 0 ;;
+  esac
+  return 1
+}
+
+is_global() {  # data or environment every area shares
+  local b="${1##*/}"
+  case "/$1" in */migrations/* | */migrate/* | */fixtures/* | */seeds/* | */seeders/*) return 0 ;; esac
+  case "$b" in
+    .ck-test-areas | .env | .env.* | *.sql | schema.prisma | schema.rb | seed.* | seeds.*) return 0 ;;
+  esac
+  return 1
+}
+
+is_lock() {
+  case "${1##*/}" in
+    package-lock.json | pnpm-lock.yaml | yarn.lock | bun.lockb | bun.lock | poetry.lock | uv.lock | \
+    Pipfile.lock | Cargo.lock | Gemfile.lock | composer.lock | go.sum) return 0 ;;
+  esac
+  return 1
+}
+
+is_config() {  # a file that changes how a whole area builds, lints or runs its tests
+  case "${1##*/}" in
+    package.json | pyproject.toml | setup.py | setup.cfg | go.mod | go.work | Cargo.toml | Gemfile | composer.json | \
+    pnpm-workspace.yaml | turbo.json | nx.json | lerna.json | \
+    vite.config.* | vitest.config.* | vitest.workspace.* | vitest.setup.* | jest.config.* | jest.setup.* | \
+    setupTests.* | playwright.config.* | cypress.config.* | karma.conf.* | .mocharc* | global-setup.* | \
+    global-teardown.* | tsconfig*.json | jsconfig*.json | babel.config.* | .babelrc* | eslint.config.* | \
+    .eslintrc* | .prettierrc* | prettier.config.* | biome.json* | next.config.* | nuxt.config.* | \
+    svelte.config.* | astro.config.* | .npmrc | .nvmrc | .python-version | ruff.toml | .ruff.toml | pytest.ini | \
+    tox.ini | conftest.py | .rubocop.yml | .rspec | spec_helper.rb | rails_helper.rb | test_helper.* | \
+    phpunit.xml* | Makefile | Dockerfile* | docker-compose* | compose.yaml | compose.yml) return 0 ;;
+  esac
+  return 1
+}
+
+family() {  # how importers of this file name it
+  case "$1" in
+    *.ts | *.tsx | *.js | *.jsx | *.mjs | *.cjs | *.mts | *.cts | *.vue | *.svelte | *.astro) echo js ;;
+    *.py) echo py ;;
+    *.rb) echo rb ;;
+    *.php) echo php ;;
+    *.go) echo go ;;
+    *.css | *.scss | *.sass | *.less | *.svg | *.png | *.jpg | *.jpeg | *.gif | *.webp | *.ico | *.json | \
+    *.yaml | *.yml | *.html | *.graphql | *.gql | *.txt | *.csv | *.woff | *.woff2 | *.ttf | *.mp3 | *.wav) echo asset ;;
+    *) echo none ;;
+  esac
+}
+
+esc() { printf '%s' "$1" | sed 's/[][\.*^$()+?{}|/]/\\&/g'; }
+
+# ---- classify each changed file -----------------------------------------------------------
+: >"$W/seeds"; : >"$W/allareas"; : >"$W/tests"; : >"$W/why"; DOCS=0; CODE=0
+manifest_changed=no
+grep -qE '(^|/)(package\.json|pyproject\.toml|setup\.py|go\.mod|Cargo\.toml|Gemfile|composer\.json)$' "$W/changed" && manifest_changed=yes
+while read -r f; do
+  [ -n "$f" ] || continue
+  if is_doc "$f"; then DOCS=$((DOCS + 1)); continue; fi
+  CODE=$((CODE + 1))
+  if is_global "$f"; then full "$f is shared data or environment"; continue; fi
+  a="$(area_of "$f")"
+  if is_lock "$f"; then
+    [ "$manifest_changed" = yes ] && continue
+    [ "$a" = . ] && { full "$f changed with no manifest change"; continue; }
+    echo "$a" >>"$W/allareas"; echo "$a	$f" >>"$W/why"; continue
+  fi
+  if is_config "$f"; then
+    [ "$a" = . ] && { full "$f configures the whole repo"; continue; }
+    echo "$a" >>"$W/allareas"; echo "$a	$f" >>"$W/why"; continue
+  fi
+  is_test "$f" && echo "$f" >>"$W/tests"
+  if [ "$(family "$f")" = none ]; then
+    echo "$a" >>"$W/allareas"; echo "$a	$f" >>"$W/why"; continue
+  fi
+  echo "$f" >>"$W/seeds"
+done <"$W/changed"
+
+# ---- trace importers ----------------------------------------------------------------------
+json_name() { grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' "$1" | head -1 | sed 's/.*"\([^"]*\)"$/\1/'; }
+
+pkg_name() {  # area dir → the name other manifests depend on it by
+  local d="$1"
+  if [ -f "$d/package.json" ]; then json_name "$d/package.json"
+  elif [ -f "$d/go.mod" ]; then sed -n 's/^module[[:space:]]*\([^[:space:]]*\).*/\1/p' "$d/go.mod" | head -1
+  elif [ -f "$d/Cargo.toml" ]; then sed -n 's/^name[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$d/Cargo.toml" | head -1
+  elif [ -f "$d/pyproject.toml" ]; then sed -n 's/^name[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$d/pyproject.toml" | head -1
+  elif [ -f "$d/composer.json" ]; then json_name "$d/composer.json"
+  fi
+}
+
+go_mod_dir() {  # file → nearest dir holding go.mod
+  local d="${1%/*}"; [ "$d" = "$1" ] && d=.
+  while :; do
+    [ -f "$d/go.mod" ] && { echo "$d"; return; }
+    [ "$d" = . ] && return
+    case "$d" in */*) d="${d%/*}" ;; *) d=. ;; esac
+  done
+}
+
+# Exact import resolution for JS/TS: a quoted specifier that resolves to a target — relative
+# (`./orders.service`, `../orders`), an alias tail (`@/orders/orders.service`) or a workspace
+# package name (`@acme/ui`, `@acme/ui/button`). Prints each file holding one.
+cat >"$W/js.awk" <<'AWK'
+function norm(p,   n, a, i, k, o, out) {
+  n = split(p, a, "/"); k = 0
+  for (i = 1; i <= n; i++) {
+    if (a[i] == "" || a[i] == ".") continue
+    if (a[i] == "..") { if (k > 0) k--; continue }
+    o[++k] = a[i]
+  }
+  out = ""; for (i = 1; i <= k; i++) out = out (i > 1 ? "/" : "") o[i]
+  return out
+}
+function strip(p) {
+  sub(/\.(d\.ts|ts|tsx|js|jsx|mjs|cjs|mts|cts|vue|svelte|astro)$/, "", p); sub(/\/index$/, "", p)
+  return p
+}
+function hits(sp,   r, t, i, n) {
+  if (sp ~ /^\.\.?(\/|$)/) { r = norm((D == "" ? "" : D "/") sp); return (r in T) || (strip(r) in T) }
+  for (n in P) if (sp == n || index(sp, n "/") == 1) return 1
+  if (sp ~ /^(@|~|#|\$)[A-Za-z0-9_-]*\// || sp ~ /^src\//) {
+    t = sp; sub(/^[^\/]*\//, "", t); t = strip(t)
+    for (i = 1; i <= NT; i++) if (TL[i] == t || substr(TL[i], length(TL[i]) - length(t)) == "/" t) return 1
+  }
+  return 0
+}
+BEGIN {
+  while ((getline l < TG) > 0) { T[l] = 1; T[strip(l)] = 1; TL[++NT] = strip(l) }
+  while ((getline l < PK) > 0) if (l != "") P[l] = 1
+}
+FNR == 1 { D = FILENAME; if (!sub(/\/[^\/]*$/, "", D)) D = ""; done = 0 }
+done { next }
+{
+  s = $0
+  while (match(s, /['"`][^'"`]+['"`]/)) {
+    sp = substr(s, RSTART + 1, RLENGTH - 2); s = substr(s, RSTART + RLENGTH)
+    if (hits(sp)) { print FILENAME; done = 1; next }
+  }
+}
+AWK
+
+# Exact import resolution for Python: `import a.b`, `from a.b import c`, `from . import c`
+# (parenthesised lists included) naming a target module, matched on whole dotted components
+# so a `src/` layout or a rootdir on sys.path still resolves.
+cat >"$W/py.awk" <<'AWK'
+function ok(x,   i) {
+  if (x == "") return 0
+  if (x in M) return 1
+  for (i = 1; i <= NM; i++) if (substr(ML[i], length(ML[i]) - length(x)) == "." x) return 1
+  return 0
+}
+function check(l,   base, names, n, a, i, dots, b, r, k, x) {
+  sub(/#.*/, "", l); gsub(/[()\\]/, " ", l)
+  if (l ~ /^[ \t]*from[ \t]/) {
+    base = l; sub(/^[ \t]*from[ \t]+/, "", base); sub(/[ \t]+import([ \t].*)?$/, "", base)
+    names = l; sub(/^.*[ \t]import[ \t]+/, "", names)
+    dots = base; sub(/[^.].*$/, "", dots); b = substr(base, length(dots) + 1)
+    if (dots != "") {
+      r = PKG; for (k = 2; k <= length(dots); k++) { if (!sub(/\.[^.]*$/, "", r)) r = "" }
+      base = (r == "" ? b : (b == "" ? r : r "." b))
+    }
+    if (ok(base)) return 1
+    n = split(names, a, ",")
+    for (i = 1; i <= n; i++) {
+      x = a[i]; sub(/[ \t]+as[ \t].*/, "", x); gsub(/[ \t]/, "", x)
+      if (x != "" && x != "*" && ok(base == "" ? x : base "." x)) return 1
+    }
+    return 0
+  }
+  names = l; sub(/^[ \t]*import[ \t]+/, "", names)
+  n = split(names, a, ",")
+  for (i = 1; i <= n; i++) { x = a[i]; sub(/[ \t]+as[ \t].*/, "", x); gsub(/[ \t]/, "", x); if (ok(x)) return 1 }
+  return 0
+}
+BEGIN {
+  while ((getline l < TG) > 0) {
+    m = l; sub(/\.py$/, "", m); sub(/\/__init__$/, "", m); gsub(/\//, ".", m); M[m] = 1; ML[++NM] = m
+  }
+}
+FNR == 1 { PKG = FILENAME; if (!sub(/\/[^\/]*$/, "", PKG)) PKG = ""; gsub(/\//, ".", PKG); cont = 0; done = 0 }
+done { next }
+cont { buf = buf " " $0; if (index($0, ")")) { cont = 0; if (check(buf)) { print FILENAME; done = 1 } }; next }
+/^[ \t]*(from|import)[ \t]/ {
+  if ($0 ~ /\(/ && $0 !~ /\)/) { cont = 1; buf = $0; next }
+  if (check($0)) { print FILENAME; done = 1 }
+}
+AWK
+
+# file → "family<TAB>fixed key<TAB>ERE" for the families matched loosely (Ruby constants, PHP
+# classes, Go package paths, assets). JS/TS and Python resolve exactly above.
+loose() {
+  local f="$1" b stem dir c rel m
+  b="${f##*/}"; stem="${b%.*}"; dir="${f%/*}"; [ "$dir" = "$f" ] && dir=.
+  case "$(family "$f")" in
+    asset)
+      printf 'all\t%s\t[\x27"`(]([^\x27"`()]*/)?%s[\x27"`)?#]\n' "$b" "$(esc "$b")" ;;
+    rb)
+      c="$(printf '%s' "$stem" | awk -F_ '{ s = ""; for (i = 1; i <= NF; i++) s = s toupper(substr($i, 1, 1)) substr($i, 2); print s }')"
+      printf 'rb\t%s\trequire(_relative)?[[:space:](]*[\x27"]([^\x27"]*/)?%s(\\.rb)?[\x27"]\n' "$stem" "$(esc "$stem")"
+      printf 'rb\t%s\t(^|[^A-Za-z0-9_])%s([^A-Za-z0-9_]|$)\n' "$c" "$(esc "$c")" ;;
+    php)
+      printf 'php\t%s\t(^|[^A-Za-z0-9_])%s([^A-Za-z0-9_]|$)\n' "$stem" "$(esc "$stem")" ;;
+    go)
+      m="$(go_mod_dir "$f")"; [ -n "$m" ] || return 0
+      if [ "$m" = . ]; then rel="$dir"; else rel="${dir#"$m"/}"; [ "$rel" = "$dir" ] && rel=.; fi
+      [ "$rel" = . ] || printf 'go\t%s\t"([^"]*/)?%s"\n' "$rel" "$(esc "$rel")"
+      # A package's own tests sit beside it.
+      grep -E "^$(esc "$dir")/[^/]*_test\\.go\$" "$W/all" >>"$W/found" ;;
+  esac
+}
+
+pathspecs() {  # family → git pathspecs
+  case "$1" in
+    js) echo "*.ts *.tsx *.js *.jsx *.mjs *.cjs *.mts *.cts *.vue *.svelte *.astro" ;;
+    py) echo "*.py" ;; rb) echo "*.rb *.erb" ;; php) echo "*.php" ;; go) echo "*.go" ;;
+    all) echo "*.ts *.tsx *.js *.jsx *.mjs *.cjs *.vue *.svelte *.astro *.py *.rb *.erb *.php *.go *.css *.scss *.html" ;;
+  esac
+}
+
+# candidates <family> <keys file> → files of that family holding any key
+candidates() {
+  # shellcheck disable=SC2046
+  git grep --untracked -l -I -F -f "$2" -- $(pathspecs "$1") 2>/dev/null
+}
+
+# A FULL scope needs no trace.
+[ -n "$FULL_REASON" ] && : >"$W/seeds"
+sort -u "$W/seeds" >"$W/visited"
+cp "$W/visited" "$W/frontier"
+: >"$W/pkgseen"
+TRACE_CAPPED=no
+while [ -s "$W/frontier" ]; do
+  : >"$W/found"; : >"$W/pats"
+  # JS/TS: targets, their fixed keys (the stem, or the folder of an index), package names.
+  grep -E '\.(ts|tsx|js|jsx|mjs|cjs|mts|cts|vue|svelte|astro)$' "$W/frontier" >"$W/t.js"
+  awk -F/ '{ n = $NF; sub(/\.[^.]*$/, "", n); if (n == "index" && NF > 1) n = $(NF - 1); print n }' "$W/t.js" | sort -u >"$W/k.js"
+  : >"$W/pk"
+  areas_of <"$W/frontier" | sort -u | grep -vxF . | grep -vxF -f "$W/pkgseen" >"$W/newpkg" || true
+  while read -r a; do
+    echo "$a" >>"$W/pkgseen"
+    [ -f "$a/package.json" ] && json_name "$a/package.json" >>"$W/pk"
+  done <"$W/newpkg"
+  cat "$W/pk" >>"$W/k.js"
+  if [ -s "$W/k.js" ]; then
+    candidates js "$W/k.js" | tr '\n' '\0' | xargs -0 awk -v TG="$W/t.js" -v PK="$W/pk" -f "$W/js.awk" >>"$W/found" 2>/dev/null
+  fi
+  # Python: the module stem (or the package folder of an __init__) must appear on the line.
+  grep -E '\.py$' "$W/frontier" >"$W/t.py"
+  if [ -s "$W/t.py" ]; then
+    awk -F/ '{ n = $NF; sub(/\.py$/, "", n); if (n == "__init__" && NF > 1) n = $(NF - 1); print n }' "$W/t.py" | sort -u >"$W/k.py"
+    candidates py "$W/k.py" | tr '\n' '\0' | xargs -0 awk -v TG="$W/t.py" -f "$W/py.awk" >>"$W/found" 2>/dev/null
+  fi
+  # Everything else traced by name.
+  while read -r f; do
+    case "$(family "$f")" in rb | php | go | asset) loose "$f" >>"$W/pats" ;; esac
+  done <"$W/frontier"
+  for fam in rb php go all; do
+    grep "^$fam	" "$W/pats" | cut -f2 | sort -u >"$W/k.$fam"
+    [ -s "$W/k.$fam" ] || continue
+    grep "^$fam	" "$W/pats" | cut -f3- | sort -u >"$W/p.$fam"
+    candidates "$fam" "$W/k.$fam" | tr '\n' '\0' | xargs -0 grep -l -E -f "$W/p.$fam" -- >>"$W/found" 2>/dev/null
+  done
+  sort -u "$W/found" | grep -vxF -f "$W/visited" >"$W/new" || true
+  : >"$W/frontier"
+  while read -r f; do
+    [ -n "$f" ] || continue
+    is_doc "$f" && continue
+    echo "$f" >>"$W/visited"
+    if is_test "$f"; then echo "$f" >>"$W/tests"; else echo "$f" >>"$W/frontier"; fi
+  done <"$W/new"
+  sort -u -o "$W/visited" "$W/visited"
+  if [ "$(wc -l <"$W/visited")" -gt "$CAP" ]; then TRACE_CAPPED=yes; break; fi
+done
+sort -u -o "$W/tests" "$W/tests"
+
+# ---- areas ----------------------------------------------------------------------------------
+{ areas_of <"$W/visited"; areas_of <"$W/tests"; cat "$W/allareas"; } | sort -u >"$W/reached"
+sort -u -o "$W/allareas" "$W/allareas"
+# A trace cut short runs every area it reached in full, except the root: a change at the
+# root is already FULL, and a root file reached through a loose name match is not a reason to
+# run the whole repo.
+[ "$TRACE_CAPPED" = yes ] && grep -vxF . "$W/reached" >>"$W/allareas" && sort -u -o "$W/allareas" "$W/allareas"
+
+# Area scope: also every workspace package whose manifest names a reached one, transitively.
+: >"$W/via"
+if [ "$SCOPE" = area ]; then
+  grow=1
+  while [ "$grow" = 1 ]; do
+    grow=0
+    while read -r a; do
+      [ "$a" = . ] && continue
+      [ -d "$a" ] || continue
+      n="$(pkg_name "$a")"; [ -n "$n" ] || continue
+      e="$(esc "$n")"
+      while read -r p; do
+        grep -qxF "$p" "$W/reached" && continue
+        for m in "$p"/package.json "$p"/pyproject.toml "$p"/setup.py "$p"/go.mod "$p"/Cargo.toml "$p"/composer.json "$p"/Gemfile; do
+          [ -f "$m" ] || continue
+          if grep -qE "(^|[^A-Za-z0-9_./@-])$e([^A-Za-z0-9_./-]|\$)" "$m"; then
+            echo "$p" >>"$W/reached"; printf '%s\t%s\n' "$p" "$a" >>"$W/via"; grow=1; break
+          fi
+        done
+      done <"$W/manifests"
+    done < <(sort -u "$W/reached")
+    sort -u -o "$W/reached" "$W/reached"
+  done
+fi
+
+# With no area splitting the repo, the root area is the whole repo: running it whole is
+# FULL. Beside other areas it is only the rest — files outside every area.
+if [ ! -s "$W/manifests" ] && [ ! -s "$W/declared" ]; then
+  grep -qxF . "$W/allareas" && full "$(awk -F'\t' '$1 == "." { print $2; exit }' "$W/why") cannot be traced and no area splits the repo"
+  [ "$SCOPE" = area ] && grep -qxF . "$W/reached" && full "no area splits the repo (add .ck-test-areas)"
+fi
+
+# The tests to run: every test of an `all` area (every reached area at area scope), and the
+# traced tests of the others.
+if [ "$SCOPE" = area ]; then cp "$W/reached" "$W/whole"; else cp "$W/allareas" "$W/whole"; fi
+while read -r f; do is_test "$f" && ! is_doc "$f" && echo "$f"; done <"$W/all" >"$W/alltests"
+{ in_areas "$W/whole" <"$W/alltests"; cat "$W/tests"; } | sort -u >"$W/out"
+
+# ---- output ---------------------------------------------------------------------------------
+rel_tests() {  # tests under the caller's directory, relative to it
+  local pre="${CWD#"$TOP"}" f
+  pre="${pre#/}"
+  while read -r f; do
+    [ -n "$f" ] || continue
+    if [ -z "$pre" ]; then echo "$f"
+    else case "$f" in "$pre"/*) echo "${f#"$pre"/}" ;; esac; fi
+  done <"$W/out"
+}
+
+if [ -n "$FULL_REASON" ]; then STATE=FULL; elif [ "$CODE" -eq 0 ]; then STATE=NONE; else STATE=AREA; fi
+
+case "$MODE" in
+  tests)
+    [ "$STATE" = AREA ] && rel_tests
+    exit 0 ;;
+  command)
+    case "$STATE" in
+      FULL) printf '%s\n' "$FULLCMD" ;;
+      NONE) echo ": no code changed" ;;
+      AREA)
+        rel_tests >"$W/rel"
+        k="$(wc -l <"$W/rel" | tr -d ' ')"
+        # An area that runs whole but has no test file to name (Rust and C++ keep tests
+        # inside the source) can only run through the full command.
+        inline=no
+        while read -r a; do grep -qxF "$a" <(areas_of <"$W/alltests") || inline=yes; done <"$W/whole"
+        if [ "$inline" = yes ]; then printf '%s\n' "$FULLCMD"
+        elif [ "$k" -eq 0 ]; then echo ": no affected tests"
+        elif [ "$k" -gt "$MAXF" ]; then printf '%s\n' "$FULLCMD"
+        else
+          files="$(tr '\n' ' ' <"$W/rel" | sed 's/ $//')"
+          dirs="$(sed -e 's|/[^/]*$||' -e 's|^[^/]*$|.|' -e 's|^\([^.]\)|./\1|' "$W/rel" | sort -u | tr '\n' ' ' | sed 's/ $//')"
+          printf '%s\n' "$ONECMD" | awk -v f="$files" -v d="$dirs" '{ gsub(/\{files\}/, f); gsub(/\{dirs\}/, d); print }'
+        fi ;;
+    esac
+    exit 0 ;;
+esac
+
+case "$STATE" in
+  FULL) echo "ck-lite-affected: FULL — $FULL_REASON"; exit 0 ;;
+  NONE) echo "ck-lite-affected: NONE — no code changed ($DOCS doc or plan files)"; exit 0 ;;
+esac
+{ cat "$W/manifests"; cut -f1 "$W/declared"; grep -xF . "$W/reached"; } | sort -u >"$W/known"
+echo "ck-lite-affected: AREA $SCOPE scope — $(wc -l <"$W/reached" | tr -d ' ') of $(wc -l <"$W/known" | tr -d ' ') areas, $(wc -l <"$W/out" | tr -d ' ') test files"
+areas_of <"$W/out" | sort | uniq -c | awk '{ print $2 "\t" $1 }' >"$W/counts"
+while read -r a; do
+  k="$(awk -F'\t' -v a="$a" '$1 == a { print $2 }' "$W/counts")"
+  why=""
+  if grep -qxF "$a" "$W/allareas"; then
+    how=all; why="$(awk -F'\t' -v a="$a" '$1 == a { print "changed " $2; exit }' "$W/why")"
+    [ "$TRACE_CAPPED" = yes ] && why="more than $CAP files reached"
+  elif [ "$SCOPE" = area ]; then
+    how=all; why="$(awk -F'\t' -v a="$a" '$1 == a { print "depends on " $2; exit }' "$W/via")"
+    [ -n "$why" ] || why="imports the change"
+  else how=traced; fi
+  printf '  run   %-28s %-6s %4s tests  %s\n' "$a" "$how" "${k:-0}" "$why"
+done <"$W/reached"
+grep -vxF -f "$W/reached" "$W/known" | sed 's/^/  skip  /'
+exit 0

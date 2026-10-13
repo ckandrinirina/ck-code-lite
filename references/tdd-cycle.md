@@ -22,9 +22,27 @@ changed since. Exit 3 prints `RUNNING`: the suite is still going, so continue it
 second time.
 
 **Inner loop = the task's own tests.** When `## Commands` has a `test-one` line, RED and GREEN
-run only the task's test files through it (`{files}` → the paths, space-separated). The full
-`test` command runs **once**, as the cycle's last step, so a break elsewhere surfaces before QA.
-With no `test-one`, every run is the full `test`.
+run only the task's test files through it (`{files}` → the paths, space-separated). The
+[closing run](#close--every-test-the-task-can-reach-once) runs **once**, as the cycle's last
+step, so a break elsewhere surfaces before QA. With no `test-one`, every run is the full `test`.
+
+**The closing run is the task's reach, never the whole suite by default.** `ck-lite-affected`
+works it out with `git` and `grep`, so no file is read to find it: the tests of every file
+the task changed, then the tests of every file importing those — a changed service's test,
+the test of the controller that uses it, and on up the chain. An area the change never
+reaches (the client, when only the backoffice changed) never runs. It prints `test` itself
+when the diff touches what imports cannot trace — repo-root config, a lockfile alone,
+migrations, fixtures, env files — and `: no affected tests` when nothing reaches a test.
+Hand `ck-lite-qa` the expression, never its output:
+
+```bash
+ck-lite-qa run T-05 test="$(ck-lite-affected <base> --command 'pnpm run test' 'pnpm run test -- {files}')"
+```
+
+`<base>` is the `Base:` the caller gave, else `auto` (where the branch left the trunk). The
+two quoted commands are `test` and `test-one` from `## Commands`; with no `test-one`, pass
+`test` twice. The expansion runs inside the call, so the stamp records the resolved command,
+and QA's identical expression on the same tree reports `REUSED`.
 
 Never run `build` or `lint` in the inner loop — QA runs both once. Never pipe a test command
 into `tail`, `grep` or `head`: the log already holds everything, and a second run to see a
@@ -93,10 +111,10 @@ the task's tests after each change — green stays green. Leave alone what the c
 deliberate: a boundary the architecture docs draw, or test setup repeated for readability.
 Anything larger than a few minutes is its own task, not cleanup.
 
-## Close — the full suite, once
+## Close — every test the task can reach, once
 
-Last step, after cleanup, with nothing left to edit: `ck-lite-qa run T-05 test="<test>"`. A
+Last step, after cleanup, with nothing left to edit: the `ck-lite-affected` run above. A
 failure here is a break the task's own tests did not see — fix it and run it again. Its pass is
 stamped on this exact code state; a code edit after it, however small, voids the stamp and QA
-runs the suite again. Plan writes (`ck-lite files`, `note`, `set`) are not code and never void
+runs it again. Plan writes (`ck-lite files`, `note`, `set`) are not code and never void
 it.

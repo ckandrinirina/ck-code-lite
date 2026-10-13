@@ -23,6 +23,7 @@ All inline in the prompt:
 - The task ID, the placement (`worktree` or `solo on <TARGET>`)
 - The task's section, verbatim from `ck-lite show` — title, `files:`, acceptance criteria
 - `## Commands` as `test: … · test-one: … · build: … · lint: …`
+- A `Base:` SHA — the target before this wave, the `<base>` of the closing `ck-lite-affected` run
 - A `Context:` line — the `ck-lite context` call to run
 - The absolute path of `tdd-cycle.md` — the RED / GREEN / cleanup rules you follow
 - Any clarification the orchestrator settled with the user for this task
@@ -47,7 +48,7 @@ If the criteria or the commands are missing, return `status: blocked` and say wh
    under that same absolute `docs/design-system/`. `tokensPath: pending` → this task writes the
    token file (its Token materialization section) and returns the path under `tokens:`.
 3. **Cycle.** `Read` the `tdd-cycle.md` path once and follow it whole: RED, GREEN, cleanup,
-   the closing full `test`. Every command through `ck-lite-qa run <T-NN> …`. Touched paths go
+   the closing run. Every command through `ck-lite-qa run <T-NN> …`. Touched paths go
    in your verdict, never into the plan. A dependency you add that `## Stack` does not list:
    research it per `stack-research.md` (beside `tdd-cycle.md`), install it without a
    remembered version, and return its `## Stack` line under `stack:`.
@@ -75,7 +76,7 @@ tokens:       <repo-relative path of the token file you wrote>      # omit unles
 design:       [<"no design card: <component> — built from tokens">, …]   # omit when none
 ```
 
-`done` only when every criterion has a passing test and the closing full `test` passed. A
+`done` only when every criterion has a passing test and the closing run passed. A
 missing verdict is read as `partial`. The orchestrator verifies from git regardless.
 
 ## Constraints
