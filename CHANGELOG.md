@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.2] — 2026-10-13
+
+### Fixed
+- **mod**: compaction after a wave run now fires with background builders — the builder count runs since the last compaction and waits until no `task-builder` is live, instead of resetting every turn.
+- **mod**: the lite-project rule (`isLiteLayout`) now matches the skills' plugin guards — a `tasks/PLAN.md` beside an unstamped `docs/architecture/` stays lite's — and the project is found from the session's folder upward, so a shell `cd` into a subfolder keeps the band and the guard.
+- **mod**: the PLAN.md guard also covers builder worktree copies and tells how a CORRUPT task is repaired; titles containing ` · ` are kept whole; `/lite-*` answers instead of failing when `ck-lite` cannot run; Hide persists across sessions, and a hidden band no longer runs `ck-lite open` every turn.
+- **build**: the parallel-mode solo clean check allows `docs/design-system` and `docs/design-brief.md`, as P1 does — no false "uncommitted work" stop in a UI project.
+- **build**: the redirect to ck-code carries `--auto` over to `/ck-code:build`.
+- **README**: `design` is listed among the skills both plugins share.
+
 ## [1.4.1] — 2026-10-13
 
 ### Changed
