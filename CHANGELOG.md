@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] — 2026-10-13
+
+### Changed
+- **mod**: a livelier band, a toast when a task is done, a 🎉 toast when the whole plan is. The band now opens with `◆ ck-lite`, a progress bar and the done/total score with a percentage, then the task in progress (`⚡`) and the next build command (`→`), each in a theme color. It falls back to one row when only one fits.
+
 ## [1.4.0] — 2026-10-13
 
 ### Added
