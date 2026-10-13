@@ -9,6 +9,7 @@
 //   tool.call          tasks/PLAN.md is written only through ck-lite
 //   commands           /lite-status, /lite-waves, /lite-check with no model turn; /lite-band
 //   AbovePrompt band   the task in progress, the counts, the next build command
+//   session.compact    compacts the session once a wave run of builders has finished
 //
 // Pure rules live in logic.ts. `$` never leaves this file except into the state helpers.
 
@@ -17,8 +18,10 @@ import type { EngineInterface, Register } from "claude-code";
 
 import type { LiteBand } from "../../types";
 import {
+  COMPACT_INSTRUCTIONS,
   countsLine,
   isRoutable,
+  isWaveRunOver,
   nextCommand,
   parseOpen,
   planWriteReason,
@@ -36,6 +39,8 @@ const bandHidden = atom(
 
 // Module variables start over on a reload; the band itself lives in $.state.
 let bandOn = true;
+let compactOn = true;
+let builders = 0;
 let routingCache: string | undefined;
 let tasks: OpenTask[] = [];
 let isRefreshing = false;
@@ -99,8 +104,34 @@ async function refreshBand($: EngineInterface): Promise<void> {
   }
 }
 
+// Runs between turns: $.session.compact rejects while one runs, and a person who has already
+// typed the next prompt keeps the session as it is. The next command (ship, a held task's
+// build) starts from tasks/PLAN.md, not from the transcript.
+async function compactAfterWaves(
+  $: EngineInterface,
+  reason: string,
+  dispatched: number,
+): Promise<void> {
+  try {
+    if (!(await isLiteProject($))) return;
+    const plan = parseOpen((await ckLite($, ["open"])).stdout);
+    if (plan === null) return;
+    const inProgress = plan.tasks.filter((t) => t.state === "doing").length;
+    if (!isWaveRunOver({ reason, builders: dispatched, inProgress })) return;
+    const out = await $.session.compact({ instructions: COMPACT_INSTRUCTIONS });
+    $.ui.toast(
+      out.skip
+        ? `ck-code-lite: not compacted, ${out.skip}`
+        : "ck-code-lite: wave run finished, session compacted",
+    );
+  } catch {
+    // A turn already running, or a failed probe: the session stays as it is.
+  }
+}
+
 export const register: Register = (on, options) => {
   bandOn = options.band !== false;
+  compactOn = options.compact_after_waves !== false;
 
   on("session.start", async ($, e, next) => {
     await $.command.register({
@@ -171,9 +202,25 @@ export const register: Register = (on, options) => {
 
   // ---- after each turn, and in the prompt box ----
 
+  on("turn.start", async ($, e, next) => {
+    builders = 0;
+    return next(e);
+  });
+
+  on("tool.call", { tool: "Agent" }, async ($, e, next) => {
+    if (e.agentId === undefined && e.subagent_type === "ck-code-lite:task-builder")
+      builders += 1;
+    return next(e);
+  }).catch(($, e, next) => next(e));
+
   on("turn.complete", async ($, e, next) => {
     const out = await next(e);
-    if (e.agentId === undefined) $.clock.after(50, () => void refreshBand($));
+    if (e.agentId !== undefined) return out;
+    $.clock.after(50, () => void refreshBand($));
+    const dispatched = builders;
+    builders = 0;
+    if (compactOn && dispatched >= 2)
+      $.clock.after(500, () => void compactAfterWaves($, e.reason, dispatched));
     return out;
   });
 

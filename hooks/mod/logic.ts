@@ -121,3 +121,23 @@ export function taskSuggestions(
 export function splitArgs(args: string): string[] {
   return args.trim() === "" ? [] : args.trim().split(/\s+/);
 }
+
+// ---- compaction after a wave run ------------------------------------------------------
+
+// Kept word for word in both plugins' mods. A wave run is a main-loop turn that dispatched
+// two or more builder agents; it is over, and its per-wave detail spent, when the turn
+// answered (not interrupted, not an API error) and nothing is left in progress. A held,
+// failed or unsigned task stays in progress, and the user still needs the detail to finish it.
+export function isWaveRunOver(run: {
+  reason: string;
+  builders: number;
+  inProgress: number;
+}): boolean {
+  return run.reason === "answer" && run.builders >= 2 && run.inProgress === 0;
+}
+
+export const COMPACT_INSTRUCTIONS =
+  "A ck-code-lite build run just finished. Keep every task built and its final state, " +
+  "every branch named, the manual test checklist and any deferred manual tests word for " +
+  "word, and the next command the run recommended. Drop per-wave agent reports, QA output " +
+  "and diffs: tasks/PLAN.md and git hold them.";

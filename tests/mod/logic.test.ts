@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import {
+  isWaveRunOver,
   countsLine,
   isRoutable,
   nextCommand,
@@ -60,5 +61,17 @@ describe('ck-lite open', () => {
     const s = taskSuggestions('T-0', parseOpen(OPEN)!.tasks)
     expect(s.map(x => x.text)).toEqual(['T-01', 'T-02', 'T-03'])
     expect(taskSuggestions('X-0', parseOpen(OPEN)!.tasks)).toEqual([])
+  })
+})
+
+describe('compaction after a wave run', () => {
+  test('a clean wave run of two or more builders is over', async () => {
+    expect(isWaveRunOver({ reason: 'answer', builders: 3, inProgress: 0 })).toBe(true)
+  })
+  test('one builder, an interrupt, an error or a held task keeps the session', async () => {
+    expect(isWaveRunOver({ reason: 'answer', builders: 1, inProgress: 0 })).toBe(false)
+    expect(isWaveRunOver({ reason: 'aborted', builders: 3, inProgress: 0 })).toBe(false)
+    expect(isWaveRunOver({ reason: 'error', builders: 3, inProgress: 0 })).toBe(false)
+    expect(isWaveRunOver({ reason: 'answer', builders: 3, inProgress: 1 })).toBe(false)
   })
 })
