@@ -273,7 +273,7 @@ BEGIN {
   while ((getline l < TG) > 0) { T[l] = 1; T[strip(l)] = 1; TL[++NT] = strip(l) }
   while ((getline l < PK) > 0) if (l != "") P[l] = 1
 }
-FNR == 1 { D = FILENAME; if (!sub(/\/[^\/]*$/, "", D)) D = ""; done = 0 }
+FNR == 1 { D = FILENAME; sub(/^\.\//, "", D); if (!sub(/\/[^\/]*$/, "", D)) D = ""; done = 0 }
 done { next }
 {
   s = $0
@@ -322,7 +322,7 @@ BEGIN {
     m = l; sub(/\.py$/, "", m); sub(/\/__init__$/, "", m); gsub(/\//, ".", m); M[m] = 1; ML[++NM] = m
   }
 }
-FNR == 1 { PKG = FILENAME; if (!sub(/\/[^\/]*$/, "", PKG)) PKG = ""; gsub(/\//, ".", PKG); cont = 0; done = 0 }
+FNR == 1 { PKG = FILENAME; sub(/^\.\//, "", PKG); if (!sub(/\/[^\/]*$/, "", PKG)) PKG = ""; gsub(/\//, ".", PKG); cont = 0; done = 0 }
 done { next }
 cont { buf = buf " " $0; if (index($0, ")")) { cont = 0; if (check(buf)) { print FILENAME; done = 1 } }; next }
 /^[ \t]*(from|import)[ \t]/ {
@@ -364,8 +364,10 @@ pathspecs() {  # family → git pathspecs
 
 # candidates <family> <keys file> → files of that family holding any key
 candidates() {
+  # Each path leaves as ./path: a file named -f… or x=y must reach awk and grep as a file,
+  # never as an option (awk -f would load it as a program) or an assignment.
   # shellcheck disable=SC2046
-  git grep --untracked -l -I -F -f "$2" -- $(pathspecs "$1") 2>/dev/null
+  git grep --untracked -l -I -F -f "$2" -- $(pathspecs "$1") 2>/dev/null | sed 's|^|./|'
 }
 
 # A FULL scope needs no trace.
@@ -405,7 +407,7 @@ while [ -s "$W/frontier" ]; do
     grep "^$fam	" "$W/pats" | cut -f3- | sort -u >"$W/p.$fam"
     candidates "$fam" "$W/k.$fam" | tr '\n' '\0' | xargs -0 grep -l -E -f "$W/p.$fam" -- >>"$W/found" 2>/dev/null
   done
-  sort -u "$W/found" | grep -vxF -f "$W/visited" >"$W/new" || true
+  sed 's|^\./||' "$W/found" | sort -u | grep -vxF -f "$W/visited" >"$W/new" || true
   : >"$W/frontier"
   while read -r f; do
     [ -n "$f" ] || continue

@@ -278,6 +278,11 @@ w "src/admin/it's \$(touch PWNED).test.ts" "import { total } from './orders.serv
 bash -c "$(ck-lite-affected HEAD --command full 'ls {files}')" >/dev/null 2>&1
 eq  "affected --command: a file name is data, never run" "no" "$([ -e PWNED ] && echo yes || echo no)"
 rm -f src/admin/it*
+printf 'BEGIN { system("touch PWNED") }\n' >evil.ts
+printf "import { x } from './src/admin/orders.service'\n" >./-fevil.ts
+ck-lite-affected HEAD --tests >/dev/null
+eq  "affected: a file named like an option is never run as awk code" "no" "$([ -e PWNED ] && echo yes || echo no)"
+rm -f evil.ts ./-fevil.ts
 has "affected: a base starting with - is refused" "ERROR" "$(ck-lite-affected -x 2>&1)"
 has "affected: one package and no areas is the root, so area scope is FULL" "ck-lite-affected: FULL" "$(ck-lite-affected HEAD --area)"
 printf 'admin: src/admin/* e2e/admin/*\nclient: src/client/* e2e/client/*\n' >.ck-test-areas
