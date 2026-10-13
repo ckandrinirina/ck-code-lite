@@ -108,6 +108,11 @@ Claude Code every skill still works.
   · next: /ck-code-lite:build T-01`, with **Use** (fills the prompt, never sends it) and
   **Hide**. It refreshes after every turn; `/lite-band` toggles it, and the choice is kept. The
   `band` setting turns it off.
+- **Compact after a wave run** — when a turn that dispatched two or more task builders ends
+  cleanly with no task left `doing`, the session is compacted between turns, keeping the tasks
+  built, the branches, the manual-test checklist and the next command. Skipped after an
+  interrupt or an error, while a task is held, or once you have typed the next prompt. The
+  `compact_after_waves` setting turns it off.
 - **Commands with no model turn** — `/lite-status` (`ck-lite open`), `/lite-waves [T-NN…]`
   (the wave plan) and `/lite-check` (validates the plan) print at once, even mid-turn.
 - **The plan is written only through `ck-lite`** — a `Write` or `Edit` of `tasks/PLAN.md` is
