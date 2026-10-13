@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.2] — 2026-10-13
+
+### Fixed
+- **ck-lite-affected**: every candidate file reaches `awk` and `grep` as `./path`. A repo file named `-f<x>` had been parsed as an awk option and ran `<x>` as an awk program, which can call `system()`. A file named like `x=y` was read as an assignment instead of a file.
+
 ## [1.5.1] — 2026-10-13
 
 ### Fixed
