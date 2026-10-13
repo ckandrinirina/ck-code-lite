@@ -273,7 +273,12 @@ git add -A; git commit -qm base
 echo '//' >>src/admin/orders.service.ts
 out="$(ck-lite-affected HEAD --command 'npm run test' 'npm run test -- {files}')"
 eq  "affected: a changed service runs its test and the test of the code that uses it" \
-    "npm run test -- src/admin/orders.controller.test.ts src/admin/orders.service.test.ts" "$out"
+    "npm run test -- 'src/admin/orders.controller.test.ts' 'src/admin/orders.service.test.ts'" "$out"
+w "src/admin/it's \$(touch PWNED).test.ts" "import { total } from './orders.service'"
+bash -c "$(ck-lite-affected HEAD --command full 'ls {files}')" >/dev/null 2>&1
+eq  "affected --command: a file name is data, never run" "no" "$([ -e PWNED ] && echo yes || echo no)"
+rm -f src/admin/it*
+has "affected: a base starting with - is refused" "ERROR" "$(ck-lite-affected -x 2>&1)"
 has "affected: one package and no areas is the root, so area scope is FULL" "ck-lite-affected: FULL" "$(ck-lite-affected HEAD --area)"
 printf 'admin: src/admin/* e2e/admin/*\nclient: src/client/* e2e/client/*\n' >.ck-test-areas
 git add .ck-test-areas; git commit -qm areas
@@ -288,7 +293,7 @@ printf '# Shop\n\n## Areas\n\n| Area | Doc | Paths |\n|---|---|---|\n| admin | d
 git add -A; git commit -qm arch-areas
 echo '//' >>src/client/cart.ts
 out="$(ck-lite-affected HEAD --area --command 'npm run test' 'npm run test -- {files}')"
-eq  "affected --area: ## Areas in ARCHITECTURE.md declares the areas" "npm run test -- e2e/client/shop.spec.ts src/client/cart.test.ts" "$out"
+eq  "affected --area: ## Areas in ARCHITECTURE.md declares the areas" "npm run test -- 'e2e/client/shop.spec.ts' 'src/client/cart.test.ts'" "$out"
 git checkout -q -- .
 echo x >README.md
 eq  "affected: no code changed runs nothing" ": no code changed" "$(ck-lite-affected HEAD --command full 'one {files}')"

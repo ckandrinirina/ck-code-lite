@@ -36,6 +36,8 @@
 # NONE: only docs and plan files changed.
 
 set -uo pipefail
+# Pathspecs such as *.ts go to git as written, never expanded against the current directory.
+set -f
 
 die() { echo "ck-lite-affected: ERROR — $*" >&2; exit 2; }
 CAP="${CK_LITE_AFFECTED_CAP:-2000}"
@@ -71,7 +73,10 @@ if [ "$BASE" = auto ]; then
   done
   [ "$BASE" != auto ] || BASE=HEAD
 fi
-git rev-parse -q --verify "$BASE^{commit}" >/dev/null 2>&1 || full "base $BASE not found"
+# A base is a revision, never an option, and is used only once resolved to a commit SHA.
+case "$BASE" in -*) die "<base> must be a revision, not $BASE" ;; esac
+if SHA="$(git rev-parse -q --verify "$BASE^{commit}" 2>/dev/null)"; then BASE="$SHA"
+else full "base $BASE not found"; BASE=HEAD; fi
 
 # ---- inputs -------------------------------------------------------------------------------
 git ls-files --cached --others --exclude-standard | sort -u >"$W/all"
@@ -184,6 +189,8 @@ family() {  # how importers of this file name it
     *) echo none ;;
   esac
 }
+
+shq() { sed -e "s/'/'\\\\''/g" -e "s/.*/'&'/"; }   # lines → single-quoted shell words
 
 esc() { printf '%s' "$1" | sed 's/[][\.*^$()+?{}|/]/\\&/g'; }
 
@@ -489,9 +496,16 @@ case "$MODE" in
         elif [ "$k" -eq 0 ]; then echo ": no affected tests"
         elif [ "$k" -gt "$MAXF" ]; then printf '%s\n' "$FULLCMD"
         else
-          files="$(tr '\n' ' ' <"$W/rel" | sed 's/ $//')"
-          dirs="$(sed -e 's|/[^/]*$||' -e 's|^[^/]*$|.|' -e 's|^\([^.]\)|./\1|' "$W/rel" | sort -u | tr '\n' ' ' | sed 's/ $//')"
-          printf '%s\n' "$ONECMD" | awk -v f="$files" -v d="$dirs" '{ gsub(/\{files\}/, f); gsub(/\{dirs\}/, d); print }'
+          # Every path is single-quoted: the command is run by a shell, and a file name is data.
+          files="$(shq <"$W/rel" | tr '\n' ' ' | sed 's/ $//')"
+          dirs="$(sed -e 's|/[^/]*$||' -e 's|^[^/]*$|.|' -e 's|^\([^.]\)|./\1|' "$W/rel" | sort -u |
+            shq | tr '\n' ' ' | sed 's/ $//')"
+          # Literal splice: awk -v and gsub would both rewrite the backslashes of the quoting.
+          printf '%s\n' "$ONECMD" | F="$files" D="$dirs" awk '
+            function put(s, k, v,   i, o) { o = ""
+              while ((i = index(s, k)) > 0) { o = o substr(s, 1, i - 1) v; s = substr(s, i + length(k)) }
+              return o s }
+            { print put(put($0, "{files}", ENVIRON["F"]), "{dirs}", ENVIRON["D"]) }'
         fi ;;
     esac
     exit 0 ;;
