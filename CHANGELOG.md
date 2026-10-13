@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-10-13
+
+### Added
+- **ck-lite-affected**: a new script, self-contained and ported from ck-code's `ck-affected`. It computes the tests a change can reach by following imports transitively (a service's test, the test of the controller that uses it, …), using `git` and `grep` with no token cost. It splits the project into areas from workspace packages, `.ck-test-areas`, or the `## Areas` table already in `docs/ARCHITECTURE.md`.
+
+### Changed
+- **build**: a task's closing run is no longer the full suite. It runs every test the task can reach through `test-one`, and the full `test` only for repo-root config, a lockfile alone, migrations, fixtures or env files. A wave's merged-result check runs every test of each area the wave touches, never the others.
+- **ship**: before the first push, an **area check** runs every test of each area the branch touches, and a failure keeps the commit but blocks the push. It is skipped on a standalone repo with no `## Commands`.
+
 ## [1.4.2] — 2026-10-13
 
 ### Fixed
