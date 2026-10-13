@@ -12,7 +12,8 @@ ck-code's when the output lists `tasks/VERSION.md` (ck-code's layout stamp), or 
 `docs/architecture` (its feature docs) **without** `tasks/PLAN.md`. Anything else is lite's
 own — continue. A lite plan beside an unstamped `docs/architecture/` stays lite's: ck-code
 reads that same project as lite (`tasks/PLAN.md` with no stamp) and redirects here, so the
-two guards are disjoint and can never bounce a request between them.
+two guards are disjoint and can never bounce a request between them. Both plugins' mods use
+this same rule (`isLiteLayout`, in `hooks/mod/logic.ts`), so the mods and the guards agree.
 
 ## Redirect
 
@@ -25,8 +26,9 @@ is the consent — and end the lite skill once it returns:
 ```
 
 Each skill's Phase 0 names its own `<skill>` and `<args>`. An argument with no ck-code meaning
-(a `T-NN`, `--waves`, `--auto`) is dropped, and the `↪` line says so:
-`(T-NN ids are lite only — dropped)`.
+(a `T-NN`, `--waves`) is dropped, and the `↪` line says so:
+`(T-NN ids are lite only — dropped)`. `--auto` has one — ck-code's `build` runs unattended
+too — and is carried over to `ck-code:build`.
 
 ## BLOCK — when there is nothing to redirect to
 

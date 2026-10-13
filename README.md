@@ -102,23 +102,28 @@ notification, another session's message). Pure local read; a failure lets the pr
 ck-code-lite ships a small **mod**, an in-process hooks module (`hooks/mod/register.tsx`,
 Claude Code ≥ 2.1.287). It acts only in a lite project and calls `ck-lite`, the script the
 skills call, so nothing in it is load-bearing: under `--bare`, `--safe-mode` or an older
-Claude Code every skill still works.
+Claude Code every skill still works. A lite project follows the skills' own rule: no
+`tasks/VERSION.md` stamp, and `tasks/PLAN.md` (even beside an unstamped `docs/architecture/`)
+or a `docs/ARCHITECTURE.md` with no `docs/architecture/` beside it — read from the nearest
+folder up holding `tasks/` or `docs/`, so a `cd` into a subfolder keeps it.
 
 - **Band above the prompt** — `◆ ck-lite ▰▰▰▰▱▱▱▱▱▱ 4/7 57% 2 open · 1 ready`, then
   `⚡ T-05 Count words → /ck-code-lite:build T-05`, with **Use** (fills the prompt, never sends
-  it) and **Hide**. It refreshes after every turn; `/lite-band` toggles it, and the choice is
-  kept. The `band` setting turns it off.
+  it) and **Hide**. It refreshes after every turn, and not at all while hidden; **Hide** and
+  `/lite-band` (which toggles it) are both kept across sessions. The `band` setting turns it off.
 - **Cheers** — a toast when a task is done (`✨ T-04 done — 4/7 (57%)`), and a bigger one when
   the whole plan is (`🎉 Plan complete — 7/7 tasks done!`).
-- **Compact after a wave run** — when a turn that dispatched two or more task builders ends
-  cleanly with no task left `doing`, the session is compacted between turns, keeping the tasks
+- **Compact after a wave run** — once two or more task builders have been dispatched since the
+  last compaction, the first turn that ends cleanly with no builder still running and no task
+  left `doing` compacts the session between turns (background builders included), keeping the tasks
   built, the branches, the manual-test checklist and the next command. Skipped after an
   interrupt or an error, while a task is held, or once you have typed the next prompt. The
   `compact_after_waves` setting turns it off.
 - **Commands with no model turn** — `/lite-status` (`ck-lite open`), `/lite-waves [T-NN…]`
   (the wave plan) and `/lite-check` (validates the plan) print at once, even mid-turn.
 - **The plan is written only through `ck-lite`** — a `Write` or `Edit` of `tasks/PLAN.md` is
-  refused with the `ck-lite` command to use ([plan-format.md](references/plan-format.md)).
+  refused with the `ck-lite` command to use ([plan-format.md](references/plan-format.md)), or,
+  for a `CORRUPT` task no `ck-lite` write repairs, a request that you fix the named lines.
 - **No AI attribution** — the engine's commit and PR attribution text is dropped, as `ship`
   requires.
 - **Task-id completion** — typing `T-0` in the prompt box offers the open tasks.
@@ -234,15 +239,15 @@ needs 2.1.287 or later.
 
 ## ck-code-lite or ck-code?
 
-They are **alternatives, not companions** — enable one per project. Both expose `build`
-and `ship`, and running a project through both layouts will not end well.
+They are **alternatives, not companions** — enable one per project. Both expose `build`,
+`design` and `ship`, and running a project through both layouts will not end well.
 
 | | ck-code-lite | ck-code |
 |---|---|---|
 | Skills | 4 | 15 |
 | Planning artefacts | 2 files | epics, per-story files, generated indexes |
 | Architecture | 1 core doc + optional area docs | per-feature docs + shared globals |
-| Parallel builds | yes, inside `build` | yes, a dedicated skill with conflict analysis |
+| Parallel builds | yes, inside `build` | yes, inside `build`, with conflict analysis |
 | Claude Design | brief, link, full cache (`design`) | brief (`spec`), link, lazy cache (`design ds`) |
 | Generated expert skills | no | yes (`team`) |
 | Bug triage workflow | no | yes (`fix`) |

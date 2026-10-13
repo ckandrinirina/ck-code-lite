@@ -148,7 +148,7 @@ git diff --name-only --diff-filter=D "$TARGET".."<branch>"   # any → ⚠ unexp
 git diff --shortstat "<base-sha>"..HEAD
 git diff --name-only --diff-filter=D "<base-sha>"..HEAD
 git rev-parse --abbrev-ref HEAD                              # ≠ $TARGET → 🚫, stop the run
-git status --porcelain -- . ':!tasks/PLAN.md' ':!docs/ARCHITECTURE.md' ':!docs/areas'   # non-empty → 🚫, stop the run
+git status --porcelain -- . ':!tasks/PLAN.md' ':!docs/ARCHITECTURE.md' ':!docs/areas' ':!docs/design-system' ':!docs/design-brief.md'   # non-empty → 🚫, stop the run
 ```
 
 - **✓ complete** — non-empty diff, no unexpected deletion, verdict `done`.
@@ -162,8 +162,8 @@ Every fan-out task that is not ✓ gets `ck-lite note T-NN "branch: <branch> · 
 — the harness names worktree branches, so this note is how a later `/ck-code-lite:build T-NN`
 finds the work.
 
-The plan and the architecture docs are excluded from the solo clean check for the reason P1
-gives: they may be dirty before the run, and this context writes the plan throughout. A solo agent that moved branch or left anything else uncommitted is
+The plan, the architecture docs and the design files (`docs/design-system`,
+`docs/design-brief.md`) are excluded from the solo clean check for the reason P1 gives: they may be dirty before the run, and this context writes the plan throughout. A solo agent that moved branch or left anything else uncommitted is
 a hard stop for the run, not a resume — its work is somewhere this context never authorised.
 
 ## P6 QA — one validator per complete task

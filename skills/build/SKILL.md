@@ -46,7 +46,8 @@ A full ck-code project — `tasks/VERSION.md` listed, or `docs/architecture` lis
 `tasks/PLAN.md` — is ck-code's, whose state ck-code-lite cannot read or keep in step.
 [Redirect](../../references/plugin-redirect.md) before any read, write or command:
 
-- `ck-code:build`, no argument — a `T-NN`, `--waves` or `--auto` is lite only, dropped
+- `ck-code:build`, no argument, or `--auto` when the request carried it (ck-code's own `--auto`
+  runs its next epic unattended) — a `T-NN` or `--waves` is lite only, dropped
 
 Anything else → continue.
 
