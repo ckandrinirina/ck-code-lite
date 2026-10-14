@@ -201,3 +201,49 @@ export function celebration(
       : `${after.done - before.done} more`;
   return `✨ ${what} done — ${score} (${percent(after.done, after.total)}%)`;
 }
+
+// ---- the cost guard ----------------------------------------------------------------------
+
+// Kept word for word in both plugins' mods; with both enabled each rule applies twice and
+// changes nothing the second time. No request and no dispatch thinks above `high`: `xhigh`
+// and `max` cost far more for work `high` already does. A numeric budget is left alone.
+export function cappedEffort<E>(effort: E): E | "high" {
+  return effort === "xhigh" || effort === "max" ? "high" : effort;
+}
+
+// Built-in agent types that would otherwise inherit the session's model — the most
+// expensive one in play — when a dispatch names none. A registered plugin agent pins its
+// own model in its frontmatter and is left alone; a fork always inherits.
+export const DEFAULT_SUBAGENT_MODEL: Readonly<Record<string, "haiku" | "sonnet">> = {
+  Explore: "haiku",
+  "claude-code-guide": "haiku",
+  "general-purpose": "sonnet",
+};
+
+// Fable is never chosen by the model alone: the person approves it first.
+export const FABLE_APPROVED = "[fable-approved-by-user]";
+export const FABLE_DENY =
+  `Fable is reserved for tasks the user approves. Ask the user with AskUserQuestion whether this task needs Fable; only on a yes, re-dispatch with ${FABLE_APPROVED} as the prompt's first line. Otherwise dispatch with haiku or sonnet.`;
+
+export type Dispatch = {
+  subagent_type?: string;
+  model?: string;
+  effort?: string;
+  prompt: string;
+};
+export type DispatchPatch = { model?: string; effort?: string };
+
+// What the guard does to one Agent dispatch: deny it, rewrite its model or effort, or
+// nothing (undefined).
+export function guardDispatch(
+  d: Dispatch,
+): { deny: string } | DispatchPatch | undefined {
+  if (d.model === "fable" && !d.prompt.trimStart().startsWith(FABLE_APPROVED))
+    return { deny: FABLE_DENY };
+  const patch: DispatchPatch = {};
+  const model = DEFAULT_SUBAGENT_MODEL[d.subagent_type ?? "general-purpose"];
+  if (d.model === undefined && model) patch.model = model;
+  if (d.effort !== undefined && cappedEffort(d.effort) !== d.effort)
+    patch.effort = "high";
+  return Object.keys(patch).length ? patch : undefined;
+}

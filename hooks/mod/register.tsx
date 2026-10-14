@@ -11,6 +11,7 @@
 //   AbovePrompt band   a progress bar, the task in progress, the next build command
 //   toasts             a cheer when a task is done, a bigger one when the plan is
 //   session.compact    compacts the session once a wave run of builders has finished
+//   cost guard         caps effort at high, gates Fable on the user, cheap default subagent model
 //
 // Pure rules live in logic.ts. `$` never leaves this file except into the state helpers.
 
@@ -33,6 +34,8 @@ import {
   splitArgs,
   stripRouting,
   taskSuggestions,
+  cappedEffort,
+  guardDispatch,
 } from "./logic";
 import type { OpenTask, Progress } from "./logic";
 
@@ -45,6 +48,7 @@ const bandHidden = atom(
 // Module variables start over on a reload; the band itself lives in $.state.
 let bandOn = true;
 let compactOn = true;
+let costGuardOn = true;
 // Task builders dispatched from the main loop since the last compaction. Not reset per turn:
 // background builders end in later notification turns, which dispatch none themselves.
 let builders = 0;
@@ -197,6 +201,7 @@ async function compactAfterWaves(
 export const register: Register = (on, options) => {
   bandOn = options.band !== false;
   compactOn = options.compact_after_waves !== false;
+  costGuardOn = options.cost_guard !== false;
 
   on("session.start", async ($, e, next) => {
     await $.command.register({
@@ -225,6 +230,21 @@ export const register: Register = (on, options) => {
       await update($, bandHidden, () => true);
     $.clock.after(50, () => void refreshBand($));
     return next(e);
+  });
+
+  // ---- the cost guard: effort cap, the Fable gate, a cheap default subagent model ----
+  // Kept word for word in both plugins' mods. Runs in every project, not only adopted ones:
+  // it is a spending rule, not a workflow rule. Off with the cost_guard option.
+
+  on("tool.call", { tool: "Agent" }, async ($, e, next) => {
+    const g = costGuardOn ? guardDispatch(e) : undefined;
+    if (g && "deny" in g) return { deny: g.deny };
+    return next(g ? ({ ...e, ...g } as typeof e) : e);
+  }).catch(($, e, next) => next(e));
+
+  on("turn.step", async function* ($, e, next) {
+    const effort = costGuardOn ? cappedEffort(e.effort) : e.effort;
+    return yield* next(effort === e.effort ? e : { ...e, effort });
   });
 
   // ---- routing and attribution ----

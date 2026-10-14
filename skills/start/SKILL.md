@@ -105,7 +105,8 @@ Follow [stack-research.md](../../references/stack-research.md) for this mode: re
 version, context7 for the idioms, one lookup per technology, run in parallel. **NEW** runs it
 once Phase 3 has settled the stack (straight away when `$ARGUMENTS` already names it); **ADOPT**
 uses the installed versions; **EXTEND** only covers new technologies and lines that are not fresh (older than 90 days, or
-marked `unverified`). These lookups do not count toward the five-read cap.
+marked `unverified`). The idiom lookups go to one `ck-code-lite:researcher` dispatch, never
+this context. These lookups do not count toward the five-read cap.
 
 ## PHASE 3: CLARIFY — HARD GATE
 
@@ -286,6 +287,8 @@ small project is noise. Never a block — the user decides when to graduate.
 
 ## RULES
 
+- **Never research a technology in the main agent** — one `ck-code-lite:researcher` dispatch
+  (haiku, low effort) answers every idiom question and returns sourced findings.
 - **Never run in a full ck-code project** — Phase 0 hands it to the `/ck-code:*`
   counterpart, once; a skill reached by a ck-code redirect BLOCKs instead of bouncing back.
 - **Never `Write` over an existing `docs/ARCHITECTURE.md`** — always `Edit` — and never

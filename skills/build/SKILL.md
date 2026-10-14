@@ -97,7 +97,10 @@ missing, resolve it now via [stack-commands.md](../../references/stack-commands.
 `docs/ARCHITECTURE.md`.
 
 Then read the files in `files:` that already exist, plus the nearest existing test file —
-its conventions govern the tests written in Phase 3.
+its conventions govern the tests written in Phase 3. Anything beyond those — finding which
+code the task touches when `files:` is empty or incomplete, callers, conventions — goes to one
+`ck-code-lite:context-scout` dispatch (haiku, low effort); never search the codebase in this
+context.
 
 **Design — UI tasks only** ([§ UI task](../../references/design-system.md#ui-task)). The
 `## Design` line `ck-lite context` printed (or `ls -d docs/design-system docs/design-brief.md`)
@@ -261,6 +264,9 @@ that command as the next step.
   run, the subagent absorbs that output. The closing run and QA's `test` are the
   `ck-lite-affected` expression; the area backstop runs at the wave's merge and at ship.
 - **Never write code beyond the acceptance criteria.** Anything extra is a new task.
+- **Never search the codebase or research a technology in the main agent** — the
+  `ck-code-lite:context-scout` and `ck-code-lite:researcher` sub-agents (haiku, low effort)
+  do it and return a compact brief.
 - **Never look up a technology `## Stack` already lists, and never install a version from
   memory** — the bullets are the cache; only a new dependency costs a lookup
   ([stack-research.md](../../references/stack-research.md)).

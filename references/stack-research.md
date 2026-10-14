@@ -56,6 +56,12 @@ WebSearch fallback below. Registry unreachable → the same fallbacks.
 
 ### 2. Idioms — context7
 
+**Delegated from the main agent.** `start` and an inline `build` dispatch one
+`ck-code-lite:researcher` (haiku, low effort) with a numbered question per technology, all in
+one call, and copy its sourced answers into the bullets — the idiom lookups never run in the
+main agent's context. A `task-builder` sub-agent, which cannot dispatch, runs the steps below
+itself.
+
 1. **MCP** — when a `mcp__*context7*` tool is in this session: `resolve-library-id`, then
    `query-docs` with the version just resolved.
 2. **CLI** — `npx -y ctx7 library "<name>" "<query>"`, then

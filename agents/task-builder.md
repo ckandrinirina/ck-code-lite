@@ -1,6 +1,7 @@
 ---
 name: task-builder
 description: Use when ck-code-lite:build PARALLEL MODE dispatches one task from tasks/PLAN.md for test-first implementation — in its own worktree when peers run beside it, or solo on the orchestrator's branch in the main checkout — and needs a verdict back.
+model: sonnet
 effort: high
 experimental:
   cacheTtl: "1h"
