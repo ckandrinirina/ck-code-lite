@@ -100,8 +100,8 @@ notification, another session's message). Pure local read; a failure lets the pr
 ### The mod
 
 ck-code-lite ships a small **mod**, an in-process hooks module (`hooks/mod/register.tsx`,
-Claude Code ≥ 2.1.287). It acts only in a lite project and calls `ck-lite`, the script the
-skills call, so nothing in it is load-bearing: under `--bare`, `--safe-mode` or an older
+Claude Code ≥ 2.1.287). Apart from the cost guard below, it acts only in a lite project and
+calls `ck-lite`, the script the skills call, so nothing in it is load-bearing: under `--bare`, `--safe-mode` or an older
 Claude Code every skill still works. A lite project follows the skills' own rule: no
 `tasks/VERSION.md` stamp, and `tasks/PLAN.md` (even beside an unstamped `docs/architecture/`)
 or a `docs/ARCHITECTURE.md` with no `docs/architecture/` beside it — read from the nearest
@@ -127,6 +127,12 @@ folder up holding `tasks/` or `docs/`, so a `cd` into a subfolder keeps it.
 - **No AI attribution** — the engine's commit and PR attribution text is dropped, as `ship`
   requires.
 - **Task-id completion** — typing `T-0` in the prompt box offers the open tasks.
+- **Cost guard** — the one part active in every project: caps every model request and
+  sub-agent at `high` effort, refuses a `fable` dispatch until you approve it, and gives an
+  `Explore` or `general-purpose` dispatch with no `model:` a cheap one (`haiku` / `sonnet`)
+  instead of your session model. The `cost_guard` setting turns it off. Code search and
+  technology research run in the `context-scout` and `researcher` agents (haiku, low effort),
+  never in the main agent; `task-builder` runs on `sonnet`.
 
 `claude plugin validate .` and `claude plugin test .` check it offline (`tests/mod/`), and CI
 runs both.
@@ -240,7 +246,7 @@ Per-project opt-in via `.claude/settings.json`:
 { "enabledPlugins": { "ck-code-lite@ck-marketplace": true } }
 ```
 
-Tested against Claude Code 2.1.296. The skills run on any recent release; [the mod](#the-mod)
+Tested against Claude Code 2.1.299. The skills run on any recent release; [the mod](#the-mod)
 needs 2.1.287 or later.
 
 ## ck-code-lite or ck-code?
