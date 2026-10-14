@@ -111,6 +111,8 @@ folder up holding `tasks/` or `docs/`, so a `cd` into a subfolder keeps it.
   `⚡ T-05 Count words → /ck-code-lite:build T-05`, with **Use** (fills the prompt, never sends
   it) and **Hide**. It refreshes after every turn, and not at all while hidden; **Hide** and
   `/lite-band` (which toggles it) are both kept across sessions. The `band` setting turns it off.
+  Outside the fullscreen layout (`/tui default`, tmux) a click never reaches the band: press
+  **ctrl+x tab** to focus it, then **u** (Use) or **h** (Hide); the band names these keys there.
 - **Cheers** — a toast when a task is done (`✨ T-04 done — 4/7 (57%)`), and a bigger one when
   the whole plan is (`🎉 Plan complete — 7/7 tasks done!`).
 - **Compact after a wave run** — once two or more task builders have been dispatched since the
