@@ -358,13 +358,25 @@ export const register: Register = (on, options) => {
       return next(e);
     const { Box, Button, Text } = $.ui.resolve(e);
     const score = `${data.done}/${data.total}`;
+    // The mods after this one (ck-tools' plan-limit rows) draw under ours, in the rows we
+    // leave; a tree that ignored next(e) would hide them. Kept word for word in both mods.
+    const below = async (rows: number) =>
+      e.props.maxRows > rows
+        ? await next({
+            ...e,
+            props: { ...e.props, maxRows: e.props.maxRows - rows },
+          })
+        : null;
     if (e.props.isWorking) {
-      return data.current ? (
-        <Text dimColor wrap="truncate-end">
-          ⚡ ck-lite · {data.current} · {score}
-        </Text>
-      ) : (
-        next(e)
+      if (!data.current) return next(e);
+      const rest = await below(1);
+      return (
+        <Box flexDirection="column">
+          <Text dimColor wrap="truncate-end">
+            ⚡ ck-lite · {data.current} · {score}
+          </Text>
+          {rest}
+        </Box>
       );
     }
     const isComplete = data.total > 0 && data.done >= data.total;
@@ -413,10 +425,12 @@ export const register: Register = (on, options) => {
     );
     // One row left above the prompt: the next step matters more than the bar.
     if (e.props.maxRows < 2) return actions;
+    const rest = await below(2);
     return (
       <Box flexDirection="column">
         {header}
         {actions}
+        {rest}
       </Box>
     );
   });

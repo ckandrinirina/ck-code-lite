@@ -18,6 +18,8 @@ const PROPS = { hasSurvey: false, isWorking: false, maxRows: 4, bodyColumns: 120
 test('the band shows the task in progress and fills its build command', async ($, on) => {
   const filled: string[] = []
   mock.store(on)
+  // What the mods after ck-code-lite draw in the band, such as ck-tools' plan-limit rows.
+  on('ui.render', () => ({ type: 'Text', props: {}, children: ['below the band'] }))
   on('session.cwd', () => ({ value: '/p' }))
   on('fs.exists', (_$, e) => ({ value: e.path === '/p/tasks/PLAN.md' }))
   on('process.run', () => ({
@@ -34,6 +36,7 @@ test('the band shows the task in progress and fills its build command', async ($
     expect(await ui.find({ text: /T-01 Count words/ })).toBeDefined()
     expect(await ui.find({ text: /1\/3 33%/ })).toBeDefined()
     expect(await ui.find({ text: /2 open · 0 ready/ })).toBeDefined()
+    expect(await ui.find({ text: 'below the band' })).toBeDefined()
     await ui.press({ key: 'fill' })
     await ui.unmount()
   }
@@ -43,6 +46,8 @@ test('the band shows the task in progress and fills its build command', async ($
 test('Hide persists the hidden band and stops the refresh', async ($, on) => {
   let runs = 0
   const saved: Record<string, unknown> = {}
+  // What the mods after ck-code-lite draw in the band, such as ck-tools' plan-limit rows.
+  on('ui.render', () => ({ type: 'Text', props: {}, children: ['below the band'] }))
   const clock = mock.clock(on)
   on('turn.complete', () => ({ text: 'ok' }))
   on('store.get', (_$, e) => ({ value: saved[e.key] }))
