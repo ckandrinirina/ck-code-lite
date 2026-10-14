@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.2] — 2026-10-14
+
+### Fixed
+- **mod**: the band's **Use** and **Hide** work with no click, so they also work in the default TUI (`/tui default`), where clicks never reach a mod. **ctrl+x tab** focuses the band, then **u** or **h** presses the button, and off the fullscreen layout the band shows these keys.
+
 ## [1.6.1] — 2026-10-14
 
 ### Fixed
