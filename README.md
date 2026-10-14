@@ -108,13 +108,21 @@ or a `docs/ARCHITECTURE.md` with no `docs/architecture/` beside it — read from
 folder up holding `tasks/` or `docs/`, so a `cd` into a subfolder keeps it.
 
 - **Band above the prompt** — `◆ ck-lite ▰▰▰▰▱▱▱▱▱▱ 4/7 57% 2 open · 1 ready`, then
-  `⚡ T-05 Count words → /ck-code-lite:build T-05`, with **Use** (fills the prompt, never sends
-  it) and **Hide**. It refreshes after every turn, and not at all while hidden; **Hide** and
+  `▸ T-05 Count words → /ck-code-lite:build T-05`, with **Use** (fills the prompt, never sends
+  it) and **Hide**; that row folds away 8 s after a turn ends, leaving the progress line. It refreshes after every turn, and not at all while hidden; **Hide** and
   `/lite-band` (which toggles it) are both kept across sessions. The `band` setting turns it off.
   Outside the fullscreen layout (`/tui default`, tmux) a click never reaches the band: press
   **ctrl+x tab** to focus it, then **u** (Use) or **h** (Hide); the band names these keys there.
-- **Cheers** — a toast when a task is done (`✨ T-04 done — 4/7 (57%)`), and a bigger one when
-  the whole plan is (`🎉 Plan complete — 7/7 tasks done!`).
+- **Cheers** — a toast when a task is done (`✦ T-04 done — 4/7 (57%)`), and a bigger one when
+  the whole plan is (`★ Plan complete — 7/7 tasks done!`).
+- **The ck look** — in a lite project, flat one-cell glyphs replace the default tool rows: `⌕`
+  searches, `≡` reads, `✎` writes, `±` edits, `❯` shell, `◈` agents, `✦` skills, `☐`/`▣` tasks,
+  each with its subject and state (`◌` running, `✓` done, `✗` failed); a folded run of reads and
+  searches is one line (`✓ ≡ 3 · ⌕ 2`), and the spinner says *Test-driving…*. Terminal only. The
+  `theme` setting turns it off.
+- **Task board** — a task builder's own task list (RED, GREEN, cleanup, closing run) shows on the
+  band while it runs: `◈ Build T-03 ▰▰▱▱ 2/4 ▸ Writing the failing test`. The build skill opens
+  a task list in the session too, one task per phase, or one per dispatched task in waves.
 - **Compact after a wave run** — once two or more task builders have been dispatched since the
   last compaction, the first turn that ends cleanly with no builder still running and no task
   left `doing` compacts the session between turns (background builders included), keeping the tasks
