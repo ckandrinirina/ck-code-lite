@@ -124,7 +124,9 @@ only writer of `tasks/PLAN.md` for the whole run**, and its edits stay uncommitt
 
 Dispatch `subagent_type: "ck-code-lite:task-builder"`, `name: "task-T-NN"` where the harness
 supports names, with the [dispatch prompt](#dispatch-prompt). Keep the agent ID each dispatch
-returns — that, or the name, is what resumes a partial. Announce first.
+returns — that, or the name, is what resumes a partial. Announce first. One `TaskCreate` per
+dispatched task (`Build T-NN: <title>`), `in_progress` at dispatch and `completed` when it
+merges at P7, so the session's task list follows the run.
 
 - **Fan-out (≥ 2)** — every task in a **single message**, one `Agent` call each with
   `isolation: "worktree"`, so they run concurrently. `Fan-out: N tasks → N worktree agents.`

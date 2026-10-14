@@ -12,11 +12,21 @@ export type LiteBand = {
   next: string;
 };
 
+// One builder's mirrored task list (hooks/mod/theme.ts BoardEntry): its TaskCreate,
+// TaskUpdate and TodoWrite calls, which never reach the session's own task list.
+export type LiteBoard = {
+  agent: string;
+  label: string;
+  tasks: { id: string; subject: string; active: string; status: string }[];
+};
+
 declare module "claude-code" {
   interface PluginState {
     "ck-code-lite": {
       band: LiteBand | null;
       bandHidden: boolean;
+      board: LiteBoard[];
+      bandQuiet: boolean;
     };
   }
 }

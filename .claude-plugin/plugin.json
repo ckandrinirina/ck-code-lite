@@ -23,6 +23,12 @@
   "license": "MIT",
   "types": "./types/index.d.ts",
   "userConfig": {
+    "theme": {
+      "type": "boolean",
+      "title": "ck look",
+      "description": "Flat-glyph tool rows and groups, workflow words on the spinner, and the builders' task lists in the band, in ck-code-lite projects.",
+      "default": true
+    },
     "band": {
       "type": "boolean",
       "title": "Band above the prompt",

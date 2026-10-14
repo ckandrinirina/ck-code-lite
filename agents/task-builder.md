@@ -48,7 +48,9 @@ If the criteria or the commands are missing, return `status: blocked` and say wh
    fidelity rules for every visual element — cards are read from the paths `index.md` lists,
    under that same absolute `docs/design-system/`. `tokensPath: pending` → this task writes the
    token file (its Token materialization section) and returns the path under `tokens:`.
-3. **Cycle.** `Read` the `tdd-cycle.md` path once and follow it whole: RED, GREEN, cleanup,
+3. **Cycle.** Open a task list first — one `TaskCreate` each for RED, GREEN, cleanup and the
+   closing run, each with an `activeForm` — and flip each with `TaskUpdate` as it starts and
+   ends: the session's band shows your list live. `Read` the `tdd-cycle.md` path once and follow it whole: RED, GREEN, cleanup,
    the closing run. Every command through `ck-lite-qa run <T-NN> …`. Touched paths go
    in your verdict, never into the plan. A dependency you add that `## Stack` does not list:
    research it per `stack-research.md` (beside `tdd-cycle.md`), install it without a

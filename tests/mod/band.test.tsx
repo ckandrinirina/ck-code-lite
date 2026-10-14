@@ -92,7 +92,7 @@ test('a task finished between two refreshes raises a toast', async ($, on) => {
   stdout = ['T-02 todo READY S · needs: T-01 · files: src/b.js · Missing file error', 'open 1 · ready 1 · done 2 · total 3'].join('\n')
   await $.command.run(RUN)
   await $.command.run(RUN)
-  expect(toasts).toEqual(['ck-code-lite: ✨ T-01 done — 2/3 (66%)'])
+  expect(toasts).toEqual(['ck-code-lite: ✦ T-01 done — 2/3 (66%)'])
 })
 
 test('off the fullscreen layout the band names its hotkeys and the focus chord', async ($, on) => {

@@ -125,7 +125,7 @@ describe('progress and celebrations', () => {
   })
   test('a finished task is named, a finished plan is cheered', async () => {
     const before = { done: 3, total: 7, open: ['T-04', 'T-05'] }
-    expect(celebration(before, { done: 4, total: 7, open: ['T-05'] }, 'tasks')).toBe('✨ T-04 done — 4/7 (57%)')
-    expect(celebration(before, { done: 7, total: 7, open: [] }, 'tasks')).toBe('🎉 Plan complete — 7/7 tasks done!')
+    expect(celebration(before, { done: 4, total: 7, open: ['T-05'] }, 'tasks')).toBe('✦ T-04 done — 4/7 (57%)')
+    expect(celebration(before, { done: 7, total: 7, open: [] }, 'tasks')).toBe('★ Plan complete — 7/7 tasks done!')
   })
 })

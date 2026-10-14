@@ -193,13 +193,13 @@ export function celebration(
     return undefined;
   const score = `${after.done}/${after.total}`;
   if (after.done >= after.total)
-    return `🎉 Plan complete — ${score} ${nouns} done!`;
+    return `★ Plan complete — ${score} ${nouns} done!`;
   const finished = before.open.filter((id) => !after.open.includes(id));
   const what =
     finished.length > 0 && finished.length <= 3
       ? finished.join(", ")
       : `${after.done - before.done} more`;
-  return `✨ ${what} done — ${score} (${percent(after.done, after.total)}%)`;
+  return `✦ ${what} done — ${score} (${percent(after.done, after.total)}%)`;
 }
 
 // ---- the cost guard ----------------------------------------------------------------------

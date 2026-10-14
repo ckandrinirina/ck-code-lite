@@ -164,6 +164,11 @@ A URL → invoke `/ck-code-lite:design <url>` via the Skill tool, then continue 
 ck-lite set doing T-05
 ```
 
+Then open the session's task list: one `TaskCreate` per phase still ahead — RED, GREEN,
+cleanup, QA, complete — each with an `activeForm` (`Writing the failing test`). Flip each to
+`in_progress` when it starts and `completed` when it ends (`TaskUpdate`; `TodoWrite` only where
+the session has no `TaskCreate`), never batched to the end.
+
 ## PHASES 3–4: RED, GREEN, CLEANUP
 
 `Read` [tdd-cycle.md](../../references/tdd-cycle.md) and follow it whole: **RED** (no
