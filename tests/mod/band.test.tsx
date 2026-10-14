@@ -94,3 +94,22 @@ test('a task finished between two refreshes raises a toast', async ($, on) => {
   await $.command.run(RUN)
   expect(toasts).toEqual(['ck-code-lite: ✨ T-01 done — 2/3 (66%)'])
 })
+
+test('off the fullscreen layout the band names its hotkeys and the focus chord', async ($, on) => {
+  mock.store(on)
+  on('ui.render', () => ({ type: 'Text', props: {}, children: ['below the band'] }))
+  on('session.cwd', () => ({ value: '/p' }))
+  on('fs.exists', (_$, e) => ({ value: e.path === '/p/tasks/PLAN.md' }))
+  on('process.run', () => ({
+    value: { exitCode: 0, stdout: OPEN, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
+  }))
+  await $.command.run(RUN)
+  await $.command.run(RUN)
+  const view = (isFullscreen: boolean) => ({ columns: 120, rows: 40, isFullscreen })
+  const main = await $.ui.mount({ plugin: 'ck-code-lite', surface: 'terminal', component: 'AbovePrompt', props: PROPS as never, viewport: view(false) as never })
+  expect(await main.find({ text: /ctrl\+x tab/ })).toBeDefined()
+  await main.unmount()
+  const full = await $.ui.mount({ plugin: 'ck-code-lite', surface: 'terminal', component: 'AbovePrompt', props: PROPS as never, viewport: view(true) as never })
+  expect(await full.find({ text: /ctrl\+x tab/ })).toBe(undefined)
+  await full.unmount()
+})

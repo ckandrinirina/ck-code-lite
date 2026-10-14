@@ -380,6 +380,9 @@ export const register: Register = (on, options) => {
       );
     }
     const isComplete = data.total > 0 && data.done >= data.total;
+    // Off the fullscreen layout no click reaches a Button: name its hotkey and the chord that
+    // focuses the band (ctrl+x tab). Kept word for word in both mods.
+    const keys = e.surface === "terminal" && e.viewport?.isFullscreen !== true ? true : undefined;
     const header = (
       <Box key="head" gap={1}>
         <Text bold color="claude">
@@ -410,17 +413,26 @@ export const register: Register = (on, options) => {
           <Button
             key="fill"
             label="Use"
+            hotkey="u"
+            plain={keys}
             onPress={() => $.prompt.fill({ text: `${data.next} ` })}
           />
         )}
         <Button
           key="hide"
           label="Hide"
+          hotkey="h"
+          plain={keys}
           onPress={async () => {
             await update($, bandHidden, () => true);
             await $.store.set("bandHidden", true);
           }}
         />
+        {keys && (
+          <Text key="keys" dimColor>
+            (ctrl+x tab)
+          </Text>
+        )}
       </Box>
     );
     // One row left above the prompt: the next step matters more than the bar.
