@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-10-14
+
+### Added
+- **mod**: cost guard, active in every project. It caps every model request and sub-agent dispatch at `high` effort, refuses a `fable` dispatch until the user approves it, and gives an `Explore`/`general-purpose` dispatch with no `model:` a cheap model instead of the session's. Turn it off with the `cost_guard` setting.
+- **context-scout** agent (haiku, low effort): finds the code a task touches and returns a `file:line` brief, so the main agent never searches the codebase.
+- **researcher** agent (haiku, low effort): looks up versions, idioms and docs and returns sourced answers; `start` and `build` send their idiom lookups to it.
+
+### Changed
+- **task-builder**: pinned to `model: sonnet` instead of inheriting the session model.
+
 ## [1.5.2] — 2026-10-13
 
 ### Fixed
