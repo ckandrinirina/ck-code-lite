@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.1] — 2026-10-14
+
+### Fixed
+- **mod**: the band above the prompt draws the mods that come after it (such as ck-tools' plan-limit rows) under its own rows, in the rows it leaves, instead of hiding them.
+
 ## [1.6.0] — 2026-10-14
 
 ### Added
