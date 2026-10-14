@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] — 2026-10-14
+
+### Added
+- **mod**: the ck look — in a lite project the terminal's tool rows draw with flat one-cell glyphs (`⌕` searches, `≡` reads, `✎` writes, `±` edits, `❯` shell, `◈` agents, `✦` skills, `☐`/`▣` tasks) plus each call's subject and state, a folded run of reads and searches is one line (`✓ ≡ 3 · ⌕ 2`), and the spinner and closing line use workflow words. New `theme` setting, on by default.
+- **mod**: task board — a task builder's own TaskCreate/TaskUpdate/TodoWrite list is mirrored onto the band while it runs (`◈ Build T-03 ▰▰▱▱ 2/4 ▸ Writing the failing test`); a sub-agent's list never reaches the session's own.
+
+### Changed
+- **mod**: the band's action row (next command, **Use**, **Hide**) folds away 8 s after a turn ends, leaving the progress line; the band, the cheers and the in-progress marker use flat glyphs (`▸`, `✦`, `★`) instead of emoji.
+- **build**, **task-builder**: open a session task list again — one task per phase inline, one per dispatched task in waves, and the builder's RED/GREEN/cleanup/closing-run list — so Claude Code's task view shows the run.
+
 ## [1.6.2] — 2026-10-14
 
 ### Fixed
