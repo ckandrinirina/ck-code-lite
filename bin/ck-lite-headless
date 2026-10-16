@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# ck-lite-headless — list the e2e setups that open a window in the user's foreground.
+#
+# Usage: ck-lite-headless
+#
+# Scans the repo's tracked and untracked (non-ignored) files for what takes the user's focus
+# while a test runs: a browser launched headed (`headless: false`, `headless=False`,
+# `devtools: true`), a test command that opens a window (`--headed`, `--ui`, `--debug`,
+# `PWDEBUG=1`, `HEADED=1`, `cypress open`), and an Electron e2e suite whose app or launch
+# never reads E2E_HEADLESS. A line carrying `ck-headless: allow` is kept as it is.
+# Prints one `FOREGROUND <file>:<line> <kind> — <text>` line per hit, then
+# `ck-lite-headless: N foreground` (exit 1), or `ck-lite-headless: OK` (exit 0).
+# Ported from ck-code's scripts/ck-headless.sh; self-contained, lite never depends on ck-code.
+# The conversion for each kind: references/background-tests.md.
+
+set -uo pipefail
+
+top="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "ck-lite-headless: OK — not a git repository"; exit 0; }
+cd "$top" || exit 2
+
+CODE=('*.js' '*.mjs' '*.cjs' '*.jsx' '*.ts' '*.mts' '*.cts' '*.tsx' '*.py' '*.rb')
+CMDS=('*package.json' '*Makefile' '*.sh' 'docs/ARCHITECTURE.md')
+TESTLIKE='(^|/)(tests?|e2e|__tests__|specs?|cypress)/|\.(spec|test)\.|playwright\.config\.'
+OUT=""
+
+add() { OUT="${OUT}FOREGROUND $1"$'\n'; }
+
+# kind, pattern, pathspec… — every hit outside a comment and without the allow marker.
+scan() {
+  local kind="$1" pat="$2" l f r ln t; shift 2
+  while IFS= read -r l; do
+    [ -n "$l" ] || continue
+    f="${l%%:*}"; r="${l#*:}"; ln="${r%%:*}"; t="${r#*:}"
+    t="$(printf '%s' "$t" | sed 's/^[[:space:]]*//')"
+    case "$t" in //* | '#'* | '*'* | /\**) continue ;; esac
+    case "$t" in *'ck-headless: allow'*) continue ;; esac
+    add "$f:$ln $kind — $(printf '%s' "$t" | cut -c1-80)"
+  done <<EOF
+$(git grep --untracked -nIE -e "$pat" -- "$@" 2>/dev/null)
+EOF
+}
+
+scan headed-browser 'headless[[:space:]]*[:=][[:space:]]*(false|False)([^A-Za-z0-9_]|$)' "${CODE[@]}"
+scan headed-browser 'devtools[[:space:]]*:[[:space:]]*true([^A-Za-z0-9_]|$)' "${CODE[@]}"
+scan headed-command '(playwright|wdio|jest|vitest)[^"]*[[:space:]]--(headed|ui|debug)([^A-Za-z0-9-]|$)|cypress[[:space:]]+open|PWDEBUG=1|HEADED=1' "${CMDS[@]}"
+
+# Electron: Playwright's headless never applies, so the app itself must keep its window
+# hidden. Both halves must read E2E_HEADLESS: the app (hides) and the e2e side (sets it).
+electron="$(git grep --untracked -lIE -e '_electron' -- "${CODE[@]}" 2>/dev/null | grep -E "$TESTLIKE")"
+if [ -n "$electron" ]; then
+  readers="$(git grep --untracked -lI -e 'E2E_HEADLESS' -- "${CODE[@]}" 2>/dev/null)"
+  app_reads="$(printf '%s\n' "$readers" | grep -vE "$TESTLIKE" | grep . )"
+  e2e_sets="$(printf '%s\n' "$readers" | grep -E "$TESTLIKE" | grep . )"
+  first=""; at=""
+  while IFS= read -r f; do
+    at="$(git grep --untracked -nIE -e '\.launch\(' -- "$f" 2>/dev/null | head -1 | cut -d: -f2)"
+    [ -n "$at" ] && { first="$f"; break; }
+  done <<EOF
+$electron
+EOF
+  [ -n "$first" ] || first="$(printf '%s\n' "$electron" | head -1)"
+  [ -n "$app_reads" ] || add "$first:${at:-1} electron-window — the app never reads E2E_HEADLESS, so its window opens in front"
+  [ -n "$e2e_sets" ] || add "$first:${at:-1} electron-launch — no e2e file sets E2E_HEADLESS, so a manual run opens the window"
+fi
+
+if [ -z "$OUT" ]; then
+  echo "ck-lite-headless: OK"
+  exit 0
+fi
+printf '%s' "$OUT"
+echo "ck-lite-headless: $(printf '%s' "$OUT" | grep -c '^FOREGROUND') foreground"
+exit 1

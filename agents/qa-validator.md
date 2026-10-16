@@ -98,6 +98,7 @@ when those commands pass.
 - Never write, edit or delete a test. The caller owns the tests; you only read and run them.
 - Never edit `tasks/PLAN.md` or anything under `docs/` — you read state, you never mutate it.
 - Never commit or push.
+- Never add `--headed`, `--ui`, `--debug` or `PWDEBUG` to a command, and never run an e2e command outside `ck-lite-qa`, which runs it in the background. A test that opens a window in front of the user is a FAIL, cited at its launch line ([`background-tests.md`](../references/background-tests.md)).
 - Never return full build, test or lint output. The verdict line plus a one-line excerpt
   per failure is the entire budget.
 - Never run a command outside `ck-lite-qa`, never substitute your own commands for the

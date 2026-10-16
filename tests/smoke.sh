@@ -343,6 +343,32 @@ has "ck-lite-release learn: a field with ' :: ' is refused" "cannot contain" "$(
 eq  "ck-lite-release learn: one line per lesson" "1" "$(grep -c 'quota exceeded' "$RL/lessons.md")"
 rm -rf "$RL"
 
+# ---- ck-lite-headless ---------------------------------------------------------------------
+echo "=== ck-lite-headless ==="
+HQ="$(mktemp -d)"
+has "qa run: every command runs with E2E_HEADLESS=1 and without PWDEBUG" "bg: PASS" \
+  "$(cd "$HQ" && git init -q && PWDEBUG=1 TMPDIR="$HQ" ck-lite-qa run bg bg='test "$E2E_HEADLESS" = 1 && test -z "${PWDEBUG:-}"' 2>&1)"
+HL="$(mktemp -d)"; ( cd "$HL" && git init -q )
+HLR() { ( cd "$HL" && ck-lite-headless 2>&1 ); }
+has "headless: a repo with no e2e is OK" "ck-lite-headless: OK" "$(HLR)"
+( cd "$HL" && w playwright.config.ts "export default { use: { headless: false } }
+// headless: false
+const keep = { headless: false } // ck-headless: allow" \
+  && w package.json '{"scripts":{"e2e":"playwright test --headed"}}' )
+out=$(HLR); rc=$?
+eq   "headless: a foreground setup exits 1" "1" "$rc"
+has  "headless: flags headless: false" "playwright.config.ts:1 headed-browser" "$out"
+has  "headless: flags a headed test command" "package.json:1 headed-command" "$out"
+lacks "headless: skips a commented line" "playwright.config.ts:2" "$out"
+lacks "headless: keeps a line marked allow" "playwright.config.ts:3" "$out"
+( cd "$HL" && rm -f package.json && w playwright.config.ts "process.env.E2E_HEADLESS ??= '1'" \
+  && w tests/e2e/app.spec.ts "import { _electron as electron } from 'playwright'
+const app = await electron.launch({ args: ['out/main/index.js'] })" )
+has  "headless: an Electron app that never hides is flagged at its launch" "tests/e2e/app.spec.ts:2 electron-window" "$(HLR)"
+( cd "$HL" && w src/main/index.ts "const background = process.env.E2E_HEADLESS === '1'" )
+has  "headless: both halves converted is OK" "ck-lite-headless: OK" "$(HLR)"
+rm -rf "$HL" "$HQ"
+
 echo
 echo "passed $PASS · failed $FAIL"
 [ "$FAIL" -eq 0 ]

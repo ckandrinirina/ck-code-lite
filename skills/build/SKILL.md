@@ -1,7 +1,7 @@
 ---
 name: build
-description: Use when a task from tasks/PLAN.md needs implementing end-to-end with tests, when a task left in progress needs finishing, when several independent tasks can be built at once in isolated worktrees, or when the remaining plan should run in dependency-ordered waves. Argument is an optional task ID such as T-03, several IDs, or `--waves`, optionally with `--auto` to run to the end without asking anything; with no argument, picks interactively.
-argument-hint: "[T-NN | T-NN T-NN … | --waves] [--auto]"
+description: Use when a task from tasks/PLAN.md needs implementing end-to-end with tests, when a task left in progress needs finishing, when several independent tasks can be built at once in isolated worktrees, or when the remaining plan should run in dependency-ordered waves. Argument is an optional task ID such as T-03 (with `--quick` or `--full`), several IDs, or `--waves`, optionally with `--auto` to run to the end without asking anything; with no argument, picks interactively.
+argument-hint: "[T-NN [--quick|--full] | T-NN T-NN … | --waves] [--auto]"
 effort: high
 allowed-tools: Bash(git status*) Bash(git diff*) Bash(git log*) Bash(git branch*) Bash(git rev-parse*) Bash(git checkout*) Bash(git switch*) Bash(git add*) Bash(git commit*) Bash(git merge*) Bash(git worktree*) Bash(cd*) Bash(ck-lite*) Bash(npm view*) Bash(pip index*) Bash(cargo search*) Bash(go list*) Bash(gem search*) Bash(npx -y ctx7*) WebSearch mcp__context7__resolve-library-id mcp__context7__query-docs mcp__plugin_context7_context7__resolve-library-id mcp__plugin_context7_context7__query-docs Skill
 ---
@@ -16,6 +16,10 @@ manual sign-off, done. Four gates are non-negotiable and appear below in bold:
 PARALLEL MODE: `Read` [parallel-mode.md](references/parallel-mode.md) and follow it in place of
 Phases 2–7. Every gate above still applies there; under `--auto` the manual test is deferred
 to a checklist in the final report, never dropped.
+
+**A cosmetic `S` task takes the [QUICK ROUTE](#quick-route)** — the same gates, less ceremony.
+**No test run ever opens a window in front of the user**
+([background-tests.md](../../references/background-tests.md)).
 
 **A single task never gets a worktree.** Phases 2–7 run inline, in the checkout this skill was
 invoked from, on a branch created in place. Isolation is cut only for tasks that run
@@ -37,6 +41,9 @@ optionally with `--auto`.
   recommended default ([auto mode](references/parallel-mode.md#auto-mode----auto)). Alone it
   means `--waves --auto`; with one ID it orchestrates that task solo, like `--waves`.
 - **Empty** — the Phase 1 menu.
+- **`--quick` / `--full`** (one `T-NN` only) — `--quick` asks for the [QUICK ROUTE](#quick-route),
+  still subject to its eligibility check; `--full` never takes it. Without either, Phase 2.1
+  decides.
 
 ## PHASE 0: PLUGIN GUARD
 
@@ -47,7 +54,7 @@ A full ck-code project — `tasks/VERSION.md` listed, or `docs/architecture` lis
 [Redirect](../../references/plugin-redirect.md) before any read, write or command:
 
 - `ck-code:build`, no argument, or `--auto` when the request carried it (ck-code's own `--auto`
-  runs its next epic unattended) — a `T-NN` or `--waves` is lite only, dropped
+  runs its next epic unattended) — a `T-NN`, `--waves`, `--quick` or `--full` is lite only, dropped (ck-code takes `--quick` with a story path alone)
 
 Anything else → continue.
 
@@ -115,6 +122,11 @@ gives the state:
   Phase 2.3's round — asked even when nothing else is ambiguous.
 - **none / undecided / not a UI task** → nothing; build from the architecture doc.
 
+**Route — last step of 2.1.** Fix it from what `ck-lite context` printed and announce it in one
+line: `Route: QUICK — <what changes>, size S, N files (pass --full to override).` or
+`Route: NORMAL`. Eligibility is in [QUICK ROUTE](#quick-route). QUICK skips the
+context-scout dispatch: `files:` already names everything it touches.
+
 ### 2.2 Branch — decided, announced, not asked
 
 First, when resuming a `doing` task, look for its earlier work: a `branch: … · worktree: …`
@@ -164,8 +176,15 @@ A URL → invoke `/ck-code-lite:design <url>` via the Skill tool, then continue 
 ck-lite set doing T-05
 ```
 
+**Background tests, before any code.** `ck-lite-headless`. `ck-lite-headless: OK` → nothing.
+`FOREGROUND` lines → convert each now, without asking, per
+[background-tests.md](../../references/background-tests.md): re-run until it prints OK, run
+the e2e suite once through `ck-lite-qa`, then `ck-lite files T-05 <paths>` and
+`ck-lite note T-05 "e2e moved to the background: <paths>"`. It is not task scope, so it never
+counts toward QUICK's step-up.
+
 Then open the session's task list: one `TaskCreate` per phase still ahead — RED, GREEN,
-cleanup, QA, complete — each with an `activeForm` (`Writing the failing test`). Flip each to
+cleanup, QA, complete (QUICK: change, check) — each with an `activeForm` (`Writing the failing test`). Flip each to
 `in_progress` when it starts and `completed` when it ends (`TaskUpdate`; `TodoWrite` only where
 the session has no `TaskCreate`), never batched to the end.
 
@@ -206,8 +225,47 @@ closing run, and re-delegate. At the third failure, escalate (`AskUserQuestion`)
 - `ACCEPT AS-IS` — `ck-lite note T-05 "<the shortfall>"`, then continue
 - `ABORT` — `ck-lite set todo T-05` and stop
 
-Run the commands inline **only** if the qa-validator agent type is unregistered — still
-through `ck-lite-qa` — and say so.
+Run the commands inline **only** on the [QUICK ROUTE](#quick-route), or when the qa-validator
+agent type is unregistered — still through `ck-lite-qa` — and say so.
+
+## QUICK ROUTE
+
+For a task whose whole change is cosmetic: a label, copy, a style or token, an icon, a
+constant. It keeps every check that can catch a broken change and drops the ceremony that
+cannot. One task only, never in PARALLEL MODE.
+
+**Eligible only when all of these hold**, read from `ck-lite context` (no extra read):
+
+- `size: S`, and every criterion changes a literal or presentational value: text, a label, a
+  class, a style, a token, an icon, a constant. None adds behaviour, a branch, state, an API
+  or data shape, persistence, an auth or permission rule, a dependency or a migration.
+- `files:` names 1 to 3 existing paths, and none is a manifest, lockfile, CI, test-runner
+  config or migration.
+- Not a UI task whose design is pending (2.3 still has to ask about it). A linked design's
+  rules still bind a style change.
+
+**Who decides.** `--full` → never QUICK. `--quick` on a task that fails a condition →
+`Route: NORMAL — --quick refused: <condition>`. Otherwise an eligible task takes it unasked.
+
+**What changes — nothing else does:**
+
+- **2.1** — no context-scout dispatch, no stack lookup.
+- **3–4** — when a test asserts the value being changed, edit that test to the new value
+  first, see it fail through `ck-lite-qa`, then change the code. When no test asserts it,
+  write none — a test that pins a label catches no bug — and record
+  `ck-lite note T-05 "quick: no test asserts <value>"`. A criterion that turns out to change
+  behaviour gets a real RED test and ends QUICK. The cleanup pass is one read of the diff for
+  a restating comment or dead code. The closing run still runs.
+- **5** — inline, no agent: `ck-lite-qa run T-05 --reuse test="$(ck-lite-affected …)"
+  build='…' lint='…'`, the exact line the validator would get. The closing run on this tree
+  reports `REUSED`. `FAIL` enters the same fix loop and cap.
+- **6** — one or two steps that show the change: the screen, and what it should now read.
+
+**QUICK steps up to NORMAL by itself** the moment the change outgrows it: the diff (`tasks/`
+and the background conversion excluded) reaches more than 3 files or 40 changed lines, adds a
+file, touches a manifest, lockfile, config or migration, or needs a behaviour test. Say
+`Route: QUICK → NORMAL — <reason>` and finish on the normal path from where you are: full RED
+for the new behaviour, the cleanup pass, and Phase 5 delegated.
 
 ## PHASE 6: MANUAL TEST GATE
 
@@ -252,7 +310,14 @@ that command as the next step.
 - **Never run in a full ck-code project** — Phase 0 hands it to the `/ck-code:*`
   counterpart, once; a skill reached by a ck-code redirect BLOCKs instead of bouncing back.
 - **Never edit or create an implementation file before a test run has been observed
-  failing.** No test runner → stop and ask; never assume the exception.
+  failing.** No test runner → stop and ask; never assume the exception. The one carve-out is
+  a QUICK value change that no test asserts, noted in the plan.
+- **Never take the QUICK ROUTE on a task that fails one eligibility condition** or in
+  PARALLEL MODE, never stay on it past a step-up condition, and never skip its Phase 5
+  `ck-lite-qa` run or the manual gate — QUICK drops ceremony, never a check.
+- **Never let a test open a window in front of the user** — convert every
+  `ck-lite-headless` hit before task code, never ask whether to, and never write a
+  `ck-headless: allow` marker ([background-tests.md](../../references/background-tests.md)).
 - **Never mark a task `done` without a `QA: PASS`** or an explicitly recorded ACCEPT AS-IS.
 - **Never skip the manual-test gate**, and never split its two questions into two calls.
 - **Never proceed past an `ISSUES` answer without re-running QA.**

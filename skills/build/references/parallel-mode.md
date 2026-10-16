@@ -81,6 +81,14 @@ List every `doing` task (`ck-lite open`) too — the leftovers of an interrupted
 `/ck-code-lite:build T-NN` as the way to finish it. Their dependents show as `Unschedulable` at
 P2.
 
+**Background check, last.** On `$TARGET`, run `ck-lite-headless`. `ck-lite-headless: OK` → go
+on. `FOREGROUND` lines → before any wave, dispatch the one
+[background conversion](#background-conversion) agent solo on `$TARGET`, then check from git:
+one new commit, a clean tree outside the P1 exclusions, and `ck-lite-headless: OK` on a re-run.
+A worktree sees only committed work, and a wave on a foreground suite opens the window in every
+peer's QA. A `blocked` return stops the run with its reason. Under `--auto` it still runs, with
+no question ([background-tests.md](../../../references/background-tests.md)).
+
 ## P2 Plan the waves
 
 ```bash
@@ -297,6 +305,35 @@ The `tdd-cycle.md` path is this skill's base directory + `../../references/tdd-c
 resolved to an absolute path once per run; `design-system.md` sits beside it. The `Context` line points `ck-lite` at the main
 checkout's files, which hold this run's status edits; a worktree's own copy is the last commit.
 
+## Background conversion
+
+P1's one dispatch when `ck-lite-headless` printed `FOREGROUND` lines. Solo on `$TARGET`, no task:
+
+```
+subagent_type: general-purpose
+model: sonnet
+description: "Run e2e suites in the background"
+prompt: |
+  You are in the main checkout on branch <$TARGET>. Before any edit, run
+  `git rev-parse --abbrev-ref HEAD`; if it does not print <$TARGET>, change nothing and
+  return `blocked: on <branch>`. Never create, switch, rebase or reset a branch, and never
+  touch tasks/PLAN.md.
+
+  These setups open a window in front of the user while tests run:
+    <the ck-lite-headless FOREGROUND lines, verbatim>
+
+  Read <absolute path of references/background-tests.md> once and apply its conversion for
+  each line, merging into the existing code. Change nothing else, and never write a
+  `ck-headless: allow` marker. Then:
+    1. `ck-lite-headless` must print `ck-lite-headless: OK`.
+    2. Run the e2e suite once: `ck-lite-qa run bg e2e='<the e2e command from ## Commands,
+       else the test command>'` (600000 ms Bash timeout; on RUNNING, the `wait` line it
+       prints). It must pass.
+    3. Stage only the files you changed and commit once:
+       `test(e2e): run e2e suites in the background`. No AI references.
+  Return exactly one line: `converted: <files>` or `blocked: <reason>`.
+```
+
 ## Worktree lifecycle
 
 Every git step with a safety rule is a `ck-lite` call, so the rule is code rather than prose:
@@ -330,7 +367,8 @@ Final report: the ledger, then
 ## Rules
 
 - **Never build, test, lint, or read source in this context** — statuses, counts, branch names
-  and verdicts only.
+  and verdicts only. A foreground e2e setup goes to the P1 conversion agent.
+- **Never start a wave while `ck-lite-headless` reports a `FOREGROUND` line.**
 - **Never let an agent write `tasks/PLAN.md`** — two branches editing adjacent rows conflict on
   merge; this context is the sole writer.
 - **Never dispatch two tasks that share a `files:` path in the same wave** — take the waves

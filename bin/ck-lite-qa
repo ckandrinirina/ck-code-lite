@@ -178,7 +178,9 @@ RESULT=""   # "<label>:<PASS|FAIL|REUSED|SKIPPED>" words
 
 run_one() {  # label → writes the exit code to <log>.rc
   local l="$1" log; log="$(log_of "$l")"
-  bash -c "$(cmd_of "$l")" >"$log" 2>&1
+  # Every run is a background run: an e2e suite that reads E2E_HEADLESS keeps its window
+  # hidden, and PWDEBUG (Playwright's headed inspector) never leaks in from the shell.
+  env -u PWDEBUG E2E_HEADLESS=1 bash -c "$(cmd_of "$l")" >"$log" 2>&1
   echo $? >"$log.rc"
 }
 

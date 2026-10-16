@@ -51,7 +51,8 @@ different slice of the same output is the most expensive habit this cycle can ha
 ## RED — the failing test comes first
 
 **No implementation file is created or edited until a test run has been observed failing.**
-Absolute.
+Absolute. The one carve-out is `build`'s inline QUICK route, for a cosmetic value no test
+asserts; a dispatched task-builder is never on it.
 
 **No test runner.** `test: (none)` stops the cycle. The caller presents the choice (name a
 test command, or record a documented exception) — never pick the exception, and never proceed
@@ -61,7 +62,9 @@ cleanup still applies; QA is told so with `exception: <reason>`.
 **Write the tests.** At least one per `### Acceptance` checkbox, following the nearest existing
 test file — same framework, naming and layout. Add the obvious edge case per criterion (empty
 input, missing resource, boundary value) where one exists. Assert observable behaviour, never
-implementation detail: a test that mirrors the code line for line passes a wrong one.
+implementation detail: a test that mirrors the code line for line passes a wrong one. An e2e
+test never opens a window in front of the user: follow [background-tests.md](background-tests.md)
+for its launch.
 
 **Confirm they fail**, then report one line:
 
