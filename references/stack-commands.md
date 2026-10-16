@@ -60,7 +60,7 @@ directory exists. Otherwise `python -m unittest discover`.
 
 Written only when the runner takes test paths, so RED/GREEN runs a task's own tests, and the
 closing run, the wave check and ship's area check run only the tests a change can reach
-(`ck-lite-affected` splices them into `{files}`). With no `test-one` each of those runs `test`. `{files}` is replaced by space-separated test paths.
+(`ck-lite-affected` splices them into `{files}`). With no `test-one` each of those runs `test`. `{files}` is replaced by space-separated test paths, `{dirs}` by the package folders of those files, deduplicated, as `./path` (Go tests a package, not a file).
 
 | Runner | `test-one` |
 |---|---|
@@ -69,7 +69,7 @@ closing run, the wave check and ship's area check run only the tests a change ca
 | pytest | `pytest {files}` |
 | rspec | `bundle exec rspec {files}` |
 | phpunit | `vendor/bin/phpunit {files}` |
-| go | `go test {files}` — package paths such as `./internal/count/...` |
+| go | `go test {dirs}` — expands to package folders such as `./internal/count` |
 | cargo, ctest, `python -m unittest` | omit — filters are by test name, not by path |
 
 A `test` script that already pins files or runs several tools (`"test": "lint && vitest"`)
