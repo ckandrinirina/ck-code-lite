@@ -180,6 +180,11 @@ folder up holding `tasks/` or `docs/`, so a `cd` into a subfolder keeps it.
 - **No AI attribution** — the engine's commit and PR attribution text is dropped, as `ship`
   requires.
 - **Task-id completion** — typing `T-0` in the prompt box offers the open tasks.
+- **Update check** — in every project: when the marketplace serves a newer ck-code-lite than the
+  one loaded, one toast per new version and a band row until you update
+  (`▸ ck-code-lite 1.10.0 is out (you have 1.8.0) · /plugin update ck-code-lite@ck-marketplace, then restart`).
+  Checked at most every 6 hours, never for a `--plugin-dir` checkout. The `update_check` setting
+  (or `CK_UPDATE_CHECK=off`, or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) turns it off.
 - **Cost guard** — the one part active in every project: caps every model request and
   sub-agent at `high` effort, refuses a `fable` dispatch until you approve it, and gives an
   `Explore` or `general-purpose` dispatch with no `model:` a cheap one (`haiku` / `sonnet`)
