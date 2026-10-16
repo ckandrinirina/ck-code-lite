@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.1] — 2026-10-16
+
+### Fixed
+- **ck-lite-qa**: an empty or whitespace-only command is refused (exit 2) instead of passing — `test="$(ck-lite-affected …)"` expanding to nothing no longer lets ship push untested; the last-run record is namespaced by project like the run state.
+- **ck-lite-affected**: a change that only deletes files is no longer NONE — deleted paths are traced so their importers' tests run; a single-file `## Areas` entry now matches its file.
+- **ck-lite-release**: `watch` polls `gh run view` to completion when `gh run watch` returns early, instead of reporting `FAIL ()` on a healthy build; still running at the cap prints `RUNNING` and exits 3.
+- **ck-lite**: temp files no longer leak next to `tasks/PLAN.md` under a project path with a space, or after a refused `done`.
+- **stack-commands**: the Go test-one recipe is `go test {dirs}` (package folders); `go test {files}` compiled test files alone.
+- **mod**: a failed update check (offline, non-ok, malformed reply) is recorded and waits 6 hours like a success, instead of refetching at every session start.
+
 ## [1.10.0] — 2026-10-16
 
 ### Added
