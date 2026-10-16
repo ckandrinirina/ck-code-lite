@@ -1,0 +1,231 @@
+#!/usr/bin/env bash
+# ck-lite-release — the facts a release needs, a quiet wait on its build, and the lessons this
+# machine has learned from releases in other projects.
+#
+# Kept identical to ck-code's scripts/ck-release.sh (only the name differs).
+#
+# Usage:
+#   ck-lite-release facts
+#   ck-lite-release watch <owner/repo> <workflow-file> <since-iso>
+#   ck-lite-release lessons match <text>
+#   ck-lite-release lessons tags <tag,tag…>
+#   ck-lite-release learn <tag,tag…> <error-regex> <what to do>
+#
+# facts    one line per fact, read by the release skill instead of exploring: the repo and its
+#          visibility, the recipe (docs/RELEASE.md), the version and the files that pin it, the
+#          last tag and the bump its commits suggest, the workflows a tag or a dispatch starts,
+#          CI kept outside .github/ (a public-ci/ copy), public repos that build releases for
+#          this one, whether this repo's Actions are blocked by budget, a `tags:` line, and
+#          every lesson whose tags all appear in it. Each probe that fails is left out, never
+#          fatal: the skill fills the gap from the recipe or one question.
+# watch    finds the run of <workflow-file> in <owner/repo> created at or after <since-iso>
+#          (UTC, as `date -u +%Y-%m-%dT%H:%M:%SZ` prints it), waits for it to end, and prints
+#          one line: `ck-release: PASS <url>` (exit 0) or `ck-release: FAIL <url>` (exit 1)
+#          followed by the failed jobs' annotations, the last 30 log lines and the lessons
+#          that match them. `ck-release: NO RUN` (exit 2) when no run starts within 90 s.
+#          A release build can outlast one Bash call: run it in the background.
+# lessons  prints the lessons whose error regex matches <text>, or whose tags are all in the
+#          given list. Nothing printed means nothing learned yet.
+# learn    appends one lesson, unless one with the same regex is already there. The origin
+#          (this repo's name and today's date) is added for you.
+#
+# Lessons live in ${CK_LESSONS:-~/.claude/ck-lessons.md}, one per line, shared by every
+# project on this machine and by both plugins:
+#   - <tag,tag…> :: <error regex, case-insensitive> :: <what to do> :: <repo> <date>
+# A missing file is created with the lessons every ck plugin ships.
+
+set -uo pipefail
+
+LESSONS="${CK_LESSONS:-$HOME/.claude/ck-lessons.md}"
+SELF="$(basename -- "$0")"; SELF="${SELF%.sh}"
+BUDGET_RE='budget is preventing|spending limit|recent account payments have failed|billing (issue|problem)|run out of (actions )?minutes'
+
+die() { echo "$SELF: ERROR — $*" >&2; exit 2; }
+
+seed() {
+  [ -f "$LESSONS" ] && return 0
+  mkdir -p "$(dirname -- "$LESSONS")" 2>/dev/null || return 0
+  cat >"$LESSONS" <<'EOF'
+# ck lessons — learned in one project's releases, reused by every project on this machine.
+# Read by /ck-code:release and /ck-code-lite:release through ck-release / ck-lite-release.
+# One lesson per line:  - <tag,tag…> :: <error regex> :: <what to do> :: <origin>
+- private,budget-blocked :: budget is preventing|spending limit|recent account payments have failed :: This private repo has no Actions minutes left: never wait on its runs. Build in a public repo that checks out this one with a read-only SOURCE_TOKEN secret, started by `gh workflow run <workflow> -R <owner>/<releases-repo> -f tag=vX.Y.Z` after the tag is pushed. The private run's failure is expected, never the blocker. With no such repo yet, propose one as a task (the CI files kept in public-ci/ and copied there). :: ck-plugins seed
+- releases-repo,on-error :: repository not found|could not read Username|Bad credentials|Resource not accessible by integration :: The public build repo cannot read the private source: its SOURCE_TOKEN secret is missing or expired (fine-grained, Contents read-only on the source repo). Ask the user to renew it in the releases repo's Actions secrets, then re-dispatch. :: ck-plugins seed
+EOF
+}
+
+# The lesson lines (without the leading "- ") whose regex matches stdin's text.
+match_text() {
+  local text line re
+  text="$(cat)"
+  [ -f "$LESSONS" ] || return 0
+  grep '^- ' "$LESSONS" | while IFS= read -r line; do
+    re="$(printf '%s\n' "$line" | awk -F' :: ' '{print $2}')"
+    [ -n "$re" ] || continue
+    printf '%s\n' "$text" | grep -Eiq -- "$re" 2>/dev/null && printf 'lesson: %s\n' "${line#- }"
+  done
+}
+
+# The lesson lines whose every tag is in the comma- or space-separated list $1. A lesson
+# tagged on-error is only ever matched by its error regex.
+match_tags() {
+  local have line tags t all
+  have=" $(printf '%s' "$1" | tr ',' ' ') "
+  [ -f "$LESSONS" ] || return 0
+  grep '^- ' "$LESSONS" | while IFS= read -r line; do
+    tags="$(printf '%s\n' "${line#- }" | awk -F' :: ' '{print $1}' | tr ',' ' ')"
+    all=1
+    case " $tags " in *" on-error "*) continue ;; esac
+    for t in $tags; do case "$have" in *" $t "*) ;; *) all=0 ;; esac; done
+    [ "$all" = 1 ] && [ -n "$tags" ] && printf 'lesson: %s\n' "${line#- }"
+  done
+}
+
+has_gh() { command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; }
+
+# Annotation messages of the failed jobs of run $2 in repo $1.
+failed_annotations() {
+  local job
+  for job in $(gh run view "$2" -R "$1" --json jobs -q '.jobs[] | select(.conclusion=="failure") | .databaseId' 2>/dev/null); do
+    gh api "repos/$1/check-runs/$job/annotations" -q '.[].message' 2>/dev/null
+  done | awk 'NF && !seen[$0]++' | head -5
+}
+
+facts() {
+  local top repo vis owner name tags="" v vfile last count subj bump wf cand c cvis cwf seen=""
+  top="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not a git repository"
+  cd "$top" || die "cannot enter $top"
+  seed
+
+  if has_gh && read -r repo vis < <(gh repo view --json nameWithOwner,visibility -q '.nameWithOwner + " " + (.visibility | ascii_downcase)' 2>/dev/null) && [ -n "$repo" ]; then
+    echo "repo: $repo ($vis)"; tags="$tags $vis"
+    owner="${repo%%/*}"; name="${repo#*/}"
+  else
+    echo "repo: unknown (gh missing, signed out, or no GitHub remote)"
+    owner=""; name=""
+  fi
+
+  if [ -f docs/RELEASE.md ]; then echo "recipe: docs/RELEASE.md"; tags="$tags recipe"
+  else echo "recipe: none"; fi
+
+  v=""; vfile=""
+  for vfile in package.json .claude-plugin/plugin.json Cargo.toml pyproject.toml pubspec.yaml VERSION; do
+    [ -f "$vfile" ] || continue
+    case "$vfile" in
+      VERSION) v="$(sed -n '1s/^v\{0,1\}\([0-9][0-9A-Za-z.+-]*\).*/\1/p' "$vfile")" ;;
+      *.json) v="$(sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' "$vfile" | head -1)" ;;
+      *) v="$(sed -n 's/^version *[=:] *"\{0,1\}\([0-9][^" ]*\)"\{0,1\}.*/\1/p' "$vfile" | head -1)" ;;
+    esac
+    [ -n "$v" ] && break
+  done
+  if [ -n "$v" ]; then
+    echo "version: $v ($vfile)"
+    echo "version-files: $(git grep -l -F -w -- "$v" -- ':!*.md' ':!*.lock' ':!yarn.lock' ':!pnpm-lock.yaml' 2>/dev/null | head -12 | paste -sd ' ' -)"
+  else
+    echo "version: unknown"
+  fi
+  [ -f CHANGELOG.md ] && { echo "changelog: CHANGELOG.md"; tags="$tags changelog"; }
+
+  last="$(git describe --tags --abbrev=0 2>/dev/null)"
+  if [ -n "$last" ]; then
+    count="$(git rev-list --count "$last"..HEAD 2>/dev/null)"
+    subj="$(git log --format=%s%n%b "$last"..HEAD 2>/dev/null)"
+    bump='patch'
+    printf '%s\n' "$subj" | grep -Eq '^feat(\(|:)' && bump=minor
+    printf '%s\n' "$subj" | grep -Eq '^[a-z]+(\([^)]*\))?!:|^BREAKING CHANGE' && bump=major
+    echo "last-tag: $last ($count commits since, suggests $bump)"
+  else
+    echo "last-tag: none"
+  fi
+
+  if [ -d .github/workflows ]; then
+    for wf in .github/workflows/*.yml .github/workflows/*.yaml; do
+      [ -f "$wf" ] || continue
+      grep -Eq '^[[:space:]]+tags:' "$wf" && { echo "tag-ci: $wf"; tags="$tags tag-ci"; }
+      grep -q 'workflow_dispatch' "$wf" && echo "dispatch-ci: $wf"
+    done
+  fi
+  for wf in $(git ls-files '*.yml' '*.yaml' 2>/dev/null | grep -v '^\.github/' | xargs grep -l '^on:' 2>/dev/null | head -5); do
+    echo "ci-outside-github: $wf"; tags="$tags ci-outside-github"
+  done
+
+  # With a recipe, it already names where the build runs: skip the network probes.
+  if [ -n "$owner" ] && [ ! -f docs/RELEASE.md ]; then
+    # Public repos that may build this one's releases: <name>-releases, <folder>-releases,
+    # <name> without -source, and any <owner>/<repo> the outside CI or release docs name.
+    for cand in "$name-releases" "$(basename -- "$top")-releases" "${name%-source}" \
+                $(git grep -h -o -E "$owner/[A-Za-z0-9._-]+" -- ':(glob)**/*.yml' ':(glob)**/*.yaml' ':(glob)docs/**/*release*' ':!.github' 2>/dev/null | sed "s|^$owner/||; s/\.git$//; s/[.]$//" | sort -u | head -4); do
+      [ "$cand" = "$name" ] && continue
+      case " $seen " in *" $cand "*) continue ;; esac
+      seen="$seen $cand"
+      cvis="$(gh repo view "$owner/$cand" --json visibility -q '.visibility | ascii_downcase' 2>/dev/null)" || continue
+      [ "$cvis" = public ] || continue
+      cwf="$(gh api "repos/$owner/$cand/actions/workflows" -q '.workflows[] | select(.state=="active") | .path' 2>/dev/null | grep -v '^dynamic/' | sed 's|^\.github/workflows/||' | paste -sd ' ' -)"
+      echo "releases-repo: $owner/$cand (public; workflows: ${cwf:-none})"
+      tags="$tags releases-repo"
+    done
+
+    c="$(gh run list -R "$repo" -L 5 --json databaseId,conclusion -q '[.[] | select(.conclusion=="failure")][0].databaseId' 2>/dev/null)"
+    if [ -n "$c" ] && failed_annotations "$repo" "$c" | grep -Eiq -- "$BUDGET_RE"; then
+      echo "actions: blocked by budget (run $c)"; tags="$tags budget-blocked"
+    fi
+  fi
+
+  tags="$(printf '%s\n' $tags | awk 'NF && !s[$0]++' | paste -sd ' ' -)"
+  echo "tags: $tags"
+  match_tags "$tags"
+}
+
+watch() {
+  local repo="${1:-}" wf="${2:-}" since="${3:-}" id="" url ok text
+  [ -n "$repo" ] && [ -n "$wf" ] && [ -n "$since" ] || die "usage: $SELF watch <owner/repo> <workflow-file> <since-iso>"
+  has_gh || die "gh is missing or signed out"
+  seed
+  for _ in 1 2 3 4 5 6 7 8 9; do
+    id="$(gh run list -R "$repo" --workflow "$wf" -L 10 --json databaseId,createdAt -q "[.[] | select(.createdAt >= \"$since\")] | sort_by(.createdAt) | .[0].databaseId // empty" 2>/dev/null)"
+    [ -n "$id" ] && break
+    sleep 10
+  done
+  [ -n "$id" ] || { echo "$SELF: NO RUN — no $wf run in $repo since $since"; exit 2; }
+  url="$(gh run view "$id" -R "$repo" --json url -q .url 2>/dev/null)"
+  gh run watch "$id" -R "$repo" --interval 20 >/dev/null 2>&1
+  ok="$(gh run view "$id" -R "$repo" --json conclusion -q .conclusion 2>/dev/null)"
+  if [ "$ok" = success ]; then echo "$SELF: PASS $url"; exit 0; fi
+  echo "$SELF: FAIL ($ok) $url"
+  text="$(failed_annotations "$repo" "$id"; gh run view "$id" -R "$repo" --log-failed 2>/dev/null | tail -30 | cut -c1-240)"
+  printf '%s\n' "$text"
+  printf '%s\n' "$text" | match_text
+  exit 1
+}
+
+lessons() {
+  seed
+  case "${1:-}" in
+    match) shift; printf '%s\n' "$*" | match_text ;;
+    tags)  shift; match_tags "$*" ;;
+    *) die "usage: $SELF lessons match <text> | lessons tags <tag,tag…>" ;;
+  esac
+}
+
+learn() {
+  local tg="${1:-}" re="${2:-}" fix="${3:-}" origin
+  [ -n "$tg" ] && [ -n "$re" ] && [ -n "$fix" ] || die "usage: $SELF learn <tag,tag…> <error-regex> <what to do>"
+  case "$tg$re$fix" in *' :: '*) die "a field cannot contain ' :: '" ;; esac
+  printf '' | grep -Ei -- "$re" >/dev/null 2>&1; [ $? -le 1 ] || die "not a valid regex: $re"
+  seed
+  if grep '^- ' "$LESSONS" 2>/dev/null | awk -F' :: ' -v r="$re" '$2 == r {f=1} END {exit !f}'; then
+    echo "$SELF: already known — $re"; return 0
+  fi
+  origin="$(basename -- "$(git rev-parse --show-toplevel 2>/dev/null || pwd)") $(date +%Y-%m-%d)"
+  printf -- '- %s :: %s :: %s :: %s\n' "$tg" "$re" "$fix" "$origin" >>"$LESSONS"
+  echo "$SELF: learned — $re ($LESSONS)"
+}
+
+cmd="${1:-}"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  facts)   facts ;;
+  watch)   watch "$@" ;;
+  lessons) lessons "$@" ;;
+  learn)   learn "$@" ;;
+  *) die "usage: $SELF facts | watch <owner/repo> <workflow> <since-iso> | lessons match <text> | lessons tags <tags> | learn <tags> <regex> <fix>" ;;
+esac

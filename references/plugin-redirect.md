@@ -1,6 +1,6 @@
 # Plugin redirect — a lite skill in a full ck-code project
 
-Read by `start`, `design`, `build` and `ship` when their Phase 0 plugin guard finds a full
+Read by `start`, `design`, `build`, `ship` and `release` when their Phase 0 plugin guard finds a full
 ck-code project. ck-code's state (stories, epics, the layout stamp) is something ck-code-lite
 cannot read or keep in step, so the skill hands the request to its ck-code counterpart
 instead of running.

@@ -311,6 +311,38 @@ echo "=== reclaim ==="
 fresh reclaim; echo x >x; git add x; git commit -qm x
 has "reclaim: refuses the main checkout" "refused" "$(ck-lite-reclaim "$P" 2>&1)"
 
+# ---- ck-lite-release ----------------------------------------------------------------------
+echo "=== ck-lite-release: facts and lessons, offline ==="
+RL="$(mktemp -d)"; mkdir -p "$RL/nogh" "$RL/p/.github/workflows" "$RL/p/public-ci"
+printf '#!/bin/sh\nexit 1\n' >"$RL/nogh/gh"; chmod +x "$RL/nogh/gh"
+REL() { ( cd "$RL/p" && PATH="$RL/nogh:$PATH" CK_LESSONS="$RL/lessons.md" ck-lite-release "$@" 2>&1 ); }
+git -C "$RL/p" init -q && git -C "$RL/p" config user.email t@t && git -C "$RL/p" config user.name t
+printf '{\n  "name": "x",\n  "version": "1.2.3"\n}\n' >"$RL/p/package.json"
+printf 'on:\n  push:\n    tags: ["v*"]\n' >"$RL/p/.github/workflows/ci.yml"
+printf 'on:\n  workflow_dispatch:\n' >"$RL/p/public-ci/release.yml"
+echo '# Changelog' >"$RL/p/CHANGELOG.md"
+git -C "$RL/p" add -A && git -C "$RL/p" commit -qm "chore: init" && git -C "$RL/p" tag v1.2.3
+echo x >"$RL/p/a" && git -C "$RL/p" add a && git -C "$RL/p" commit -qm "feat: a"
+RF="$(REL facts)"
+has "ck-lite-release facts: no gh degrades, never fails" "repo: unknown" "$RF"
+has "ck-lite-release facts: the version and its file" "version: 1.2.3 (package.json)" "$RF"
+has "ck-lite-release facts: files that pin the version" "version-files: package.json" "$RF"
+has "ck-lite-release facts: a feat since the tag suggests minor" "last-tag: v1.2.3 (1 commits since, suggests minor)" "$RF"
+has "ck-lite-release facts: a tag-started workflow" "tag-ci: .github/workflows/ci.yml" "$RF"
+has "ck-lite-release facts: CI kept outside .github/" "ci-outside-github: public-ci/release.yml" "$RF"
+has "ck-lite-release facts: no recipe yet" "recipe: none" "$RF"
+lacks "ck-lite-release facts: no budget lesson for an unblocked repo" "lesson:" "$RF"
+has "ck-lite-release: the lessons file is seeded" "- private,budget-blocked :: " "$(cat "$RL/lessons.md")"
+has "ck-lite-release lessons match: a budget error finds its lesson" "lesson: private,budget-blocked" "$(REL lessons match 'The job was not started because an Actions budget is preventing further use.')"
+has "ck-lite-release lessons tags: all tags present matches" "lesson: private,budget-blocked" "$(REL lessons tags private,budget-blocked,changelog)"
+lacks "ck-lite-release lessons tags: an on-error lesson never matches by tags" "lesson:" "$(REL lessons tags releases-repo,on-error)"
+has "ck-lite-release learn: appends with its origin" "learned" "$(REL learn tag-ci 'quota exceeded' 'wait for the reset')"
+has "ck-lite-release learn: the same regex is kept once" "already known" "$(REL learn tag-ci 'quota exceeded' 'other')"
+has "ck-lite-release learn: an invalid regex is refused" "not a valid regex" "$(REL learn tag-ci '(' x)"
+has "ck-lite-release learn: a field with ' :: ' is refused" "cannot contain" "$(REL learn 'a :: b' x y)"
+eq  "ck-lite-release learn: one line per lesson" "1" "$(grep -c 'quota exceeded' "$RL/lessons.md")"
+rm -rf "$RL"
+
 echo
 echo "passed $PASS · failed $FAIL"
 [ "$FAIL" -eq 0 ]
