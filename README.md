@@ -102,6 +102,31 @@ integrity checks still gate every merge. The manual sign-off is deferred, not dr
 task gets a `manual test pending` note and the final report carries one checklist of steps to
 try. With no test command it refuses to start rather than build without a failing test.
 
+### Quick builds for cosmetic tasks
+
+A task whose whole change is a label, copy, a style or token, an icon or a constant (size `S`,
+at most three named files, no new behaviour) takes the **QUICK** route on its own, announced in
+one line. It skips the context scout, stack research, the cleanup pass and the QA agent. It
+keeps the checks: a test that asserts the old value is updated first and seen failing, the
+affected tests, build and lint still run (inline, reusing the passing run), and the manual
+gate is one or two steps. The moment the diff grows past three files or 40 lines, or needs a
+behaviour test, it steps back to the normal route by itself. `--full` forces the normal route,
+and `--quick` asks for QUICK but still checks that the task qualifies.
+
+```
+/ck-code-lite:build T-04 --quick   # still refused when the task is not cosmetic
+/ck-code-lite:build T-04 --full    # the normal route, whatever the task
+```
+
+### Tests never take your focus
+
+No test run opens a browser or an app window in front of you. `ck-lite-qa` runs every command
+with `E2E_HEADLESS=1`, and before any task code `build` runs `ck-lite-headless`. It lists the
+setups that would show a window: `headless: false`, `--headed`/`--ui`/`--debug`, `cypress open`,
+and an Electron e2e suite whose app never hides its window. `build` converts each one right
+away, without asking (an Electron app keeps its window hidden and out of the Dock under
+`E2E_HEADLESS`). A line marked `ck-headless: allow` is left as it is.
+
 ### Every prompt goes through the workflow
 
 You do not have to type the slash command. In an adopted project (one with `tasks/PLAN.md`
