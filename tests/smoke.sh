@@ -369,6 +369,72 @@ has  "headless: an Electron app that never hides is flagged at its launch" "test
 has  "headless: both halves converted is OK" "ck-lite-headless: OK" "$(HLR)"
 rm -rf "$HL" "$HQ"
 
+# ---- ck-lite: temp files under a spaced path ------------------------------------------
+echo "=== ck-lite temp cleanup, spaced path ==="
+SP="$WORK/spaced dir"; mkdir -p "$SP/tasks" "$SP/sub" "$SP/shim"
+( cd "$SP" && git init -q . && ck-lite init sp >/dev/null )
+( cd "$SP/sub" && task T-01 "Spaced" S — "a.js" | CK_LITE_PLAN="$SP/tasks/PLAN.md" ck-lite add >/dev/null 2>&1 )
+eq  "tmp cleanup: add under a spaced path leaves no PLAN.md.in.*" "0" "$(ls "$SP/tasks" | grep -c 'PLAN.md\.')"
+printf '#!/bin/sh\necho "fake defect"\n' >"$SP/shim/comm"; chmod +x "$SP/shim/comm"
+out="$(cd "$SP/sub" && PATH="$SP/shim:$PATH" CK_LITE_PLAN="$SP/tasks/PLAN.md" ck-lite done T-01 2>&1)"
+has "tmp cleanup: a refused write via done is refused" "refused" "$out"
+eq  "tmp cleanup: a refused done leaves no temp file or lock" "0" "$(ls "$SP/tasks" | grep -c 'PLAN.md\.')"
+rm -rf "$SP"
+
+# ---- regression: qa labels/namespacing, affected deletions, release watch -------------------
+echo "=== regression: ck-lite-qa labels and namespacing, ck-lite-affected deletions, ck-lite-release watch ==="
+RG="$(mktemp -d)"; mkdir -p "$RG/tmp" "$RG/a" "$RG/b" "$RG/bin"
+for d in a b; do
+  git -C "$RG/$d" init -q && git -C "$RG/$d" config user.email t@t && git -C "$RG/$d" config user.name t
+  echo x >"$RG/$d/f" && git -C "$RG/$d" add -A && git -C "$RG/$d" commit -qm init
+done
+RQ() { local d="$1"; shift; ( cd "$RG/$d" && TMPDIR="$RG/tmp" ck-lite-qa "$@" 2>&1 ); }
+RQ_OUT="$(RQ a run 01-01 unit-test='exit 1')"; RQ_RC=$?
+has "qa: a hyphenated label is refused loudly, never run as an empty command" "label must be" "$RQ_OUT"
+eq  "qa: a hyphenated label exits 2, not a silent pass" "2" "$RQ_RC"
+RQ_OUT="$(RQ a run 01-01 test='')"; RQ_RC=$?
+eq  "qa: an empty command exits 2" "2" "$RQ_RC"
+has "qa: an empty command is refused by label" "label test has an empty command" "$RQ_OUT"
+has "qa: a whitespace-only command is refused" "has an empty command" "$(RQ a run 01-01 test='   ')"
+RQ b run 01-01 t=true >/dev/null; RQ a run 01-01 t=true >/dev/null
+eq  "qa: two repos with story 01-01 keep separate run state" "2" "$(ls "$RG"/tmp/ck-lite-qa-run/*/ | grep -c '^01-01$')"
+eq  "qa: two repos with story 01-01 keep separate logs" "2" "$(ls "$RG"/tmp/ck-lite-*-01-01-t.log | wc -l | tr -d ' ')"
+# affected: a deletion
+mkdir -p "$RG/d/src" "$RG/d/docs"
+( cd "$RG/d" && git init -q && git config user.email t@t && git config user.name t
+  echo "export const a = 1" >src/a.ts; echo "import { a } from './a'; test('a', () => a)" >src/a.test.ts
+  echo "export const c = 1" >src/config.ts; echo "export const o = 1" >src/other.ts
+  printf '# Arch\n\n## Areas\n\n| Area | Doc | Prefixes |\n|---|---|---|\n| core | x.md | src/config.ts |\n| rest | y.md | src/other.ts, src/a.ts, src/a.test.ts |\n' >docs/ARCHITECTURE.md
+  git add -A && git commit -qm init && git rm -q src/a.ts )
+DEL_OUT="$(cd "$RG/d" && ck-lite-affected HEAD 2>&1)"
+DEL_T="$(cd "$RG/d" && ck-lite-affected HEAD --tests 2>&1)"
+lacks "affected: a delete-only change is not NONE" "NONE" "$DEL_OUT"
+has "affected: the importers of a deleted file are tested" "src/a.test.ts" "$DEL_T"
+# a single-file path in the ## Areas table matches that file
+( cd "$RG/d" && git checkout -q -- . && echo "export const c = 2" >src/config.ts )
+SF_OUT="$(cd "$RG/d" && ck-lite-affected HEAD 2>&1)"
+has "affected: a single-file ## Areas entry matches its file" "core" "$SF_OUT"
+lacks "affected: a single-file ## Areas entry is not the root area" "FULL" "$SF_OUT"
+# release watch: gh run watch returns early, the run is still going
+printf '%s\n' '#!/bin/sh' \
+  'case "$*" in' \
+  '  "auth status"*) exit 0 ;;' \
+  '  "run list"*) echo 42 ;;' \
+  '  "run watch"*) exit 1 ;;' \
+  '  *"--json url"*) echo https://example.test/run/42 ;;' \
+  '  *"status,conclusion"*) n=$(cat "$FAKE_N" 2>/dev/null || echo 0); echo $((n + 1)) >"$FAKE_N"' \
+  '     if [ "$n" -lt "${FAKE_PENDING:-1}" ]; then echo "in_progress "; else echo "completed success"; fi ;;' \
+  'esac' >"$RG/bin/gh"
+chmod +x "$RG/bin/gh"
+RW() { ( cd "$RG/a" && PATH="$RG/bin:$PATH" FAKE_N="$RG/n" CK_LESSONS="$RG/lessons.md" CK_RELEASE_POLL_SLEEP=0 CK_RELEASE_POLLS=${POLLS:-5} ck-lite-release watch o/r wf.yml 2020-01-01T00:00:00Z 2>&1 ); }
+rm -f "$RG/n"; RW_OUT="$(RW)"; RW_RC=$?
+eq  "release watch: an early return is polled to completion, exit 0" "0" "$RW_RC"
+has "release watch: an early return still reports PASS" "PASS https://example.test/run/42" "$RW_OUT"
+rm -f "$RG/n"; RW_OUT="$(FAKE_PENDING=99 POLLS=3 RW)"; RW_RC=$?
+eq  "release watch: still running at the cap exits 3" "3" "$RW_RC"
+has "release watch: still running at the cap prints RUNNING" "RUNNING" "$RW_OUT"
+rm -rf "$RG"
+
 echo
 echo "passed $PASS · failed $FAIL"
 [ "$FAIL" -eq 0 ]
