@@ -72,7 +72,7 @@ snapshot() {
   fi
 }
 
-last_of() { printf '%s/last-%s-%s' "$STAMPS" "$1" "$2"; }   # id label → last-run record
+last_of() { printf '%s/last-%s-%s-%s' "$STAMPS" "$REPO" "$1" "$2"; }   # id label → last-run record
 
 # Prints line $3 (1 snapshot, 2 directory, 3 full command) of the last-run record for
 # id $1 label $2, only when that run was in this directory.
@@ -129,6 +129,7 @@ while [ "$#" -gt 0 ]; do
     --rerun) RERUN=1 ;;
     *=*) l="${1%%=*}"
          case "$l" in ""|*[!A-Za-z0-9_]*) die "label must be [A-Za-z0-9_]+, no hyphen (got: $l)" ;; esac
+         case "${1#*=}" in *[![:space:]]*) ;; *) die "label $l has an empty command" ;; esac
          LABELS="$LABELS $l"; eval "CMD_$l=\"\${1#*=}\"" ;;
     *) die "expected <label>=<command>, got: $1" ;;
   esac
