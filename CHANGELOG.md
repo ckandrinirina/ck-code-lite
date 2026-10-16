@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.0] — 2026-10-16
+
+### Added
+- **mod**: update check — when the public marketplace serves a newer ck-code-lite than the one the session loaded, one toast per new version and a row above the prompt (`/plugin update ck-code-lite@ck-marketplace`, then restart) until it is updated, so a project left on an old install is told. The latest version is read from the published `marketplace.json` at most every 6 hours and cached in the plugin store; a `--plugin-dir` checkout is never checked, and the `update_check` setting, `CK_UPDATE_CHECK=off` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` turns it off. `hooks/mod/update.tsx` and `tests/mod/update.test.tsx` are kept word for word in ck-code, ck-code-lite and ck-tools.
+
 ## [1.9.0] — 2026-10-16
 
 ### Added
