@@ -16,12 +16,30 @@ scripted, so a run's cost tracks the work in front of it, not the age of the pro
 | `/ck-code-lite:design` | A project with a UI should be designed with Claude Design first — or you have a claude.ai/design URL to link | `docs/design-brief.md`, `docs/design-system/` |
 | `/ck-code-lite:build` | Implementing one task end to end — or several at once, in waves | Code, tests, tasks marked `done` |
 | `/ck-code-lite:ship` | Committing finished work | A conventional commit, an area test check before the push, and a PR |
+| `/ck-code-lite:release` | Publishing a new version: bump, tag, build, release | A merged release PR, a tag, the project's build started and checked |
 
 ```
 /ck-code-lite:start "a CLI that counts words in a file"
 /ck-code-lite:build
 /ck-code-lite:ship
 ```
+
+### Releases that follow the project's own process
+
+`release` publishes a version the way **this project** does it. The steps are written once in
+`docs/RELEASE.md`: which files carry the version, how the release PR merges, where the build
+runs, and how to check what was published. The first run drafts that recipe from facts it
+gathers in one call and shows it for approval. Every later release follows it without asking,
+except for one version question. A step only you can do, such as a merge, a secret or a store
+upload, is asked and then checked, never waited on in silence. Running `release` again resumes
+a release that stopped half way.
+
+A project whose private repo has run out of Actions minutes, with installers built in a public
+repo started by hand, is handled: the tag is pushed, the public workflow is dispatched, and its
+build is watched in the background down to one result line. What one project learns is kept as a
+one-line lesson in `~/.claude/ck-lessons.md`, which every project on the machine and both ck
+plugins read. A lesson is printed only when it matches the project's facts or the error at hand,
+so it costs nothing until it applies.
 
 ### Design first with Claude Design
 
@@ -149,7 +167,7 @@ runs both.
 
 ### Plugin redirect
 
-`start`, `design`, `build` and `ship` never run in a full ck-code project (`tasks/VERSION.md`,
+`start`, `design`, `build`, `ship` and `release` never run in a full ck-code project (`tasks/VERSION.md`,
 or `docs/architecture/` with no `tasks/PLAN.md`). Before reading or writing anything they run
 the ck-code counterpart for you — `build` → `/ck-code:build`, `ship` → `/ck-code:ship`,
 `start "<text>"` → `/ck-code:plan --quick`, `design <url>` → `/ck-code:design ds <url>` — so a
