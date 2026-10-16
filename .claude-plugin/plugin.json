@@ -46,6 +46,12 @@
       "title": "Cost guard",
       "description": "Cap every request and subagent at high effort, ask before any Fable dispatch, and give built-in subagents a cheap model when none is named.",
       "default": true
+    },
+    "update_check": {
+      "type": "boolean",
+      "title": "Update check",
+      "description": "Toast once and show a row above the prompt when the marketplace serves a newer version of this plugin.",
+      "default": true
     }
   }
 }

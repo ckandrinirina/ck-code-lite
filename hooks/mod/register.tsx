@@ -21,6 +21,7 @@ import { atom, read, update } from "claude-code";
 import type { EngineInterface, Register } from "claude-code";
 
 import type { LiteBand, LiteBoard } from "../../types";
+import { registerUpdateCheck, startUpdateCheck } from "./update";
 import { registerLook } from "./look";
 import { boardLine, taskCreated, taskUpdated, todosWritten } from "./theme";
 import {
@@ -59,6 +60,7 @@ const bandQuiet = atom(
 const BAND_ACTIONS_MS = 8000;
 
 // Module variables start over on a reload; the band itself lives in $.state.
+let updateOn = true;
 let bandOn = true;
 let compactOn = true;
 let costGuardOn = true;
@@ -267,6 +269,8 @@ export const register: Register = (on, options) => {
   compactOn = options.compact_after_waves !== false;
   costGuardOn = options.cost_guard !== false;
   themeOn = options.theme !== false;
+  updateOn = options.update_check !== false;
+  registerUpdateCheck(on);
 
   registerLook(on, {
     isOurs: () => themeOn && isLiteHere,
@@ -274,6 +278,7 @@ export const register: Register = (on, options) => {
   });
 
   on("session.start", async ($, e, next) => {
+    await startUpdateCheck($, updateOn);
     await $.command.register({
       name: "lite-status",
       description: "Open ck-code-lite tasks and counts, with no model turn",
