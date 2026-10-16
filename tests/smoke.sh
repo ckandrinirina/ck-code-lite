@@ -374,11 +374,11 @@ echo "=== ck-lite temp cleanup, spaced path ==="
 SP="$WORK/spaced dir"; mkdir -p "$SP/tasks" "$SP/sub" "$SP/shim"
 ( cd "$SP" && git init -q . && ck-lite init sp >/dev/null )
 ( cd "$SP/sub" && task T-01 "Spaced" S — "a.js" | CK_LITE_PLAN="$SP/tasks/PLAN.md" ck-lite add >/dev/null 2>&1 )
-eq  "tmp cleanup: add under a spaced path leaves no PLAN.md.in.*" "0" "$(ls "$SP/tasks" | grep -c 'PLAN.md\.')"
+eq  "tmp cleanup: add under a spaced path leaves no PLAN.md.in.*" "0" "$(find "$SP/tasks" -name 'PLAN.md.*' | wc -l | tr -d ' ')"
 printf '#!/bin/sh\necho "fake defect"\n' >"$SP/shim/comm"; chmod +x "$SP/shim/comm"
-out="$(cd "$SP/sub" && PATH="$SP/shim:$PATH" CK_LITE_PLAN="$SP/tasks/PLAN.md" ck-lite done T-01 2>&1)"
+out="$(cd "$SP/sub" && PATH="$SP/shim:$PATH" CK_LITE_PLAN="$SP/tasks/PLAN.md" ck-lite 'done' T-01 2>&1)"
 has "tmp cleanup: a refused write via done is refused" "refused" "$out"
-eq  "tmp cleanup: a refused done leaves no temp file or lock" "0" "$(ls "$SP/tasks" | grep -c 'PLAN.md\.')"
+eq  "tmp cleanup: a refused done leaves no temp file or lock" "0" "$(find "$SP/tasks" -name 'PLAN.md.*' | wc -l | tr -d ' ')"
 rm -rf "$SP"
 
 # ---- regression: qa labels/namespacing, affected deletions, release watch -------------------
@@ -397,7 +397,7 @@ eq  "qa: an empty command exits 2" "2" "$RQ_RC"
 has "qa: an empty command is refused by label" "label test has an empty command" "$RQ_OUT"
 has "qa: a whitespace-only command is refused" "has an empty command" "$(RQ a run 01-01 test='   ')"
 RQ b run 01-01 t=true >/dev/null; RQ a run 01-01 t=true >/dev/null
-eq  "qa: two repos with story 01-01 keep separate run state" "2" "$(ls "$RG"/tmp/ck-lite-qa-run/*/ | grep -c '^01-01$')"
+eq  "qa: two repos with story 01-01 keep separate run state" "2" "$(find "$RG/tmp/ck-lite-qa-run" -mindepth 2 -maxdepth 2 -name 01-01 | wc -l | tr -d ' ')"
 eq  "qa: two repos with story 01-01 keep separate logs" "2" "$(ls "$RG"/tmp/ck-lite-*-01-01-t.log | wc -l | tr -d ' ')"
 # affected: a deletion
 mkdir -p "$RG/d/src" "$RG/d/docs"
