@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] — 2026-10-16
+
+### Added
+- **build**: QUICK route — a cosmetic `S` task (a label, copy, style, token, icon or constant in at most three named files) is built without the context scout, stack research, cleanup pass or QA agent; a test asserting the old value still goes red first, QA runs inline with `--reuse`, the manual gate is one or two steps, and it steps back to the normal route by itself when the diff grows. `--quick` asks for it (still checked), `--full` refuses it.
+- **ck-lite-headless**: lists the e2e setups that open a window in front of the user (`headless: false`, `--headed`/`--ui`/`--debug`, `PWDEBUG=1`, `cypress open`, an Electron suite whose app ignores `E2E_HEADLESS`); `build` converts every hit before task code without asking, and PARALLEL MODE commits the conversion on the target before the first wave. Recipes in `references/background-tests.md`.
+
+### Changed
+- **ck-lite-qa**: every command runs with `E2E_HEADLESS=1` and without `PWDEBUG`, so a converted suite stays in the background.
+- **qa-validator**, **tdd-cycle**: a test that opens a window in front of the user is a QA failure; new e2e tests are written background-first.
+
 ## [1.8.0] — 2026-10-16
 
 ### Added
