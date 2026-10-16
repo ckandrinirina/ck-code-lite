@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] — 2026-10-16
+
+### Added
+- **release**: new skill — publishes a version the way the project releases, from a committed recipe (`docs/RELEASE.md`) drafted on the first run from one `ck-lite-release facts` call: every version file and the changelog in a release PR, the merge (or one question when only you can merge, checked afterwards — never a silent wait), the tag on the merge commit, and the build started where it really runs, including a `workflow_dispatch` in a public build repo when the private one has no Actions minutes. The build is watched in the background down to one result line; running the skill again resumes a release that stopped half way.
+- **release**: lessons shared across projects — `~/.claude/ck-lessons.md` keeps one line per thing a release learned (an exhausted Actions budget, a missing `SOURCE_TOKEN`), read by every project on the machine and by both ck plugins; a lesson is printed only when it matches the project's facts or the error at hand.
+
+### Changed
+- **prompt router**: a new-version, tag or failed-release-build prompt routes to `release` (one routing line).
+
 ## [1.7.0] — 2026-10-14
 
 ### Added
