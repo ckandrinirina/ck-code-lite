@@ -19,7 +19,8 @@ export const CODE_URL = `${RAW}/plugin.json`;
 export const CHECK_MS = 6 * 3_600_000;
 
 export type Install = { marketplace: string; name: string; version: string };
-export type Latest = { version: string; at: number };
+// `version` is absent when no check has ever succeeded; `at` is the last attempt, win or lose.
+export type Latest = { version?: string; at: number };
 
 // Where the loader put this plugin: …/plugins/cache/<marketplace>/<name>/<version>.
 export function installOf(root: string): Omit<Install, "version"> | null {
@@ -109,14 +110,19 @@ async function check($: EngineInterface, force: boolean): Promise<void> {
   const saved = (await $.store.get("update-latest")) as Latest | undefined;
   let latest = saved?.version;
   if (force || !saved || t - saved.at > CHECK_MS) {
+    let fresh: string | undefined;
     try {
-      const fresh = await fetchLatest($, install.name);
-      if (fresh) {
-        latest = fresh;
-        await $.store.set("update-latest", { version: fresh, at: t });
-      }
+      fresh = await fetchLatest($, install.name);
     } catch {
-      // Offline or refused: the saved answer, if any, stands until the next check.
+      // Offline or refused: the saved answer, if any, stands.
+    }
+    if (fresh) latest = fresh;
+    // Record the attempt either way, so a failure waits CHECK_MS too instead of
+    // refetching at every session start; the last known version is kept.
+    try {
+      await $.store.set("update-latest", { version: latest, at: t });
+    } catch {
+      // Nothing saved: the next start tries again.
     }
   }
   want = latest && isNewer(latest, install.version) ? latest : undefined;

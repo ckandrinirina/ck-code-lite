@@ -45,6 +45,7 @@ function session(
   latest: string,
   env: Record<string, string> = { CK_UPDATE_CHECK: "always" },
   saved: Record<string, unknown> = {},
+  reply?: (url: string) => { status: number; ok: boolean; text: string },
 ) {
   const toasts: string[] = [];
   const fetched: string[] = [];
@@ -62,6 +63,7 @@ function session(
   );
   on("http.fetch", (_$, e) => {
     fetched.push(e.url);
+    if (reply) return { value: { headers: {}, ...reply(e.url) } };
     const text =
       e.url === MANIFEST_URL
         ? manifest(latest)
@@ -164,4 +166,47 @@ test("latestOf reads a github ref, or ck-code's own plugin.json", () => {
   expect(latestOf("ck-code", manifest("2.5.0"))).toBe(undefined);
   expect(latestOf("other", manifest("2.5.0"))).toBe(undefined);
   expect(latestOf("ck-tools", "not json")).toBe(undefined);
+});
+
+const THROW_ON_FETCH = Symbol("throw");
+
+// Each failure mode records the attempt, so the next start inside CHECK_MS fetches nothing.
+for (const [label, reply] of [
+  ["a non-ok response", () => ({ status: 429, ok: false, text: "" })],
+  ["malformed JSON", () => ({ status: 200, ok: true, text: "{not json" })],
+  ["a thrown fetch", THROW_ON_FETCH],
+] as const) {
+  test(`${label} is throttled like a success and keeps the known version`, async ($, on) => {
+    const saved: Record<string, unknown> = {
+      "update-latest": { version: "9.0.0", at: NOW - 7 * 3_600_000 },
+    };
+    const s = session(
+      on,
+      "1.0.0",
+      "9.0.0",
+      { CK_UPDATE_CHECK: "always" },
+      saved,
+      reply === THROW_ON_FETCH
+        ? () => {
+            throw new Error("offline");
+          }
+        : reply,
+    );
+    await $.session.start(start);
+    const first = s.fetched.length;
+    expect(first).toBeGreaterThan(0);
+    expect(saved["update-latest"]).toEqual({ version: "9.0.0", at: NOW });
+  });
+}
+
+test("a failed first check with nothing known is recorded without a version", async ($, on) => {
+  const saved: Record<string, unknown> = {};
+  const s = session(on, "1.0.0", "9.0.0", { CK_UPDATE_CHECK: "always" }, saved, () => ({
+    status: 500,
+    ok: false,
+    text: "",
+  }));
+  await $.session.start(start);
+  expect(s.toasts.length).toBe(0);
+  expect(saved["update-latest"]).toEqual({ version: undefined, at: NOW });
 });
