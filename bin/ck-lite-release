@@ -23,6 +23,8 @@
 #          one line: `ck-release: PASS <url>` (exit 0) or `ck-release: FAIL <url>` (exit 1)
 #          followed by the failed jobs' annotations, the last 30 log lines and the lessons
 #          that match them. `ck-release: NO RUN` (exit 2) when no run starts within 90 s.
+#          `ck-release: RUNNING <status> <url>` (exit 3) when the run is still not completed
+#          after CK_RELEASE_POLLS polls (default 90, 20 s apart) — watch it again, never read it as FAIL.
 #          A release build can outlast one Bash call: run it in the background.
 # lessons  prints the lessons whose error regex matches <text>, or whose tags are all in the
 #          given list. Nothing printed means nothing learned yet.
@@ -189,7 +191,17 @@ watch() {
   [ -n "$id" ] || { echo "$SELF: NO RUN — no $wf run in $repo since $since"; exit 2; }
   url="$(gh run view "$id" -R "$repo" --json url -q .url 2>/dev/null)"
   gh run watch "$id" -R "$repo" --interval 20 >/dev/null 2>&1
-  ok="$(gh run view "$id" -R "$repo" --json conclusion -q .conclusion 2>/dev/null)"
+  # gh run watch can return early (API error, dropped connection): trust the run's own
+  # status, and poll until it is completed. Capped, so a hung run never blocks for ever.
+  local st="" polls=0 maxp="${CK_RELEASE_POLLS:-90}" nap="${CK_RELEASE_POLL_SLEEP:-20}"
+  while :; do
+    st="$(gh run view "$id" -R "$repo" --json status,conclusion -q '.status + " " + .conclusion' 2>/dev/null)"
+    ok="${st#* }"; st="${st%% *}"
+    [ "$st" = completed ] && break
+    polls=$((polls + 1))
+    [ "$polls" -lt "$maxp" ] || { echo "$SELF: RUNNING ${st:-unknown} $url"; exit 3; }
+    sleep "$nap"
+  done
   if [ "$ok" = success ]; then echo "$SELF: PASS $url"; exit 0; fi
   echo "$SELF: FAIL ($ok) $url"
   text="$(failed_annotations "$repo" "$id"; gh run view "$id" -R "$repo" --log-failed 2>/dev/null | tail -30 | cut -c1-240)"

@@ -156,6 +156,7 @@ ck-lite-release watch <owner/repo> <workflow> <start time from 3.3>
 Wait for its notification; run no other `gh` call on that run meanwhile. `PASS` → 3.5. `FAIL`
 → Phase 4 with the lines it printed. `NO RUN` → the workflow never started: check its name
 against the recipe, then Phase 4.
+`RUNNING` (exit 3) → the build is still going: run `ck-lite-release watch` again with the same arguments.
 
 ### 3.5 Verify and manual steps
 
