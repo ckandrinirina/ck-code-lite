@@ -51,7 +51,13 @@ WIDTH=4
 STATUSES="todo doing done blocked"
 
 TMPS=""; LOCKED=""
-cleanup() { [ -z "$TMPS" ] || rm -f $TMPS; [ -z "$LOCKED" ] || rm -f "$PLAN.lock"; }
+# TMPS is newline-separated: a plan path may hold spaces. A $(…) subshell does not run the
+# parent's EXIT trap, so one that can refuse a write sets its own (see cmd_done).
+rm_tmps() { local f; while IFS= read -r f; do [ -z "$f" ] || rm -f -- "$f"; done <<EOF
+$TMPS
+EOF
+}
+cleanup() { rm_tmps; [ -z "$LOCKED" ] || rm -f "$PLAN.lock"; }
 trap cleanup EXIT
 die() { echo "ck-lite: ERROR — $*" >&2; exit 2; }
 need_plan() { [ -f "$PLAN" ] || die "no $PLAN — run /ck-code-lite:start first"; }
@@ -124,7 +130,7 @@ lock() {
 # A temp file beside the plan with the plan's own mode, removed on exit if never used.
 mk_tmp() {
   tmp="$(mktemp "${PLAN}.XXXXXX")" || die "mktemp failed"
-  TMPS="$TMPS $tmp $tmp.n"; cp -p "$PLAN" "$tmp" 2>/dev/null || true
+  TMPS="$TMPS$tmp"$'\n'"$tmp.n"$'\n'; cp -p "$PLAN" "$tmp" 2>/dev/null || true
 }
 
 defects() { ( PLAN="$1"; cmd_check ) 2>/dev/null | grep -v '^ck-lite check:' | sort; }
@@ -317,7 +323,7 @@ cmd_done() {
     { print }
     END { print t + 0 > "/dev/stderr" }' "$PLAN" >"$tmp" 2>"$tmp.n" && replace_plan "$tmp"
   ticked="$(cat "$tmp.n" 2>/dev/null)"; rm -f "$tmp.n"
-  out="$(cmd_set "done" "$id")" || { echo "$out"; exit 1; }
+  out="$(trap rm_tmps EXIT; cmd_set "done" "$id")" || { echo "$out"; exit 1; }
   echo "$out · ticked ${ticked:-0} · files +${ADDED:-0}"
 }
 
@@ -359,7 +365,7 @@ cmd_add() {
   need_plan
   # stdin first: a slow producer must not hold the lock other writers wait on
   in="$(mktemp "${PLAN}.in.XXXXXX")" || die "mktemp failed"
-  TMPS="$TMPS $in"
+  TMPS="$TMPS$in"$'\n'
   tr -d '\r' >"$in"
   lock
   last="$(awk '{ sub(/\r$/, "") } /^## / {exit} /^\|/ {n = NR} END {print n}' "$PLAN")"
