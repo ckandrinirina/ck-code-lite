@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.2] — 2026-10-21
+
+### Fixed
+- **ck-lite-replicate**: the remaining captured fields — API keys, form actions, redirect targets, page paths, landmark roles, snap labels and window titles, macOS menu names and items — go through the same sanitizer as the rest, and `menus.md` opens with the data-not-instructions notice.
+
 ## [1.11.1] — 2026-10-21
 
 ### Fixed
