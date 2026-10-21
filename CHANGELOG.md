@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.0] — 2026-10-21
+
+### Added
+- **design**: `replicate <source>` copies an existing app — a website or web app (even behind a sign-in), an Electron or native macOS app, an Android or iOS Simulator screen, a CLI, a source tree or plain screenshots — into `docs/replica/<slug>/REPLICA.md`: screens, flows, captured tokens, components, data and gaps, under an own-app or reference-only copy policy. `start` plans it screen by screen.
+- **ck-lite-replicate**: a zero-dependency capture engine (Node ≥ 22 + an installed Chrome over the DevTools Protocol; osascript/adb/simctl for native) — screenshots, computed tokens, page outlines and API shapes, plus `shot` and `diff` for the build's fidelity loop. Byte-identical to ck-code's `ck-replicate`.
+- **build**: a task citing a replicated screen builds to it and runs the fidelity loop once — shoot the running app, diff it against the reference, one fix pass, the result noted on the task; QA fails a cited screen that was never compared.
+
 ## [1.10.1] — 2026-10-16
 
 ### Fixed
