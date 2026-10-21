@@ -13,7 +13,7 @@ scripted, so a run's cost tracks the work in front of it, not the age of the pro
 | Skill | Use it when | Produces |
 |---|---|---|
 | `/ck-code-lite:start` | A project needs its plan — new idea, existing codebase, or more tasks | `docs/ARCHITECTURE.md`, `tasks/PLAN.md` |
-| `/ck-code-lite:design` | A project with a UI should be designed with Claude Design first — or you have a claude.ai/design URL to link | `docs/design-brief.md`, `docs/design-system/` |
+| `/ck-code-lite:design` | A project with a UI should be designed with Claude Design first — or you have a claude.ai/design URL to link — or you want an existing app replicated (`replicate <source>`) | `docs/design-brief.md`, `docs/design-system/`, `docs/replica/` |
 | `/ck-code-lite:build` | Implementing one task end to end — or several at once, in waves | Code, tests, tasks marked `done` |
 | `/ck-code-lite:ship` | Committing finished work | A conventional commit, an area test check before the push, and a PR |
 | `/ck-code-lite:release` | Publishing a new version: bump, tag, build, release | A merged release PR, a tag, the project's build started and checked |
@@ -64,6 +64,24 @@ and ports markup, class names and CSS exactly; QA fails a literal color, size or
 token covers. A UI task reached while the design is still pending asks once: paste the URL to
 link now, build without it, or stop. `/ck-code-lite:design` again refreshes the cache — one call
 when nothing changed.
+
+### Replicate an existing app
+
+Point `design` at software you want copied and it captures it, then writes a spec to plan from:
+
+```
+/ck-code-lite:design replicate https://app.example.com     # website or web app (login: ck-lite-replicate login <url>)
+/ck-code-lite:design replicate "/Applications/Some App.app" # Electron: real DOM; native macOS: UI tree, strings, colors
+/ck-code-lite:design replicate cli mytool                  # a CLI's whole --help tree
+```
+
+Android (adb) and iOS Simulator apps are snapped screen by screen as you navigate; a source
+tree or plain screenshots work too. `ck-lite-replicate` needs only Node ≥ 22 and an installed
+Chrome — no npm install. The result is `docs/replica/<slug>/REPLICA.md`: every screen with its
+reference screenshots, flows, the captured tokens, components, data and the states it could not
+see. Someone else's product is replicated as **reference only** — layout, flows and the token
+system, never its logo, name, imagery or copy. `start` turns each screen into a task, and a UI
+task shoots the running app, diffs it against the reference and fixes what differs, once.
 
 Independent tasks do not have to wait in line:
 
