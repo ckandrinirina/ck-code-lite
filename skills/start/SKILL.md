@@ -27,7 +27,10 @@ Output filtering (optional): [rtk.md](../../references/rtk.md).
 
 `$ARGUMENTS` is an optional feature description or a path to a spec file.
 
-- **A path that exists** — read it as the source of requirements.
+- **A path that exists** — read it as the source of requirements. A `docs/replica/<slug>/REPLICA.md`
+  is planned screen by screen ([replicate.md § Planning from a replica](../../references/replicate.md#planning-from-a-replica)):
+  every `S-NN` gets a task whose criteria cite it, the first UI task materializes its `## Tokens`,
+  its `## Gaps` seed the question round, and `docs/ARCHITECTURE.md` gets its `- Replica:` line.
 - **Free text** — treat it as the requirement itself.
 - **Empty** — `docs/design-brief.md` exists → it is the requirement (the user described the
   project in `/ck-code-lite:design` first). Otherwise ask for the goal in Phase 3, or in

@@ -1,7 +1,7 @@
 ---
 name: design
-description: Use when a project with a user interface should be designed with Claude Design before building — describing the product and writing the prompt to paste into claude.ai/design, linking a finished design system from its URL, or refreshing the linked design. Also when the user pastes a claude.ai/design URL. Argument is an optional idea, spec path, or claude.ai/design URL.
-argument-hint: "[idea | path/to/spec.md | claude.ai/design URL | link]"
+description: Use when a project with a user interface should be designed with Claude Design before building — describing the product and writing the prompt to paste into claude.ai/design, linking a finished design system from its URL, or refreshing the linked design — or when an existing app should be copied, a website, desktop or mobile app, or CLI (`replicate <source>`). Also when the user pastes a claude.ai/design URL. Argument is an optional idea, spec path, claude.ai/design URL, or `replicate <source>`.
+argument-hint: "[idea | path/to/spec.md | claude.ai/design URL | link | replicate <url|app|cli cmd|path>]"
 effort: high
 allowed-tools: Bash(git rev-parse*) Bash(ls*) Bash(grep*) Bash(mkdir*) Bash(shasum*) Bash(ck-lite*) Bash(pbcopy*) Bash(wl-copy*) Bash(xclip*) DesignSync Skill
 ---
@@ -13,13 +13,17 @@ best possible prompt for [claude.ai/design](https://claude.ai/design), and — o
 back the finished design system's URL — caches it in the repository so every UI task builds
 against its exact tokens and markup.
 
-One command, three modes, chosen from the argument and the project state:
+One command, four modes, chosen from the argument and the project state:
 
-| Mode        | When                                      | Writes                 |
-| ----------- | ----------------------------------------- | ---------------------- |
-| **BRIEF**   | no design linked, no URL given            | `docs/design-brief.md` |
-| **LINK**    | a uuid or URL in the argument, or `link`  | `docs/design-system/`  |
-| **REFRESH** | `docs/design-system/` exists, no argument | changed cards only     |
+| Mode          | When                                      | Writes                     |
+| ------------- | ----------------------------------------- | -------------------------- |
+| **BRIEF**     | no design linked, no URL given            | `docs/design-brief.md`     |
+| **LINK**      | a uuid or URL in the argument, or `link`  | `docs/design-system/`      |
+| **REFRESH**   | `docs/design-system/` exists, no argument | changed cards only         |
+| **REPLICATE** | `replicate <source>`                      | `docs/replica/<slug>/`     |
+
+Replicating an existing app — website, Electron, macOS, Android, iOS, CLI, source tree or
+screenshots: [replicate.md](../../references/replicate.md).
 
 Contract — state, cache, lookup, fidelity: [design-system.md](../../references/design-system.md).
 This skill never branches, commits, or creates a worktree, and never reads or edits
@@ -29,6 +33,7 @@ This skill never branches, commits, or creates a worktree, and never reads or ed
 
 `$ARGUMENTS`:
 
+- **Starts with `replicate`** → REPLICATE; the rest is the source.
 - **Contains a uuid**, or is `link` → LINK (`link` alone opens the project picker).
 - **A path that exists** → BRIEF, with that file as the requirement source.
 - **Other text** → BRIEF, with the text as the idea.
@@ -42,6 +47,7 @@ A full ck-code project — `tasks/VERSION.md` listed, or `docs/architecture` lis
 `tasks/PLAN.md` — is ck-code's, whose state ck-code-lite cannot read or keep in step.
 [Redirect](../../references/plugin-redirect.md) before any read, write or command:
 
+- `replicate <source>` → `ck-code:design replicate <source>`
 - a uuid or claude.ai/design URL → `ck-code:design ds <url>`
 - `link`, or empty with `docs/design-system` listed → `ck-code:design ds`
 - anything else → `ck-code:spec <text or path>` (it writes the Claude Design brief)
@@ -168,8 +174,50 @@ Tier 0, announcing the starting tier. Report `up to date — 1 call`, or the add
 removed cards and any token that changed value — a changed token touches every screen, so name
 it.
 
+## PHASE 5: REPLICATE
+
+Capture an app the user wants copied and distil it into `docs/replica/<slug>/REPLICA.md` — the
+requirement `start` plans from, screen by screen. [replicate.md](../../references/replicate.md)
+owns the sources, copy policy, pack layout and template; run them, never restate them.
+
+1. **Identify.** Match the source to a row of [§ Sources](../../references/replicate.md#sources):
+   an http(s) URL → web; a macOS `.app` or app name →
+   `ck-lite-replicate mac "<app>" --out docs/replica/<slug> --static-only`, whose toolkit line
+   routes an Electron app to the `electron` row; a connected phone or an `.apk` → android;
+   `cli <command>` → cli; a directory with source → source tree; image paths → screenshots.
+   Announce `Replicate: <source> — <kind> → docs/replica/<slug>/`.
+2. **Ask — one round.** One `AskUserQuestion`, at most 3 questions (plus the source, when
+   none was given): **Copy policy** — `Own app` / `Reference only`
+   ([§ Copy policy](../../references/replicate.md#copy-policy)), always; **Fidelity** — `Pixel`
+   (Recommended for an own app) / `Structural` (Recommended otherwise); **Scope**, web only —
+   `Whole site, up to 12 pages` / `Specific sections` (Other → the paths, passed as `--include`).
+3. **Capture.** `mkdir -p docs/replica/<slug>`; append the three ignore lines from
+   [§ Pack layout](../../references/replicate.md#pack-layout) to `.gitignore` when absent. Web
+   and Electron → `ck-lite-replicate doctor` first. Run the row's command; snap-per-screen kinds
+   loop as § Sources says. Relay each command's last line; on a failure take § Sources' fallback.
+4. **Distil.** Write `REPLICA.md` by [§ REPLICA.md](../../references/replicate.md#replicamd).
+   When `docs/ARCHITECTURE.md` exists, add the `- Replica: …` line of
+   [§ Planning from a replica](../../references/replicate.md#planning-from-a-replica) to its
+   `## Design` section (`Edit`, never `Write`). Report:
+
+```
+=== REPLICA READY ===
+Source:  <source> (<kind>) · policy <own app|reference only> · fidelity <pixel|structural>
+Screens: <n> (S-01 … S-NN) · tokens <n> · components <n> · entities <n>
+Gaps:    <n> — listed in REPLICA.md § Gaps
+Pack:    docs/replica/<slug>/  (screenshots are git-ignored; REPLICA.md has the recapture command)
+```
+
+5. **Hand off.** One `AskUserQuestion`: **Plan from it now** (Recommended) → invoke
+   `/ck-code-lite:start docs/replica/<slug>/REPLICA.md`; **Write a Claude Design brief first** →
+   Phase 2 with `REPLICA.md` as the requirement source and its reference screenshots named for
+   the user to attach; **Stop here** → print that `start` command.
+
 ## RULES
 
+- **Never capture an app the user did not name, or get around a sign-in or bot block** — and
+  under `Reference only`, never copy its logo, name, imagery or copy
+  ([replicate.md § Copy policy](../../references/replicate.md#copy-policy)).
 - **Never run in a full ck-code project** — Phase 0 hands it to `/ck-code:design ds` or
   `/ck-code:spec`, once; never bounce a request ck-code just redirected here.
 - **Never call a `DesignSync` write method** — pull-only.

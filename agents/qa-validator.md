@@ -39,6 +39,7 @@ The caller supplies all of these inline. You never open `tasks/PLAN.md` to find 
 - `reuse: yes` or `reuse: no`
 - Optionally `exception: <reason>` — the user recorded that this task has no automated test
 - Optionally `design: <path to docs/design-system/index.md>` — a UI task with a linked Claude Design
+- Optionally `replica: S-NN — <Fidelity line | none>` — a task citing a replicated screen
 
 If the criteria or the command list are missing, say so and stop. Do not go looking.
 
@@ -64,7 +65,10 @@ If the criteria or the command list are missing, say so and stop. Do not go look
    font sizes, `font-family`, radius, shadow and spacing values. Each literal that a token
    covers is a `FAIL` finding under a final `Design fidelity` section — cite `file:line` and
    the token that should have been used. A finding fails the verdict like any criterion.
-4. Only when the 40 lines do not name the failing assertion, `Read` the printed log path —
+4. **Replica fidelity** — only with `replica:`. `none` → one `FAIL` finding under the
+   `Design fidelity` section: the fidelity loop never ran. A line → each remaining difference
+   it lists that a replica token or component would fix is a finding too.
+5. Only when the 40 lines do not name the failing assertion, `Read` the printed log path —
    with an offset, never whole.
 
 ## Outputs

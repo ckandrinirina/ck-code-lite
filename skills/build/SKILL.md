@@ -122,6 +122,12 @@ gives the state:
   Phase 2.3's round — asked even when nothing else is ambiguous.
 - **none / undecided / not a UI task** → nothing; build from the architecture doc.
 
+**Replica — a task whose criteria cite an `S-NN`** ([replicate.md](../../references/replicate.md)):
+`Read` `docs/replica/<slug>/REPLICA.md` — its `## Tokens`, `## Components` and the cited
+`## Screens` rows — and those screens' reference screenshots, and build to them. After the
+closing run, run its [§ Fidelity loop](../../references/replicate.md#fidelity-loop) before
+Phase 5.
+
 **Route — last step of 2.1.** Fix it from what `ck-lite context` printed and announce it in one
 line: `Route: QUICK — <what changes>, size S, N files (pass --full to override).` or
 `Route: NORMAL`. Eligibility is in [QUICK ROUTE](#quick-route). QUICK skips the
@@ -213,6 +219,7 @@ Delegate to `ck-code-lite:qa-validator`, supplying inline:
 - the working directory, and `reuse: yes`
 - under a recorded test exception only, `exception: <reason>`
 - for a UI task with a linked design only, `design: docs/design-system/index.md`
+- for a task citing an `S-NN` only, `replica: S-NN — <the recorded Fidelity line, or none>`
 
 `reuse: yes` lets it report the closing `test` run as `REUSED` when not a byte of code changed
 since — those tests already passed on this exact state. Build and lint always run, and every

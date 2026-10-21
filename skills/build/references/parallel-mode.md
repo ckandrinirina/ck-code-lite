@@ -185,8 +185,9 @@ One `ck-code-lite:qa-validator` per ✓ task, all in a single message, each with
 and criteria, the returned `files:`, the `## Commands` as `label=command` pairs (`(none)`
 dropped), `reuse: no`, the working directory — the branch's worktree path from
 `git worktree list` (fan-out) or `$ROOT` (solo) — and `exception: <reason>` for a task under a
-recorded test exception, and `design: <$ROOT>/docs/design-system/index.md` for a UI task with a
-linked design.
+recorded test exception, `design: <$ROOT>/docs/design-system/index.md` for a UI task with a
+linked design, and `replica: S-NN — <the verdict's fidelity line, or none>` for a task citing a
+replica screen.
 
 `reuse: no` always: an agent's own runs are never QA's evidence. A fan-out branch without
 `QA: PASS` is **held** — never merged and fixed later. A solo task without `QA: PASS` already
@@ -245,8 +246,8 @@ line for the same technology is replaced, never duplicated). The agent never wri
 two peers appending to one section is a merge conflict.
 
 A verdict with `tokens:` → set `tokensPath` in `docs/design-system/manifest.json` to that path;
-with `design:` lines → `ck-lite note T-NN "<line>"` for each. Same reason: the agent never
-writes either file.
+with `design:` lines → `ck-lite note T-NN "<line>"` for each; with `fidelity:` →
+`ck-lite note T-NN "<line>"`. Same reason: the agent never writes either file.
 
 Record its ledger row and drop the wave's detail. Close the wave with the return-to-base check and one line:
 `Base: <$ROOT> on <$TARGET> · worktrees standing: N`.
@@ -296,6 +297,7 @@ Base: <base-sha>
 Context: CK_LITE_PLAN=<$ROOT>/tasks/PLAN.md CK_LITE_ARCH=<$ROOT>/docs/ARCHITECTURE.md ck-lite context T-NN
 TDD rules: <absolute path of references/tdd-cycle.md>
 Design: <absolute path of $ROOT/docs/design-system/index.md and of references/design-system.md, tokensPath: pending|set>   ← UI task with a linked design only
+Replica: <absolute path of $ROOT/docs/replica/<slug>/REPLICA.md and of references/replicate.md>   ← task citing an S-NN only
 Settled at P3: <the user's answer for this task, or "nothing">
 
 Return only the verdict block.

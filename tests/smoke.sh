@@ -343,6 +343,40 @@ has "ck-lite-release learn: a field with ' :: ' is refused" "cannot contain" "$(
 eq  "ck-lite-release learn: one line per lesson" "1" "$(grep -c 'quota exceeded' "$RL/lessons.md")"
 rm -rf "$RL"
 
+# ---- ck-lite-replicate: offline paths only (diff, cli, usage) — capture needs Chrome and a network
+if command -v node >/dev/null 2>&1 && [ "$(node -p 'process.versions.node.split(".")[0]')" -ge 22 ]; then
+  RR=$(mktemp -d)
+  # two 4x4 RGBA PNGs written with the script's own format: identical, then one red pixel
+  node -e '
+    const z = require("zlib"), fs = require("fs");
+    const T = new Int32Array(256).map((_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c; });
+    const crc = (b) => { let c = -1; for (const x of b) c = T[(c ^ x) & 255] ^ (c >>> 8); return (c ^ -1) >>> 0; };
+    const ch = (t, d) => { const l = Buffer.alloc(4); l.writeUInt32BE(d.length); const td = Buffer.concat([Buffer.from(t), d]); const c = Buffer.alloc(4); c.writeUInt32BE(crc(td)); return Buffer.concat([l, td, c]); };
+    const png = (red) => { const raw = Buffer.alloc(4 * 17, 255); for (let y = 0; y < 4; y++) raw[y * 17] = 0; if (red) { raw[1] = 255; raw[2] = 0; raw[3] = 0; }
+      const h = Buffer.alloc(13); h.writeUInt32BE(4, 0); h.writeUInt32BE(4, 4); h[8] = 8; h[9] = 6;
+      return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), ch("IHDR", h), ch("IDAT", z.deflateSync(raw)), ch("IEND", Buffer.alloc(0))]); };
+    fs.writeFileSync(process.argv[1] + "/a.png", png(false)); fs.writeFileSync(process.argv[1] + "/b.png", png(true));' "$RR"
+  RD_OUT=$(ck-lite-replicate diff "$RR/a.png" "$RR/a.png" --out "$RR/d0.png" 2>&1)
+  has "ck-lite-replicate diff: identical images mismatch 0.0%" "mismatch 0.0%" "$RD_OUT"
+  RD_OUT=$(ck-lite-replicate diff "$RR/a.png" "$RR/b.png" --out "$RR/d1.png" 2>&1)
+  has "ck-lite-replicate diff: one changed pixel of 16 is 6.3%" "mismatch 6.3%" "$RD_OUT"
+  eq  "ck-lite-replicate diff: writes a decodable diff image" "OK" "$(ck-lite-replicate diff "$RR/d1.png" "$RR/d1.png" --out "$RR/d2.png" >/dev/null 2>&1 && echo OK)"
+  printf '%s\n' '#!/bin/sh' 'case "$*" in' \
+    '  "--help") printf "usage: fake <command>\n\nCommands:\n  build   Build it\n  serve   Serve it\n" ;;' \
+    '  "build --help") echo "usage: fake build [--watch]   compiles the project" ;;' \
+    '  "serve --help") echo "usage: fake serve [--port N]  serves the project" ;;' \
+    '  *) echo "RAN $*" >"$0.ran" ;;' 'esac' >"$RR/fake"
+  chmod +x "$RR/fake"
+  RC_OUT=$(ck-lite-replicate cli "$RR/fake" --out "$RR/cli" 2>&1)
+  has "ck-lite-replicate cli: reads the root and both subcommands" "3 commands read" "$RC_OUT"
+  has "ck-lite-replicate cli: cli.md holds a subcommand's help" "fake serve [--port N]" "$(cat "$RR/cli/cli.md")"
+  eq  "ck-lite-replicate cli: never runs anything but help" "absent" "$([ -e "$RR/fake.ran" ] && cat "$RR/fake.ran" || echo absent)"
+  ck-lite-replicate bogus >/dev/null 2>&1; eq  "ck-lite-replicate: an unknown command exits 2" 2 "$?"
+  rm -rf "$RR"
+else
+  echo "skip    node >= 22 not on PATH — skipping ck-lite-replicate checks"
+fi
+
 # ---- ck-lite-headless ---------------------------------------------------------------------
 echo "=== ck-lite-headless ==="
 HQ="$(mktemp -d)"

@@ -32,6 +32,9 @@ All inline in the prompt:
   project's `docs/design-system/index.md` and of `design-system.md`, and whether `tokensPath`
   is `pending`
 
+- Task citing an `S-NN` only: a `Replica:` line — the absolute path of the main checkout's
+  `docs/replica/<slug>/REPLICA.md` and of `replicate.md`
+
 If the criteria or the commands are missing, return `status: blocked` and say what is missing.
 
 ## Procedure
@@ -77,6 +80,7 @@ remaining:    [<unmet criterion>, …]        # [] when status: done
 stack:        [<## Stack line for each dependency you added>, …]   # omit when none
 tokens:       <repo-relative path of the token file you wrote>      # omit unless you wrote it
 design:       [<"no design card: <component> — built from tokens">, …]   # omit when none
+fidelity:     <the "Fidelity S-NN: …" line>                         # Replica: tasks only
 ```
 
 `done` only when every criterion has a passing test and the closing run passed. A
@@ -88,6 +92,8 @@ missing verdict is read as `partial`. The orchestrator verifies from git regardl
 - Never edit `docs/ARCHITECTURE.md` or anything under `docs/design-system/` — new `## Stack`
   lines, the token path and design notes go in your verdict.
 - Never call `DesignSync`, and never write a literal visual value a `Design:` token covers.
+- With a `Replica:` line, read the cited screens and build to them, then run `replicate.md`'s
+  Fidelity loop once after the closing run — never more, never with a foreground window.
 - Never install a version from memory, and never look up a technology `## Stack` already lists.
 - Never edit or stage `tasks/PLAN.md` — the orchestrator is its only writer for the whole
   run, and on a solo run it holds the orchestrator's uncommitted status edits. Stage explicit
