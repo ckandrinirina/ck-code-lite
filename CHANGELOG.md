@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.0] — 2026-10-22
+
+### Changed
+- **build / ship**: an end-to-end suite (`test-e2e`) never runs whole inside a task — a task runs only its own specs (plus Playwright `--only-changed` at the closing run) — and `ship` runs the whole e2e suite once with the area check before the first push. Measured on one project: 135 whole-suite e2e runs started by agents inside tasks.
+- **stack-commands**: `ctest` gets `-j "${CK_QA_JOBS:-4}"` once a parallel run passes like a serial one (82 s → 10 s on a 590-test suite); a declared e2e script is recorded as its own `test-e2e` line.
+
+### Added
+- **ck-lite-qa**: exports `CK_QA_JOBS`, the run's share of the cores, for a command that asks for it.
+
 ## [1.12.0] — 2026-10-22
 
 ### Added
