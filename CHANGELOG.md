@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.0] — 2026-10-22
+
+### Added
+- **ck-lite-qa**: one CPU queue per machine — every run with a command to run takes one of `CK_QA_SLOTS` slots (default cores ÷ 8, at least 1; `0` turns it off), shared with ck-code's `ck-qa` and every worktree, so parallel worktree builds take turns instead of each using every core. Inside a slot `CMAKE_BUILD_PARALLEL_LEVEL`/`CARGO_BUILD_JOBS` (when unset) get the slot's share of the cores, an installed `ccache` serves every worktree's cold C/C++ build, and commands run under `nice -n 10` (`CK_QA_NICE`).
+
 ## [1.11.2] — 2026-10-21
 
 ### Fixed
@@ -266,7 +271,6 @@ A run's cost now tracks the work in front of it, not the age of the project, and
 ### Added
 - **build / ship / start**: `allowed-tools` frontmatter pre-approving the git and `gh` commands each skill actually runs, so a normal run no longer stops on permission prompts.
 - **qa-validator**: `effort: low` and `experimental.cacheTtl: "1h"` — the agent is re-dispatched once per task in a wave, so a 1-hour prompt cache avoids re-caching its system prompt on every call.
-
 
 ## [0.2.5] — 2026-08-12
 
