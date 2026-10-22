@@ -59,9 +59,12 @@ that make the result machine-readable. The brief is copied to your clipboard.
 
 Linking caches the whole design system under `docs/design-system/` — foundations as tokens,
 every component and screen card verbatim — so builds never touch the network. The first UI
-task writes the token file; every UI task reads the screen's card, then each component's card,
-and ports markup, class names and CSS exactly; QA fails a literal color, size or spacing value a
-token covers. A UI task reached while the design is still pending asks once: paste the URL to
+task writes the token file; every UI task maps each screen and component to its card, then
+ports markup, element order, class names, text and every CSS value exactly — no value rounded to
+a token, no library default, nothing added or dropped. After its tests pass it screenshots the
+card and the built screen at the same viewport, diffs them and fixes what differs (up to 3
+passes); QA fails a literal a token covers, a value that differs from its card, or a difference
+left over. A UI task reached while the design is still pending asks once: paste the URL to
 link now, build without it, or stop. `/ck-code-lite:design` again refreshes the cache — one call
 when nothing changed.
 
