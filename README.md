@@ -145,6 +145,17 @@ and an Electron e2e suite whose app never hides its window. `build` converts eac
 away, without asking (an Electron app keeps its window hidden and out of the Dock under
 `E2E_HEADLESS`). A line marked `ck-headless: allow` is left as it is.
 
+### Parallel builds share the CPU
+
+Every build, test and lint run on the machine — any project, any worktree, and ck-code's
+`ck-qa` too — takes one of `CK_QA_SLOTS` CPU slots first (default: cores ÷ 8, at least 1;
+`0` turns it off). Three worktrees building at once take turns instead of each using every
+core, so the first result arrives sooner and the machine stays responsive. Inside a slot a
+CMake or cargo build gets the slot's share of the cores (unless you set
+`CMAKE_BUILD_PARALLEL_LEVEL` / `CARGO_BUILD_JOBS`), commands run under `nice -n 10`
+(`CK_QA_NICE`), and an installed [ccache](https://ccache.dev) serves every worktree's cold
+C/C++ build from one cache — `brew install ccache` to turn that on.
+
 ### Every prompt goes through the workflow
 
 You do not have to type the slash command. In an adopted project (one with `tasks/PLAN.md`
