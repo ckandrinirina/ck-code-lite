@@ -156,6 +156,11 @@ CMake or cargo build gets the slot's share of the cores (unless you set
 (`CK_QA_NICE`), and an installed [ccache](https://ccache.dev) serves every worktree's cold
 C/C++ build from one cache — `brew install ccache` to turn that on.
 
+Two slow suites run less. `ctest` gets `-j` (the run's share of the cores) once a parallel run
+has passed like a serial one — 82 s → 10 s on a 590-test suite. An end-to-end suite
+(`test-e2e`) never runs whole inside a task: each task runs only its own specs, and `ship`
+runs the whole e2e suite once with the area check, before the first push.
+
 ### Every prompt goes through the workflow
 
 You do not have to type the slash command. In an adopted project (one with `tasks/PLAN.md`
