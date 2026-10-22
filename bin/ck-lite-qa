@@ -129,13 +129,15 @@ slot_take() {
 
 slot_free() { [ -z "$SLOT" ] || rm -rf "${SLOTS_DIR:?}/$SLOT"; SLOT=""; }
 
-# Inside a slot, a build tool the project left unset gets this slot's share of the cores,
+# Inside a slot, a build tool the project left unset gets this slot's share of the cores
+# (CK_QA_JOBS carries it for a command that asks, e.g. ctest -j "${CK_QA_JOBS:-4}"),
 # and an installed ccache serves every worktree's cold C/C++ build from one cache (base dir:
 # the main checkout, which holds .claude/worktrees/).
 slot_env() {
   local share=$(( NCPU / CPU_SLOTS )) base
   [ "$share" -ge 1 ] || share=1
   export CK_QA_IN_SLOT=1
+  export CK_QA_JOBS="$share"
   export CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-$share}"
   export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-$share}"
   command -v ccache >/dev/null 2>&1 || return 0

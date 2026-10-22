@@ -253,10 +253,10 @@ QA2 run T-77 test='true' >/dev/null
 has "qa: runs are keyed per checkout" "no ck-lite-qa run for T-77" "$(cd "$WORK/qa" && QA wait T-77)"
 QSL="$QT/ck-cpu-slots"; mkdir -p "$QSL/1"; sleep 4 & QHOLD=$!; echo "$QHOLD" >"$QSL/1/pid"
 has "qa slots: a run waits while every CPU slot is held" "queued for a CPU slot" \
-  "$(CK_QA_SLOTS=1 CK_LITE_QA_WAIT=1 QA2 run T-05 b='echo "$CMAKE_BUILD_PARALLEL_LEVEL" >"'"$QT"'/share"')"
+  "$(CK_QA_SLOTS=1 CK_LITE_QA_WAIT=1 QA2 run T-05 b='echo "$CMAKE_BUILD_PARALLEL_LEVEL $CK_QA_JOBS" >"'"$QT"'/share"')"
 wait "$QHOLD"
 has "qa slots: the queued run reports its wait" "for a CPU slot" "$(CK_LITE_QA_WAIT=20 QA2 wait T-05)"
-has "qa slots: a build tool gets the slot's share of the cores" "$(getconf _NPROCESSORS_ONLN)" "$(cat "$QT/share")"
+has "qa slots: a build tool gets the slot's share of the cores" "$(getconf _NPROCESSORS_ONLN) $(getconf _NPROCESSORS_ONLN)" "$(cat "$QT/share")"
 mkdir -p "$QSL/1"; echo 999999 >"$QSL/1/pid"
 has "qa slots: a dead holder's slot is taken back" "ck-lite-qa: PASS" "$(CK_QA_SLOTS=1 CK_LITE_QA_WAIT=10 QA2 run T-06 t='true')"
 has "qa slots: a nested run uses its parent's slot" "ck-lite-qa: PASS" \

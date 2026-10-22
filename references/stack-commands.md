@@ -19,7 +19,7 @@ ls package.json Cargo.toml pyproject.toml go.mod Gemfile composer.json CMakeList
 | `go.mod` | Go | `go test ./...` | `go build ./...` | `go vet ./...` |
 | `Gemfile` | Ruby | `bundle exec rspec` | (none) | `bundle exec rubocop` |
 | `composer.json` | PHP | `vendor/bin/phpunit` | (none) | `vendor/bin/phpcs` |
-| `CMakeLists.txt` | C / C++ | `ctest --test-dir build` | `cmake --build build` | (none) |
+| `CMakeLists.txt` | C / C++ | `ctest --test-dir build --output-on-failure -j "${CK_QA_JOBS:-4}"` ([§ 5](#5-ctest-runs-its-tests-in-parallel)) | `cmake --build build` | (none) |
 
 Several manifests can coexist (a Python backend beside a Node frontend). Record every
 stack found, and make each command self-contained — `cd api && pytest` — since every command
@@ -74,6 +74,22 @@ closing run, the wave check and ship's area check run only the tests a change ca
 
 A `test` script that already pins files or runs several tools (`"test": "lint && vitest"`)
 gets no `test-one`: appending paths would change what it means.
+
+### 5. `ctest` runs its tests in parallel
+
+`ctest` runs one test at a time unless given `-j`, and a Catch2 or GoogleTest suite
+registers hundreds of small tests: measured on a 590-test suite, 82 s serial against 10 s with
+`-j 8`, same result. `"${CK_QA_JOBS:-4}"` is the run's share of the cores, set by `ck-lite-qa`.
+For a suite that already has tests (ADOPT), run it once with `-j` and once without before
+writing the line: record `-j` only when both pass. A suite that passes serially and fails in
+parallel has tests sharing a file, port or directory — keep the serial form and note why under
+`## Commands`.
+
+### 6. `test-e2e` — the end-to-end suite, kept apart
+
+A declared e2e script (`test:e2e`, `e2e`, a Playwright or Cypress config) is recorded as its own
+`test-e2e` line, never chained into `test`: a task runs only its own specs, and the whole e2e
+suite runs once, at ship ([tdd-cycle.md](tdd-cycle.md#end-to-end-specs)).
 
 ## Writing the result
 
