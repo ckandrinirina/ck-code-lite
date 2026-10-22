@@ -50,7 +50,9 @@ If the criteria or the commands are missing, return `status: blocked` and say wh
    `index.md` and `design-system.md` it names and follow its Component lookup order and
    fidelity rules for every visual element — cards are read from the paths `index.md` lists,
    under that same absolute `docs/design-system/`. `tokensPath: pending` → this task writes the
-   token file (its Token materialization section) and returns the path under `tokens:`.
+   token file (its Token materialization section) and returns the path under `tokens:`. After
+   the closing run, run its Design fidelity loop and return each `Design fidelity` line under
+   `fidelity:`.
 3. **Cycle.** Open a task list first — one `TaskCreate` each for RED, GREEN, cleanup and the
    closing run, each with an `activeForm` — and flip each with `TaskUpdate` as it starts and
    ends: the session's band shows your list live. `Read` the `tdd-cycle.md` path once and follow it whole: RED, GREEN, cleanup,
@@ -80,7 +82,7 @@ remaining:    [<unmet criterion>, …]        # [] when status: done
 stack:        [<## Stack line for each dependency you added>, …]   # omit when none
 tokens:       <repo-relative path of the token file you wrote>      # omit unless you wrote it
 design:       [<"no design card: <component> — built from tokens">, …]   # omit when none
-fidelity:     <the "Fidelity S-NN: …" line>                         # Replica: tasks only
+fidelity:     [<"Design fidelity …" or "Fidelity S-NN: …" line>, …]   # Design: or Replica: tasks only
 ```
 
 `done` only when every criterion has a passing test and the closing run passed. A
@@ -91,7 +93,9 @@ missing verdict is read as `partial`. The orchestrator verifies from git regardl
 - Never commit or push outside the two commits above; never push at all.
 - Never edit `docs/ARCHITECTURE.md` or anything under `docs/design-system/` — new `## Stack`
   lines, the token path and design notes go in your verdict.
-- Never call `DesignSync`, and never write a literal visual value a `Design:` token covers.
+- Never call `DesignSync`, never write a literal visual value a `Design:` token covers, and
+  never improvise UI a card covers. Run the Design fidelity loop with at most 3 fix passes,
+  never with a foreground window.
 - With a `Replica:` line, read the cited screens and build to them, then run `replicate.md`'s
   Fidelity loop once after the closing run — never more, never with a foreground window.
 - Never install a version from memory, and never look up a technology `## Stack` already lists.

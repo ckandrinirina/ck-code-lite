@@ -128,7 +128,10 @@ These conventions let the codebase consume the system directly. Please follow th
 3. **One card per component**, every variant and state side by side in that card, grouped under
    `Actions`, `Forms`, `Navigation`, `Feedback`, `Data display` or `Overlays`.
 4. **One card per screen in § 4**, grouped under `Screens`, built only from the component
-   cards — no one-off styles.
+   cards — no one-off styles. Each screen card is the page itself, filled with the § 4 sample
+   content: no device frame, canvas, annotation or caption around it, fluid from 390 px (phone)
+   to 1440 px (desktop) with the § 2 breakpoints as media queries — the codebase is compared
+   with it pixel for pixel at those two widths.
 5. **Self-contained cards** — each card's HTML carries its own styles and depends on no external
    stylesheet, script or font CDN. Web-safe stacks or embedded fonts only.
 6. **Semantic, stable class names** on every element — markup and class names are copied

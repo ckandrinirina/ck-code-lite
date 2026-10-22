@@ -5,7 +5,9 @@
 //
 // Usage:
 //   <name> capture <url> --out <dir> [--pages 12] [--depth 2] [--profile] [--include <regex>]
-//   <name> shot <url> --out <prefix> [--viewport desktop|mobile|both] [--profile]
+//   <name> shot <url|file.html> --out <prefix> [--viewport desktop|mobile|both|<w>x<h>] [--root <dir>] [--profile]
+//                           a local file is served from a throwaway 127.0.0.1 server rooted at --root
+//                           (default: its folder), so its relative assets and fonts load as they would online
 //   <name> diff <reference.png> <candidate.png> --out <diff.png>
 //   <name> login <url>      opens a visible Chrome on a saved profile; sign in, then close it
 //   <name> electron <App.app|executable> --out <dir> [--explore 10]   (quit the app first)
@@ -26,10 +28,11 @@
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
-import { join, basename, dirname } from 'node:path';
+import { join, basename, dirname, resolve, sep, extname } from 'node:path';
+import { createServer } from 'node:http';
 import { inflateSync, deflateSync } from 'node:zlib';
 
-const VERSION = '1.0.2';
+const VERSION = '1.1.0';
 const NAME = basename(process.argv[1] || 'ck-replicate').replace(/\.mjs$/, '');
 const VIEWPORTS = {
   desktop: { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false },
@@ -868,23 +871,51 @@ function summarize(r) {
   return L.join('\n');
 }
 
-async function shot(url, opt) {
+// a local file (a Claude Design card) is shot over http, never file:// — Chrome blocks file:// fonts
+const MIME = { '.html': 'text/html', '.htm': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.otf': 'font/otf' };
+async function serveFile(file, rootOpt) {
+  const abs = resolve(file);
+  const root = resolve(rootOpt && rootOpt !== true ? rootOpt : dirname(abs));
+  if (!abs.startsWith(root + sep)) die(`${file} is not inside --root ${root}`);
+  const srv = createServer((req, res) => {
+    let p;
+    try { p = resolve(root, '.' + decodeURIComponent(new URL(req.url, 'http://x').pathname)); } catch { p = ''; }
+    if ((p !== root && !p.startsWith(root + sep)) || !existsSync(p)) { res.writeHead(404).end(); return; }
+    try { res.writeHead(200, { 'content-type': MIME[extname(p).toLowerCase()] || 'application/octet-stream' }).end(readFileSync(p)); }
+    catch { res.writeHead(404).end(); }
+  });
+  await new Promise((ok) => srv.listen(0, '127.0.0.1', ok));
+  const rel = abs.slice(root.length + 1).split(sep).map(encodeURIComponent).join('/');
+  return { url: `http://127.0.0.1:${srv.address().port}/${rel}`, close: () => srv.close() };
+}
+
+function viewportOf(v) {
+  if (VIEWPORTS[v]) return VIEWPORTS[v];
+  const m = /^(\d{2,5})x(\d{2,5})$/.exec(v);
+  if (!m) die(`unknown viewport ${v} — desktop, mobile, both or <width>x<height>`);
+  return { width: +m[1], height: +m[2], deviceScaleFactor: 1, mobile: +m[1] < 600 };
+}
+
+async function shot(target, opt) {
   if (!opt.out) die('shot needs --out <prefix>');
   const which = opt.viewport && opt.viewport !== true ? opt.viewport : 'desktop';
   const vps = which === 'both' ? ['desktop', 'mobile'] : [which];
-  for (const v of vps) if (!VIEWPORTS[v]) die(`unknown viewport ${v} — desktop, mobile or both`);
+  const sizes = vps.map(viewportOf);
   mkdirSync(dirname(opt.out), { recursive: true });
-  const b = await launch({ userDataDir: opt.profile ? profileDir(url) : undefined });
+  const local = /^https?:\/\//i.test(target) ? null : await serveFile(target, opt.root);
+  const url = local ? local.url : target;
+  const b = await launch({ userDataDir: opt.profile && !local ? profileDir(url) : undefined });
   try {
     const page = await openPage(b.cdp);
-    for (const v of vps) {
-      await navigate(page, url, VIEWPORTS[v]);
-      const r = await screenshot(page, VIEWPORTS[v], `${opt.out}-${v}.png`);
+    for (const [i, v] of vps.entries()) {
+      await navigate(page, url, sizes[i]);
+      const r = await screenshot(page, sizes[i], `${opt.out}-${v}.png`);
       console.log(`${NAME}: ${v} → ${r.file}${r.truncated ? ' (cut at the image limit)' : ''}`);
     }
     await page.close();
   } finally {
     b.cleanup();
+    local?.close();
   }
 }
 
@@ -1291,7 +1322,7 @@ if (['capture', 'shot', 'login', 'electron'].includes(cmd) && typeof WebSocket !
 const needUrl = (u) => { try { const x = new URL(u); if (!/^https?:$/.test(x.protocol)) throw 0; return x.href; } catch { die(`${cmd} needs an http(s) URL`); } };
 try {
   if (cmd === 'capture') await capture(needUrl(a1), opt);
-  else if (cmd === 'shot') await shot(needUrl(a1), opt);
+  else if (cmd === 'shot') await shot(a1 && !/^[a-z][a-z0-9+.-]*:/i.test(a1) ? (existsSync(a1) ? a1 : die(`no such file ${a1}`)) : needUrl(a1), opt);
   else if (cmd === 'diff') { if (!a1 || !a2) die('diff needs <reference.png> <candidate.png>'); diff(a1, a2, opt); }
   else if (cmd === 'login') await login(needUrl(a1));
   else if (cmd === 'electron') { if (!a1) die('electron needs <App.app | executable>'); await electron(a1, opt); }

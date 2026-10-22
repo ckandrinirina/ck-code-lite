@@ -114,10 +114,13 @@ context.
 gives the state:
 
 - **linked** → `Read` `docs/design-system/index.md` and follow
-  [§ Component lookup order](../../references/design-system.md#component-lookup-order) and the
-  fidelity rules through Phases 3–4 — a `Screens` card first, then each component's card,
-  ported exactly. `tokensPath` `"pending"` → this task materializes the tokens
-  ([§ Token materialization](../../references/design-system.md#token-materialization)).
+  [§ Component lookup order](../../references/design-system.md#component-lookup-order) and
+  [§ Fidelity rules](../../references/design-system.md#fidelity-rules) through Phases 3–4 —
+  design map first, a `Screens` card, then each component's card, ported exactly. `tokensPath`
+  `"pending"` → this task materializes the tokens
+  ([§ Token materialization](../../references/design-system.md#token-materialization)). After
+  the closing run, run [§ Design fidelity loop](../../references/design-system.md#design-fidelity-loop)
+  before Phase 5 — shoot, diff, up to 3 fix passes, `ck-lite note` the `Design fidelity` line.
 - **pending** → the design is being made at claude.ai/design. Add the design question to
   Phase 2.3's round — asked even when nothing else is ambiguous.
 - **none / undecided / not a UI task** → nothing; build from the architecture doc.
@@ -218,7 +221,8 @@ Delegate to `ck-code-lite:qa-validator`, supplying inline:
   ([tdd-cycle.md](../../references/tdd-cycle.md#running-tests)), never the bare `test`
 - the working directory, and `reuse: yes`
 - under a recorded test exception only, `exception: <reason>`
-- for a UI task with a linked design only, `design: docs/design-system/index.md`
+- for a UI task with a linked design only, `design: docs/design-system/index.md — <the recorded
+  Design fidelity lines, or none>`
 - for a task citing an `S-NN` only, `replica: S-NN — <the recorded Fidelity line, or none>`
 
 `reuse: yes` lets it report the closing `test` run as `REUSED` when not a byte of code changed

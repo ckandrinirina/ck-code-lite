@@ -185,8 +185,8 @@ One `ck-code-lite:qa-validator` per ✓ task, all in a single message, each with
 and criteria, the returned `files:`, the `## Commands` as `label=command` pairs (`(none)`
 dropped), `reuse: no`, the working directory — the branch's worktree path from
 `git worktree list` (fan-out) or `$ROOT` (solo) — and `exception: <reason>` for a task under a
-recorded test exception, `design: <$ROOT>/docs/design-system/index.md` for a UI task with a
-linked design, and `replica: S-NN — <the verdict's fidelity line, or none>` for a task citing a
+recorded test exception, `design: <$ROOT>/docs/design-system/index.md — <the verdict's Design fidelity
+lines, or none>` for a UI task with a linked design, and `replica: S-NN — <the verdict's fidelity line, or none>` for a task citing a
 replica screen.
 
 `reuse: no` always: an agent's own runs are never QA's evidence. A fan-out branch without
