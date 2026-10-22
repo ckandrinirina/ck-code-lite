@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.1] — 2026-10-22
+
+### Fixed
+- **ck-lite-replicate** 1.1.1: the local card server behind `shot` serves only this run's random token path, checks the `Host` header, serves only asset types, and checks containment on real paths, so a symlink under `--root` can no longer expose a file outside it.
+
 ## [1.14.0] — 2026-10-22
 
 ### Changed
