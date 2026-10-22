@@ -84,10 +84,74 @@ last_field() {
 
 stamp_of() { printf '%s\n%s\n%s\n' "$1" "$(pwd -P)" "$2" | git hash-object --stdin; }
 
+# >>> ck-cpu-slots — byte-identical in ck-code's ck-qa.sh and ck-code-lite's ck-lite-qa
+# (plugin-doctor compares the two). Every run on this machine — any project, any worktree,
+# either plugin — shares CPU_SLOTS slots, so three worktrees building at once queue instead
+# of each starting one job per core. A throttle, not a lock: a lost race costs one extra
+# concurrent run, never a wrong result. CK_QA_SLOTS=0 turns the queue off.
+SLOTS_DIR="$TMP/ck-cpu-slots"
+NCPU="$(getconf _NPROCESSORS_ONLN 2>/dev/null)"
+case "$NCPU" in ''|*[!0-9]*|0) NCPU=4 ;; esac
+CPU_SLOTS="${CK_QA_SLOTS:-$(( NCPU / 8 ))}"
+case "$CPU_SLOTS" in ''|*[!0-9]*) CPU_SLOTS=1 ;; esac
+[ -n "${CK_QA_SLOTS:-}" ] || [ "$CPU_SLOTS" -ge 1 ] || CPU_SLOTS=1
+QA_NICE="${CK_QA_NICE:-10}"
+case "$QA_NICE" in ''|*[!0-9]*) QA_NICE=10 ;; esac
+SLOT=""; SLOT_WAITED=0
+
+# Takes a free slot, waiting while every one is busy, with $1 (when given) touched while it
+# waits. A slot whose holder is gone is taken back. A run nested in one that holds a slot
+# (CK_QA_IN_SLOT) runs in its parent's slot, so it can never wait on itself.
+slot_take() {
+  local i p t0=$SECONDS
+  { [ "$CPU_SLOTS" -gt 0 ] && [ -z "${CK_QA_IN_SLOT:-}" ]; } || return 0
+  mkdir -p "$SLOTS_DIR" 2>/dev/null || return 0
+  while :; do
+    i=1
+    while [ "$i" -le "$CPU_SLOTS" ]; do
+      if mkdir "$SLOTS_DIR/$i" 2>/dev/null; then
+        echo $$ >"$SLOTS_DIR/$i/pid"; SLOT=$i; SLOT_WAITED=$((SECONDS - t0))
+        [ -z "${1:-}" ] || rm -f "$1"
+        slot_env; return 0
+      fi
+      p="$(cat "$SLOTS_DIR/$i/pid" 2>/dev/null)"
+      # holder dead, or died between mkdir and writing its pid a minute ago
+      if { [ -n "$p" ] && ! kill -0 "$p" 2>/dev/null; } \
+        || { [ -z "$p" ] && [ -n "$(find "$SLOTS_DIR/$i" -maxdepth 0 -mmin +1 2>/dev/null)" ]; }; then
+        rm -rf "${SLOTS_DIR:?}/$i"; continue
+      fi
+      i=$((i + 1))
+    done
+    [ -z "${1:-}" ] || : >"$1"
+    sleep 1
+  done
+}
+
+slot_free() { [ -z "$SLOT" ] || rm -rf "${SLOTS_DIR:?}/$SLOT"; SLOT=""; }
+
+# Inside a slot, a build tool the project left unset gets this slot's share of the cores,
+# and an installed ccache serves every worktree's cold C/C++ build from one cache (base dir:
+# the main checkout, which holds .claude/worktrees/).
+slot_env() {
+  local share=$(( NCPU / CPU_SLOTS )) base
+  [ "$share" -ge 1 ] || share=1
+  export CK_QA_IN_SLOT=1
+  export CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-$share}"
+  export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-$share}"
+  command -v ccache >/dev/null 2>&1 || return 0
+  export CMAKE_C_COMPILER_LAUNCHER="${CMAKE_C_COMPILER_LAUNCHER:-ccache}"
+  export CMAKE_CXX_COMPILER_LAUNCHER="${CMAKE_CXX_COMPILER_LAUNCHER:-ccache}"
+  if [ -z "${CCACHE_BASEDIR:-}" ]; then
+    base="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" \
+      && base="$(dirname -- "$base")" && export CCACHE_BASEDIR="$base"
+  fi
+}
+# <<< ck-cpu-slots
+
 # Waits on the run for $1 for up to CK_LITE_QA_WAIT seconds, then prints its result and exits
 # with its code, or prints RUNNING and exits 3 while it is still going.
 await_run() {
-  local d="$RUNS/$1" budget="${CK_LITE_QA_WAIT:-540}" t0=$SECONDS polls=0
+  local d="$RUNS/$1" budget="${CK_LITE_QA_WAIT:-540}" t0=$SECONDS polls=0 q
   [ -f "$d/pid" ] || die "no ck-lite-qa run for $1 — start it with ck-lite-qa run $1 …"
   while [ ! -f "$d/rc" ]; do
     if ! kill -0 "$(cat "$d/pid")" 2>/dev/null; then
@@ -95,7 +159,8 @@ await_run() {
       die "the ck-lite-qa run for $1 stopped without a result — start it again with ck-lite-qa run"
     fi
     if [ $((SECONDS - t0)) -ge "$budget" ]; then
-      echo "ck-lite-qa: RUNNING — $1 has run $(( $(date +%s) - $(cat "$d/start") ))s; run 'cd $(pwd -P) && ck-lite-qa wait $1' to keep waiting (runs are per checkout), never start it again"
+      q=""; [ ! -f "$d/queued" ] || q=" (queued for a CPU slot — other runs hold all $CPU_SLOTS)"
+      echo "ck-lite-qa: RUNNING — $1 has run $(( $(date +%s) - $(cat "$d/start") ))s$q; run 'cd $(pwd -P) && ck-lite-qa wait $1' to keep waiting (runs are per checkout), never start it again"
       exit 3
     fi
     # quick polls first, so a sub-second suite is not billed a 2 s sleep
@@ -181,7 +246,7 @@ run_one() {  # label → writes the exit code to <log>.rc
   local l="$1" log; log="$(log_of "$l")"
   # Every run is a background run: an e2e suite that reads E2E_HEADLESS keeps its window
   # hidden, and PWDEBUG (Playwright's headed inspector) never leaks in from the shell.
-  env -u PWDEBUG E2E_HEADLESS=1 bash -c "$(cmd_of "$l")" >"$log" 2>&1
+  env -u PWDEBUG E2E_HEADLESS=1 nice -n "$QA_NICE" bash -c "$(cmd_of "$l")" >"$log" 2>&1
   echo $? >"$log.rc"
 }
 
@@ -193,6 +258,12 @@ for l in $LABELS; do
     TORUN="$TORUN $l"
   fi
 done
+
+# A reused command needs no CPU; anything that runs waits for a slot first.
+if [ -n "$TORUN" ]; then
+  trap slot_free EXIT
+  slot_take "${D:+$D/queued}"
+fi
 
 if [ "$PARALLEL" = 1 ]; then
   for l in $TORUN; do run_one "$l" & done
@@ -224,6 +295,7 @@ for l in $TORUN; do
   fi
 done
 
+[ "$SLOT_WAITED" -lt 1 ] || echo "ck-lite-qa: waited ${SLOT_WAITED}s for a CPU slot ($CPU_SLOTS on this machine, CK_QA_SLOTS)"
 for r in $RESULT; do
   l="${r%%:*}"; v="${r#*:}"
   case "$v" in

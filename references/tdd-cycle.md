@@ -21,6 +21,12 @@ changed since. Exit 3 prints `RUNNING`: the suite is still going, so continue it
 `cd <dir> && ck-lite-qa wait T-05` line it prints (runs are per checkout) and never start it a
 second time.
 
+Every run on the machine shares one CPU queue (`CK_QA_SLOTS`, default cores ÷ 8, at least 1):
+worktrees building at once take turns instead of each taking every core, a CMake or cargo
+build gets the slot's share of the cores, an installed `ccache` serves every worktree's cold
+C/C++ build, and commands run under `nice`. A queued run says so in its `RUNNING` line and its
+result; the wait is expected, never a stall to work around.
+
 **Inner loop = the task's own tests.** When `## Commands` has a `test-one` line, RED and GREEN
 run only the task's test files through it (`{files}` → the paths, space-separated). The
 [closing run](#close--every-test-the-task-can-reach-once) runs **once**, as the cycle's last
