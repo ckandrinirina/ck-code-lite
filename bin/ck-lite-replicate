@@ -26,13 +26,14 @@
 // bin/ck-lite-replicate; keep the two byte-identical. Contract: references/replicate.md.
 
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync, readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, mkdtempSync, rmSync, realpathSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { tmpdir, homedir } from 'node:os';
 import { join, basename, dirname, resolve, sep, extname } from 'node:path';
 import { createServer } from 'node:http';
 import { inflateSync, deflateSync } from 'node:zlib';
 
-const VERSION = '1.1.0';
+const VERSION = '1.1.1';
 const NAME = basename(process.argv[1] || 'ck-replicate').replace(/\.mjs$/, '');
 const VIEWPORTS = {
   desktop: { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false },
@@ -874,19 +875,30 @@ function summarize(r) {
 // a local file (a Claude Design card) is shot over http, never file:// — Chrome blocks file:// fonts
 const MIME = { '.html': 'text/html', '.htm': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.otf': 'font/otf' };
 async function serveFile(file, rootOpt) {
-  const abs = resolve(file);
-  const root = resolve(rootOpt && rootOpt !== true ? rootOpt : dirname(abs));
-  if (!abs.startsWith(root + sep)) die(`${file} is not inside --root ${root}`);
+  const abs = realpathSync(resolve(file));
+  const root = realpathSync(resolve(rootOpt && rootOpt !== true ? rootOpt : dirname(abs)));
+  const inside = (p) => p === root || p.startsWith(root + sep);
+  if (!inside(abs) || abs === root) die(`${file} is not inside --root ${root}`);
+  // the card is untrusted: only this run's token path, only asset types, only real paths under root
+  const token = randomBytes(16).toString('hex');
+  let host = '';
   const srv = createServer((req, res) => {
+    const no = () => res.writeHead(404).end();
+    if (req.method !== 'GET' || req.headers.host !== host) return no();
     let p;
-    try { p = resolve(root, '.' + decodeURIComponent(new URL(req.url, 'http://x').pathname)); } catch { p = ''; }
-    if ((p !== root && !p.startsWith(root + sep)) || !existsSync(p)) { res.writeHead(404).end(); return; }
-    try { res.writeHead(200, { 'content-type': MIME[extname(p).toLowerCase()] || 'application/octet-stream' }).end(readFileSync(p)); }
-    catch { res.writeHead(404).end(); }
+    try {
+      const path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+      if (!path.startsWith(`/${token}/`)) return no();
+      p = realpathSync(resolve(root, '.' + path.slice(token.length + 1)));
+    } catch { return no(); }
+    const type = MIME[extname(p).toLowerCase()];
+    if (!inside(p) || !type) return no();
+    try { res.writeHead(200, { 'content-type': type }).end(readFileSync(p)); } catch { no(); }
   });
   await new Promise((ok) => srv.listen(0, '127.0.0.1', ok));
+  host = `127.0.0.1:${srv.address().port}`;
   const rel = abs.slice(root.length + 1).split(sep).map(encodeURIComponent).join('/');
-  return { url: `http://127.0.0.1:${srv.address().port}/${rel}`, close: () => srv.close() };
+  return { url: `http://${host}/${token}/${rel}`, close: () => srv.close() };
 }
 
 function viewportOf(v) {
