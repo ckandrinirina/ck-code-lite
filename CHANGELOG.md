@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.0] — 2026-10-22
+
+### Changed
+- **build**: a UI task with a linked Claude Design now runs a Design fidelity loop after the closing run, inline or in a `task-builder` — the mapped `Screens` card and the built screen are shot at the same viewport, diffed and compared, with up to 3 fix passes; the `Design fidelity` line is noted on the task and handed to QA. Until now the build read a card and nothing checked the rendered result.
+- **design-system**: the fidelity rules now say exactly what "exact" means — the card is the spec (structure, element order, class names, text, icons, every CSS value, every state and breakpoint); a card value with no token is ported verbatim instead of being rounded to a token or replaced by a library default; nothing added, nothing dropped. A design map (screen/component → card) is decided before any UI code.
+- **qa-validator**: a UI task fails on an off-card value, a loop that never ran, or a difference left after the 3 passes.
+- **design brief**: § 8 asks Claude Design for screen cards drawn as the page itself (no frame, sample content, fluid 390–1440 px) so they compare pixel for pixel.
+
+### Added
+- **ck-lite-replicate** 1.1.0: `shot` takes a local HTML file (served from a throwaway 127.0.0.1 server rooted at `--root`, so relative assets and fonts load) and an exact `--viewport <w>x<h>`.
+
 ## [1.13.0] — 2026-10-22
 
 ### Changed
