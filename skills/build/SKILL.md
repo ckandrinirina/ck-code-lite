@@ -1,7 +1,7 @@
 ---
 name: build
-description: Use when a task from tasks/PLAN.md needs implementing end-to-end with tests, when a task left in progress needs finishing, when several independent tasks can be built at once in isolated worktrees, or when the remaining plan should run in dependency-ordered waves. Argument is an optional task ID such as T-03 (with `--quick` or `--full`), several IDs, `--group <name>` (one feature) or `--waves`, optionally with `--auto` to run to the end unasked; with no argument, picks interactively.
-argument-hint: "[T-NN [--quick|--full] | T-NN T-NN … | --group <name> | --waves] [--auto]"
+description: Use when a task from tasks/PLAN.md needs implementing end-to-end with tests, when a task left in progress needs finishing, when several independent tasks can be built at once in isolated worktrees, or when the remaining plan should run in dependency-ordered waves. Argument is an optional task ID such as T-03 (with `--quick` or `--full`), several IDs, `--group [name]` (one feature) or `--waves`, optionally with `--auto` to run to the end unasked; with no argument, picks interactively.
+argument-hint: "[T-NN [--quick|--full] | T-NN T-NN … | --group [name] | --waves] [--auto]"
 effort: high
 allowed-tools: Bash(git status*) Bash(git diff*) Bash(git log*) Bash(git branch*) Bash(git rev-parse*) Bash(git checkout*) Bash(git switch*) Bash(git add*) Bash(git commit*) Bash(git merge*) Bash(git worktree*) Bash(cd*) Bash(ck-lite*) Bash(npm view*) Bash(pip index*) Bash(cargo search*) Bash(go list*) Bash(gem search*) Bash(npx -y ctx7*) WebSearch mcp__context7__resolve-library-id mcp__context7__query-docs mcp__plugin_context7_context7__resolve-library-id mcp__plugin_context7_context7__query-docs Skill
 ---
@@ -31,17 +31,18 @@ through `ck-lite-qa` ([tdd-cycle.md](../../references/tdd-cycle.md#running-tests
 
 ## INPUT
 
-`$ARGUMENTS` is empty, one task ID, several task IDs, `--group <name>`, or `--waves` — any of
+`$ARGUMENTS` is empty, one task ID, several task IDs, `--group [name]`, or `--waves` — any of
 the last four optionally with `--auto`.
 
 - **One `T-NN`** — Phases 1–7.
 - **Two or more IDs, `--group`, or `--waves`** — PARALLEL MODE. `--group <name>` scopes the run
   to one feature: its tasks and the unfinished tasks they need, nothing else
-  ([groups](../../references/plan-format.md#groups)). `--waves` is the whole plan. Both always
+  ([groups](../../references/plan-format.md#groups)). With no name it takes the feature
+  `ck-lite groups --next` names — the one a bare `--auto` would — and still asks as usual. `--waves` is the whole plan. Both always
   orchestrate, even when one task remains: that wave is dispatched solo, never built inline here.
 - **`--auto`** — PARALLEL MODE with no question until the run ends: every question takes its
   recommended default ([auto mode](references/parallel-mode.md#auto-mode----auto)). Alone it
-  runs **one feature** — the group `ck-lite groups --next` names — never the whole plan; that is
+  runs **one feature** — the same as `--group --auto` — never the whole plan; that is
   `--waves --auto`. With one ID it orchestrates that task solo, like `--waves`.
 - **Empty** — the Phase 1 menu.
 - **`--quick` / `--full`** (one `T-NN` only) — `--quick` asks for the [QUICK ROUTE](#quick-route),

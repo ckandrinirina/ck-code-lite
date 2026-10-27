@@ -20,10 +20,9 @@ away from `$TARGET`. Rules for who may create a worktree and what may outlive a 
 ## Auto mode — `--auto`
 
 **Scope first.** `--auto` with no IDs, `--group` or `--waves` takes **one feature**, never the
-whole plan: `ck-lite groups --next` names it, and the run proceeds as `--group <name> --auto`,
-announced as `Auto: feature <name> — <its ck-lite groups line>`. It prints nothing → no feature
-has a ready task: report what `ck-lite open` says waits or is blocked, and stop. A long plan
-with several features in flight so builds only what the next feature needs; `--waves --auto`
+whole plan: it runs as `--group --auto`, and P2's detected group is the feature, announced as
+`Auto: feature <name> — <its ck-lite groups line>`. A long plan with several features in
+flight so builds only what the next feature needs; `--waves --auto`
 is the explicit ask for everything.
 
 `--auto` runs that scope to the end with **no `AskUserQuestion` at all**. Every question
@@ -100,11 +99,14 @@ no question ([background-tests.md](../../../references/background-tests.md)).
 
 ```bash
 ck-lite waves T-02 T-05 T-06     # explicit IDs
-ck-lite waves --group auth       # --group, or --auto alone (the group groups --next named)
+ck-lite waves --group auth       # --group <name>
+ck-lite waves --group            # --group with no name, or --auto alone: detects the next feature
 ck-lite waves --all              # --waves
 ```
 
-A `--group` run's scope is fixed here: the IDs this output schedules plus its `Unschedulable`
+With no name, its first line is `Group <name> (detected)` — announce that name; nothing
+ready anywhere → it prints `no group has ready work`: report what `ck-lite open` says waits or
+is blocked, and stop. A `--group` run's scope is fixed here: the IDs this output schedules plus its `Unschedulable`
 ones become the run's explicit IDs, so P8 continues with `--next <those IDs>` and a task added
 to the group mid-run waits for the next run.
 

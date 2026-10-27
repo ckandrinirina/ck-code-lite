@@ -91,6 +91,7 @@ Independent tasks do not have to wait in line:
 ```
 /ck-code-lite:build T-02 T-05     # both at once, one git worktree each
 /ck-code-lite:build --group auth  # one feature: its tasks and what they need, nothing else
+/ck-code-lite:build --group       # the next feature with ready work, detected for you
 /ck-code-lite:build --waves       # the whole remaining plan, dependency-ordered
 /ck-code-lite:build --auto        # the next feature, unattended — no question until it finishes
 ```
@@ -311,7 +312,7 @@ The plan only grows (a mistaken task aside), so no skill ever reads or edits it.
 | `ck-lite context T-05` | the architecture core, the area docs the task touches, the task |
 | `ck-lite set doing T-05` · `ck-lite done T-05` | a status move, row and meta line together, verified |
 | `ck-lite add` · `ck-lite next-id` · `ck-lite drop` | new tasks, table rows generated; a mistaken one removed |
-| `ck-lite waves --all` · `--group <name>` | dependency-ordered, file-disjoint waves |
+| `ck-lite waves --all` · `--group [name]` | dependency-ordered, file-disjoint waves |
 | `ck-lite groups` · `ck-lite group <name> T-NN…` | open work per feature, the next one to run · tag tasks with a feature |
 | `ck-lite check` · `ck-lite stats` | integrity, sizes, and the graduation notice |
 

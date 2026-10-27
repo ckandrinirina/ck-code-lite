@@ -132,6 +132,8 @@ out="$(ck-lite waves --group auth)"
 has "waves --group: pulls the todo needs first" "Wave 1 T-01" "$out"
 lacks "waves --group: never schedules another feature" "T-04" "$out"
 eq  "waves --next --group: first wave of the group" "T-04" "$(ck-lite waves --next --group linked-T-04)"
+has "waves --group with no name: detects the next group" "Group auth (detected)" "$(ck-lite waves --group)"
+eq  "waves --next --group with no name: IDs only" "T-01" "$(ck-lite waves --next --group)"
 has "waves --group: an unknown group is refused" "no group named nope" "$(ck-lite waves --group nope 2>&1)"
 has "group: tags a task before files:" "needs: — · group: misc · files: src/l" "$(ck-lite group misc T-06 >/dev/null; grep '^T-06' tasks/PLAN.md)"
 has "group: retags in place" "needs: — · group: other · files: src/l" "$(ck-lite group other T-06 >/dev/null; grep '^T-06' tasks/PLAN.md)"
@@ -145,6 +147,7 @@ has "waves --group: a doing need leaves the rest unschedulable" "Unschedulable T
 eq  "groups --next: skips a group with nothing ready" "linked-T-04" "$(ck-lite groups --next)"
 ck-lite set done T-02 T-03 T-04 T-05 T-06 >/dev/null
 eq  "groups --next: nothing open prints nothing" "" "$(ck-lite groups --next)"
+has "waves --group with no name: nothing ready is refused" "no group has ready work" "$(ck-lite waves --group 2>&1)"
 has "waves --group: a finished group is refused" "no group named auth" "$(ck-lite waves --group auth 2>&1)"
 has "check: a tagged plan is clean" "OK — 6 tasks" "$(ck-lite check)"
 

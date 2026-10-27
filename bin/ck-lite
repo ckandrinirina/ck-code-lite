@@ -7,7 +7,8 @@
 #   ck-lite criteria <T-NN>…           acceptance criteria of those tasks, grouped by ID
 #   ck-lite context <T-NN>             ARCHITECTURE.md, the area docs the task's files touch, the task
 #   ck-lite commands                   the ## Commands lines of docs/ARCHITECTURE.md
-#   ck-lite waves [--next] <T-NN>…|--all|--group <name>   dependency-ordered waves (file-disjoint, width ≤ 4)
+#   ck-lite waves [--next] <T-NN>…|--all|--group [<name>]   dependency-ordered waves (file-disjoint, width ≤ 4);
+#                                      --group with no name takes the group `groups --next` names
 #   ck-lite groups [--next]            open work per feature group; --next names the one to run next
 #   ck-lite group <name>|- <T-NN>…     tag tasks with a feature group (- removes the tag)
 #   ck-lite set <status> <T-NN>…       move the table row and the meta line together
@@ -499,8 +500,14 @@ cmd_waves() {
   need_plan
   next=0; all=0; scope=""; grp=""
   while [ "$#" -gt 0 ]; do case "$1" in --next) next=1 ;; --all) all=1 ;;
-    --group) [ -n "${2:-}" ] || die "--group needs a group name (ck-lite groups lists them)"; grp="$2"; shift ;;
+    # a group name is a lowercase slug, so a flag, an ID or nothing after --group means "detect"
+    --group) case "${2:-}" in ""|-*|T-*) grp="-" ;; *) grp="$2"; shift ;; esac ;;
     *) need_id "$1"; scope="$scope $1" ;; esac; shift; done
+  if [ "$grp" = - ]; then
+    grp="$(groups_awk next)"
+    [ -n "$grp" ] || { echo "ck-lite: no group has ready work (ck-lite open says what waits)"; return 1; }
+    [ "$next" = 1 ] || echo "Group $grp (detected)"
+  fi
   if [ -n "$grp" ]; then
     gs="$(groups_awk scope "$grp")"
     case "$gs" in "") echo "ck-lite: no group named $grp has open work (ck-lite groups lists them)"; return 1 ;;
@@ -664,6 +671,6 @@ case "${1:-}" in
   worktrees) shift; cmd_worktrees "$@" ;;
   try-merge) shift; cmd_try_merge "$@" ;;
   retire) shift; cmd_retire "$@" ;;
-  -h|--help|"") sed -n '3,35p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -h|--help|"") sed -n '3,36p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) die "unknown command: $1 (ck-lite --help)" ;;
 esac

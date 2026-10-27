@@ -63,7 +63,7 @@ not project age** — a plan with 400 done tasks and 3 open ones costs what a 3-
 | one task's section | `ck-lite show T-05` | header to the line before the next task |
 | criteria for a wave | `ck-lite criteria T-02 T-05` | `== T-NN` then its acceptance boxes |
 | everything `build` needs for a task | `ck-lite context T-05` | `ARCHITECTURE.md`, the area docs its `files:` touch, the section |
-| dependency-ordered waves | `ck-lite waves T-02 T-05` · `--all` · `--group auth` · `--next` | waves, unschedulable tasks with the reason |
+| dependency-ordered waves | `ck-lite waves T-02 T-05` · `--all` · `--group auth` · `--group` (the next feature) · `--next` | waves, unschedulable tasks with the reason |
 | open work per feature | `ck-lite groups` · `--next` | one line per group with its counts and the tasks it pulls · the group to run next |
 | tag a feature | `ck-lite group auth T-05 T-06` (`-` removes it) | `T-05 T-06: group → auth` |
 | a status move | `ck-lite set doing T-05 T-06` | `T-05: todo → doing` |
