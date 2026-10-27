@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.15.0] — 2026-10-27
+
+### Added
+- **plan format**: an optional `group:` field on the meta line, between `needs` and `files`, names the feature a task belongs to (a lowercase slug). Open tasks with no tag are grouped by their `needs` links as `linked-T-NN`, so plans written before this version split into features without any edit.
+- **ck-lite**: `groups` lists open work per feature (counts, plus the tasks from outside it that it pulls in), and `groups --next` names the feature to run next. `group <name> T-NN…` tags tasks (`-` removes the tag), and `waves --group <name>` schedules one feature: its todo tasks plus every todo task they need.
+- **build**: `--group <name> [--auto]` builds one feature and the unfinished tasks it stands on, never a sibling feature. The Phase 1 menu offers the next feature as a batch option.
+- **start**: every task it writes carries a `group:`, one per feature. When it extends a plan, a task that grows an existing feature reuses that feature's slug, and the report lists the groups.
+
+### Changed
+- **build**: `--auto` on its own now runs **one feature**, the first with ready work, instead of the whole remaining plan, and its report names the next feature. On a long plan, a run used to spend hours on unrelated tasks. `--waves --auto` keeps the old whole-plan behaviour.
+
 ## [1.14.1] — 2026-10-22
 
 ### Fixed
