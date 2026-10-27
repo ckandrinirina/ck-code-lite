@@ -7,7 +7,9 @@
 #   ck-lite criteria <T-NN>…           acceptance criteria of those tasks, grouped by ID
 #   ck-lite context <T-NN>             ARCHITECTURE.md, the area docs the task's files touch, the task
 #   ck-lite commands                   the ## Commands lines of docs/ARCHITECTURE.md
-#   ck-lite waves [--next] <T-NN>…|--all   dependency-ordered waves (file-disjoint, width ≤ 4)
+#   ck-lite waves [--next] <T-NN>…|--all|--group <name>   dependency-ordered waves (file-disjoint, width ≤ 4)
+#   ck-lite groups [--next]            open work per feature group; --next names the one to run next
+#   ck-lite group <name>|- <T-NN>…     tag tasks with a feature group (- removes the tag)
 #   ck-lite set <status> <T-NN>…       move the table row and the meta line together
 #   ck-lite files <T-NN> <path>…       append paths to the task's files: list
 #   ck-lite note <T-NN> <text>         append a dated line under the task's ### Notes
@@ -66,8 +68,8 @@ is_id() { case "$1" in T-[0-9][0-9]*) case "${1#T-}" in *[!0-9]*) return 1 ;; es
   [ "$1" = "$(printf 'T-%02d' "$((10#${1#T-}))")" ]; return ;; esac; return 1; }
 need_id() { is_id "${1:-}" || die "expected a task ID like T-05, got: ${1:-<nothing>}"; }
 
-# One TSV line per ID: id rows hdrs metas row_status meta_status size needs files title.
-# needs is comma-joined without spaces ("" when none); files is as written ("" when none).
+# One TSV line per ID: id rows hdrs metas row_status meta_status size needs files title group.
+# needs is comma-joined without spaces ("" when none); files and group as written ("" when none).
 index() {
   awk '
     function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
@@ -86,11 +88,12 @@ index() {
       for (i = 2; i <= k; i++) {
         if (p[i] ~ /^status: /) { v = p[i]; sub(/^status: /, "", v); ms[id] = trim(v) }
         if (p[i] ~ /^files: /)  { v = p[i]; sub(/^files: /, "", v); v = trim(v); if (v == "—" || v == "-") v = ""; fl[id] = v }
+        if (p[i] ~ /^group: /)  { v = p[i]; sub(/^group: /, "", v); gr[id] = trim(v) }
       }
     }
     END {
       for (i = 1; i <= n; i++) { id = ids[i]
-        printf "%s\t%d\t%d\t%d\t%s\t%s\t%s\t%s\t%s\t%s\n", id, rows[id], hdrs[id], metas[id], rs[id], ms[id], sz[id], needs[id], fl[id], title[id] }
+        printf "%s\t%d\t%d\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", id, rows[id], hdrs[id], metas[id], rs[id], ms[id], sz[id], needs[id], fl[id], title[id], gr[id] }
     }' "$PLAN"
 }
 
@@ -404,11 +407,107 @@ cmd_add() {
   if [ "$n" = 1 ]; then echo "added $first"; else echo "added $n tasks ($first … $lastid)"; fi
 }
 
+# Feature groups. A task's group is its `group:` tag; open tasks without one are grouped by the
+# needs links between them and named after their lowest ID (linked-T-04), so an untagged plan
+# still splits into features. A group's scope is its todo tasks plus every todo task they need,
+# transitively — what a run on that group must build, and nothing else.
+# mode list: one line per group · next: the first group (by lowest open ID) with a READY task in
+# its scope that no larger group's scope contains · scope <name>: the scope's IDs, "NONE <why>" when it holds no todo task, "" if unknown.
+groups_awk() {
+  index | awk -F'\t' -v mode="$1" -v want="${2:-}" '
+    function find(x) { while (par[x] != x) x = par[x]; return x }
+    function ready(t,   k, j, d) { if (st[t] != "todo" || !ok[t]) return 0
+      k = split(nd[t], d, ","); for (j = 1; j <= k; j++) if (d[j] != "" && st[d[j]] != "done") return 0
+      return 1 }
+    # fills sc[1..ns] with the scope of group g, pulled[] marks the tasks from outside it
+    function scope(g,   i, t, k, j, d, x) { ns = 0; split("", in_); split("", pulled)
+      for (i = 1; i <= m; i++) { t = ord[i]; if (grp[t] == g && st[t] == "todo") { in_[t] = 1; sc[++ns] = t } }
+      for (i = 1; i <= ns; i++) { k = split(nd[sc[i]], d, ",")
+        for (j = 1; j <= k; j++) { x = d[j]; if (x != "" && st[x] == "todo" && !(x in in_)) { in_[x] = 1; sc[++ns] = x; pulled[x] = 1 } } } }
+    { id[++n] = $1; st[$1] = $5; nd[$1] = $8; gt[$1] = $11; ok[$1] = ($2 == 1 && $3 == 1 && $4 == 1 && $5 == $6) }
+    END {
+      for (i = 1; i <= n; i++) if (st[id[i]] != "done") ord[++m] = id[i]
+      for (i = 1; i <= m; i++) if (gt[ord[i]] == "") par[ord[i]] = ord[i]
+      for (i = 1; i <= m; i++) { t = ord[i]; if (gt[t] != "") continue
+        k = split(nd[t], d, ","); for (j = 1; j <= k; j++) if (d[j] in par) { a = find(t); b = find(d[j]); if (a != b) par[b] = a } }
+      for (i = 1; i <= m; i++) { t = ord[i]
+        if (gt[t] != "") g = gt[t]; else { r = find(t); if (!(r in low)) low[r] = t; g = "linked-" low[r] }
+        grp[t] = g; if (!(g in seen)) { seen[g] = 1; G[++ng] = g }
+        mem[g] = mem[g] (mem[g] ? " " : "") t; cnt[g]++
+        if (st[t] == "doing") dg[g]++; if (ready(t)) rd[g]++ }
+      if (mode == "list") {
+        for (i = 1; i <= ng; i++) { g = G[i]; scope(g); pl = ""
+          for (j = 1; j <= ns; j++) if (sc[j] in pulled) pl = pl (pl ? " " : "") sc[j]
+          printf "%s · open %d · ready %d · doing %d · %s%s\n", g, cnt[g], rd[g], dg[g], mem[g], (pl ? " · pulls " pl : "") }
+        printf "groups %d · open %d\n", ng, m; exit }
+      if (mode == "next") {
+        # a group whose whole scope another group also builds (a scaffold every feature pulls)
+        # gives way to that group, which builds it anyway
+        for (i = 1; i <= ng; i++) { scope(G[i]); S[i] = ns; for (j = 1; j <= ns; j++) { hold[i, sc[j]] = 1; L[i, j] = sc[j] } }
+        for (i = 1; i <= ng; i++) {
+          r = 0; for (j = 1; j <= S[i]; j++) if (ready(L[i, j])) { r = 1; break }
+          if (!r) continue
+          sub_ = 0
+          for (o = 1; o <= ng && !sub_; o++) { if (o == i || S[o] <= S[i]) continue
+            c = 1; for (j = 1; j <= S[i]; j++) if (!((o, L[i, j]) in hold)) { c = 0; break }
+            sub_ = c }
+          if (!sub_) { print G[i]; exit } }
+        exit }
+      if (!(want in seen)) exit
+      scope(want)
+      if (ns == 0) { w = ""; k = split(mem[want], d, " "); for (j = 1; j <= k; j++) w = w (w ? ", " : "") d[j] " " st[d[j]]; print "NONE " w; exit }
+      s = ""; for (j = 1; j <= ns; j++) s = s (s ? " " : "") sc[j]; print s }'
+}
+
+# Lowercase letters, digits and hyphens; linked-… is reserved for the untagged groups.
+is_slug() { case "$1" in linked-*|-*) return 1 ;; [a-z0-9]*) case "$1" in *[!a-z0-9-]*) return 1 ;; esac; return 0 ;; esac; return 1; }
+
+cmd_groups() {
+  need_plan
+  case "${1:-}" in
+    "") groups_awk list ;;
+    --next) groups_awk next ;;
+    *) die "groups takes no argument or --next" ;;
+  esac
+}
+
+cmd_group() {
+  need_plan
+  g="${1:-}"; shift || true
+  case "$g" in -|—) g="" ;; *) is_slug "$g" || die "group name must be lowercase letters, digits and hyphens, like auth or export-csv (linked-… is reserved)" ;; esac
+  [ "$#" -gt 0 ] || die "group needs at least one task ID"
+  lock
+  for i in "$@"; do need_id "$i"; three_lines "$i" >&2 || exit 1; done
+  mk_tmp
+  # Drops any group: segment and puts the new one right before files:, the order plan-format gives.
+  awk -v ids="$*" -v g="$g" '
+    BEGIN { n = split(ids, a, " "); for (i = 1; i <= n; i++) w[a[i]] = 1 }
+    { sub(/\r$/, "") }
+    /^T-[0-9]+ · / && ($1 in w) {
+      k = split($0, p, " · "); out = p[1]; placed = 0
+      for (i = 2; i <= k; i++) { if (p[i] ~ /^group: /) continue
+        if (p[i] ~ /^files: / && g != "" && !placed) { out = out " · group: " g; placed = 1 }
+        out = out " · " p[i] }
+      if (g != "" && !placed) out = out " · group: " g
+      print out; next }
+    { print }' "$PLAN" >"$tmp" && replace_plan "$tmp"
+  for i in "$@"; do three_lines "$i" || exit 1; done
+  echo "$*: group → ${g:-none}"
+}
+
 cmd_waves() {
   need_plan
-  next=0; all=0; scope=""
-  for a in "$@"; do case "$a" in --next) next=1 ;; --all) all=1 ;; *) need_id "$a"; scope="$scope $a" ;; esac; done
-  [ "$all" = 1 ] || [ -n "$scope" ] || die "waves needs task IDs or --all"
+  next=0; all=0; scope=""; grp=""
+  while [ "$#" -gt 0 ]; do case "$1" in --next) next=1 ;; --all) all=1 ;;
+    --group) [ -n "${2:-}" ] || die "--group needs a group name (ck-lite groups lists them)"; grp="$2"; shift ;;
+    *) need_id "$1"; scope="$scope $1" ;; esac; shift; done
+  if [ -n "$grp" ]; then
+    gs="$(groups_awk scope "$grp")"
+    case "$gs" in "") echo "ck-lite: no group named $grp has open work (ck-lite groups lists them)"; return 1 ;;
+      "NONE "*) echo "ck-lite: group $grp has no todo task — ${gs#NONE }"; return 1 ;; esac
+    scope="$scope $gs"
+  fi
+  [ "$all" = 1 ] || [ -n "$scope" ] || die "waves needs task IDs, --all or --group <name>"
   index | awk -F'\t' -v scope="$scope" -v all="$all" -v width="$WIDTH" -v next_="$next" '
     function overlaps(t, w,   k, q, a, b) {
       q = split(fl[t], a, /, */)
@@ -461,7 +560,8 @@ cmd_check() {
       if ($2 != 1 || $3 != 1 || $4 != 1) { printf "%s: owns %d row / %d header / %d meta line(s), need 1 of each\n", $1, $2, $3, $4; e++ }
       if ($2 >= 1 && !($5 in okst)) { printf "%s: table status \"%s\" is not one of %s\n", $1, $5, statuses; e++ }
       if ($4 >= 1 && $5 != $6) { printf "%s: table says %s, meta line says %s\n", $1, $5, $6; e++ }
-      if ($2 >= 1 && $7 != "S" && $7 != "M") { printf "%s: size \"%s\" — only S or M\n", $1, $7; e++ } }
+      if ($2 >= 1 && $7 != "S" && $7 != "M") { printf "%s: size \"%s\" — only S or M\n", $1, $7; e++ }
+      if ($11 != "" && ($11 !~ /^[a-z0-9][a-z0-9-]*$/ || $11 ~ /^linked-/)) { printf "%s: group \"%s\" — lowercase letters, digits and hyphens only, never linked-…\n", $1, $11; e++ } }
     END {
       for (i = 1; i <= n; i++) { k = split(nd[id[i]], d, ","); for (j = 1; j <= k; j++) if (d[j] != "" && !(d[j] in st)) { printf "%s: needs %s, which is not in the plan\n", id[i], d[j]; e++ } }
       # peel tasks whose needs are all resolved; whatever remains sits on a cycle
@@ -548,6 +648,8 @@ case "${1:-}" in
   context) shift; cmd_context "$@" ;;
   commands) shift; cmd_commands "$@" ;;
   waves) shift; cmd_waves "$@" ;;
+  groups) shift; cmd_groups "$@" ;;
+  group) shift; cmd_group "$@" ;;
   set) shift; cmd_set "$@" ;;
   files) shift; cmd_files "$@" ;;
   note) shift; cmd_note "$@" ;;
@@ -562,6 +664,6 @@ case "${1:-}" in
   worktrees) shift; cmd_worktrees "$@" ;;
   try-merge) shift; cmd_try_merge "$@" ;;
   retire) shift; cmd_retire "$@" ;;
-  -h|--help|"") sed -n '3,33p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -h|--help|"") sed -n '3,35p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) die "unknown command: $1 (ck-lite --help)" ;;
 esac

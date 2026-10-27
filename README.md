@@ -90,9 +90,16 @@ Independent tasks do not have to wait in line:
 
 ```
 /ck-code-lite:build T-02 T-05     # both at once, one git worktree each
+/ck-code-lite:build --group auth  # one feature: its tasks and what they need, nothing else
 /ck-code-lite:build --waves       # the whole remaining plan, dependency-ordered
-/ck-code-lite:build --auto        # the same, unattended — no question until it finishes
+/ck-code-lite:build --auto        # the next feature, unattended — no question until it finishes
 ```
+
+A long plan holds several features at once, so every task carries a `group:` — the feature it
+belongs to, written by `start`. `--group <name>` builds that feature and the unfinished tasks
+it stands on, never a sibling feature. Tasks with no tag (older plans) are grouped by their
+`needs` links, as `linked-T-04`, so an untagged plan splits too. `ck-lite groups` lists them,
+and `ck-lite group <name> T-NN…` tags existing tasks.
 
 Waves come from the plan's own `needs` column (`ck-lite waves` works them out), and two tasks
 that declare the same file never run together. Every task in a wave is built by a dispatched
@@ -116,7 +123,9 @@ three waves offering to stop. Stopping costs nothing — status lives in `tasks/
 `--waves` resumes from it in a fresh context. The four guarantees below hold in a parallel
 run exactly as they do in a single one.
 
-`--auto` (alone, or after task IDs) runs the waves unattended: every question takes its
+`--auto` runs unattended. Alone it takes **one feature** — the first with ready work
+(`ck-lite groups --next`) — and its report names the next one; `--waves --auto` runs the whole
+plan, and `--auto` after task IDs or `--group` runs that scope. Every question takes its
 recommended answer — all tasks kept, `CONTINUE` at checkpoints, the narrowest reading of an
 ambiguous criterion (recorded as a note), `KEEP` for anything left unmerged. QA and the
 integrity checks still gate every merge. The manual sign-off is deferred, not dropped: each
@@ -302,7 +311,8 @@ The plan only grows (a mistaken task aside), so no skill ever reads or edits it.
 | `ck-lite context T-05` | the architecture core, the area docs the task touches, the task |
 | `ck-lite set doing T-05` · `ck-lite done T-05` | a status move, row and meta line together, verified |
 | `ck-lite add` · `ck-lite next-id` · `ck-lite drop` | new tasks, table rows generated; a mistaken one removed |
-| `ck-lite waves --all` | dependency-ordered, file-disjoint waves |
+| `ck-lite waves --all` · `--group <name>` | dependency-ordered, file-disjoint waves |
+| `ck-lite groups` · `ck-lite group <name> T-NN…` | open work per feature, the next one to run · tag tasks with a feature |
 | `ck-lite check` · `ck-lite stats` | integrity, sizes, and the graduation notice |
 
 Writes are locked and verified before they land: a write that would corrupt the plan is

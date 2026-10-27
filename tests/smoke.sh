@@ -110,6 +110,44 @@ eq  "add: a refused cycle writes nothing" "0" "$(grep -c '^| T-' tasks/PLAN.md)"
 has "check: finds a dependency cycle" "on a dependency cycle" "$(ck-lite check)"
 has "waves: a cycle is unschedulable" "dependency cycle" "$(ck-lite waves --all)"
 
+# ---- feature groups -----------------------------------------------------------------
+echo "=== groups ==="
+fresh groups
+ck-lite init "Groups" >/dev/null
+gtask() {  # id title needs files group
+  printf '## %s %s\n\n%s · status: todo · size: S · needs: %s%s · files: %s\n\n### Acceptance\n- [ ] %s works\n\n' "$1" "$2" "$1" "$3" "${5:+ · group: $5}" "$4" "$2"
+}
+{ gtask T-01 Scaffold — src/a
+  gtask T-02 Login T-01 src/login auth
+  gtask T-03 Logout T-02 src/logout auth
+  gtask T-04 Export — src/exp
+  gtask T-05 "Export csv" T-04 src/csv
+  gtask T-06 Lonely — src/l; } | ck-lite add >/dev/null
+out="$(ck-lite groups)"
+has "groups: a tagged group lists its tasks and what it pulls" "auth · open 2 · ready 0 · doing 0 · T-02 T-03 · pulls T-01" "$out"
+has "groups: untagged tasks group by their needs links" "linked-T-04 · open 2 · ready 1 · doing 0 · T-04 T-05" "$out"
+has "groups: an unlinked task is its own group" "linked-T-06 · open 1" "$out"
+eq  "groups --next: a scope another group contains gives way to it" "auth" "$(ck-lite groups --next)"
+out="$(ck-lite waves --group auth)"
+has "waves --group: pulls the todo needs first" "Wave 1 T-01" "$out"
+lacks "waves --group: never schedules another feature" "T-04" "$out"
+eq  "waves --next --group: first wave of the group" "T-04" "$(ck-lite waves --next --group linked-T-04)"
+has "waves --group: an unknown group is refused" "no group named nope" "$(ck-lite waves --group nope 2>&1)"
+has "group: tags a task before files:" "needs: — · group: misc · files: src/l" "$(ck-lite group misc T-06 >/dev/null; grep '^T-06' tasks/PLAN.md)"
+has "group: retags in place" "needs: — · group: other · files: src/l" "$(ck-lite group other T-06 >/dev/null; grep '^T-06' tasks/PLAN.md)"
+lacks "group -: removes the tag" "group:" "$(ck-lite group - T-06 >/dev/null; grep '^T-06' tasks/PLAN.md)"
+has "group: refuses a name that is not a slug" "lowercase letters" "$(ck-lite group 'Big Auth' T-06 2>&1)"
+has "group: refuses the reserved linked- prefix" "reserved" "$(ck-lite group linked-x T-06 2>&1)"
+has "group: files and done keep the tag" "group: auth · files: src/login, src/x" "$(ck-lite files T-02 src/x >/dev/null; grep '^T-02' tasks/PLAN.md)"
+has "add: refuses a group that is not a slug" "group \"Bad\"" "$(gtask T-07 Bad — src/b Bad | ck-lite add 2>&1)"
+ck-lite set done T-01 >/dev/null; ck-lite set doing T-02 >/dev/null
+has "waves --group: a doing need leaves the rest unschedulable" "Unschedulable T-03 — needs T-02 (doing)" "$(ck-lite waves --group auth)"
+eq  "groups --next: skips a group with nothing ready" "linked-T-04" "$(ck-lite groups --next)"
+ck-lite set done T-02 T-03 T-04 T-05 T-06 >/dev/null
+eq  "groups --next: nothing open prints nothing" "" "$(ck-lite groups --next)"
+has "waves --group: a finished group is refused" "no group named auth" "$(ck-lite waves --group auth 2>&1)"
+has "check: a tagged plan is clean" "OK — 6 tasks" "$(ck-lite check)"
+
 # ---- corruption ---------------------------------------------------------------------
 echo "=== corruption ==="
 fresh bad; ck-lite init B >/dev/null; task T-01 A S — a | ck-lite add >/dev/null

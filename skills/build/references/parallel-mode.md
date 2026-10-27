@@ -1,6 +1,6 @@
 # PARALLEL MODE — the orchestrator
 
-Read once, when `build` gets two or more task IDs, `--waves`, `--auto`, or a batch answer from the
+Read once, when `build` gets two or more task IDs, `--group`, `--waves`, `--auto`, or a batch answer from the
 Phase 1 menu. From here on this file is the procedure; the skill's Phases 2–7 never run in
 this context.
 
@@ -19,7 +19,14 @@ away from `$TARGET`. Rules for who may create a worktree and what may outlive a 
 
 ## Auto mode — `--auto`
 
-`--auto` runs the whole scope to the end with **no `AskUserQuestion` at all**. Every question
+**Scope first.** `--auto` with no IDs, `--group` or `--waves` takes **one feature**, never the
+whole plan: `ck-lite groups --next` names it, and the run proceeds as `--group <name> --auto`,
+announced as `Auto: feature <name> — <its ck-lite groups line>`. It prints nothing → no feature
+has a ready task: report what `ck-lite open` says waits or is blocked, and stop. A long plan
+with several features in flight so builds only what the next feature needs; `--waves --auto`
+is the explicit ask for everything.
+
+`--auto` runs that scope to the end with **no `AskUserQuestion` at all**. Every question
 below is replaced by its default — the recommended answer — announced in one line
 (`Auto: <decision>`) where the question would have been:
 
@@ -93,8 +100,13 @@ no question ([background-tests.md](../../../references/background-tests.md)).
 
 ```bash
 ck-lite waves T-02 T-05 T-06     # explicit IDs
+ck-lite waves --group auth       # --group, or --auto alone (the group groups --next named)
 ck-lite waves --all              # --waves
 ```
+
+A `--group` run's scope is fixed here: the IDs this output schedules plus its `Unschedulable`
+ones become the run's explicit IDs, so P8 continues with `--next <those IDs>` and a task added
+to the group mid-run waits for the next run.
 
 It orders the scope by `needs`, moves a task sharing a `files:` path with one already placed to
 a later wave, caps each wave at 4, and lists every unschedulable task with its reason (not
@@ -364,7 +376,9 @@ One row per finished task, append-only, printed only at a checkpoint and at the 
 
 Checkpoint: `Waves 1–3 done · 5 done · 1 held · 4 remain (T-07 … T-10)`, then the question.
 Final report: the ledger, then
-`Merged into <$TARGET> · N kept · 0 stale worktrees · next: /ck-code-lite:ship`.
+`Merged into <$TARGET> · N kept · 0 stale worktrees · next: /ck-code-lite:ship`. A `--group`
+run adds `Next feature: <ck-lite groups --next> — /ck-code-lite:build --group <name> --auto`,
+or `no feature has ready work` when it prints nothing.
 
 ## Rules
 
@@ -384,6 +398,8 @@ Final report: the ledger, then
 - **Never merge a branch that failed QA or conflicted**, and never into a protected branch.
 - **Never skip the manual gate** — once per wave, on `$TARGET`. Under `--auto` it is deferred,
   never dropped: a pending note per task and the checklist in the final report.
+- **Never widen a `--group` or bare `--auto` run past its feature** — the scope is the one P2
+  fixed; the next feature is named in the report, never started.
 - **Never ask under `--auto`** — every question takes its row in the auto table; never record a
   test exception, never merge a held branch, never discard one with commits.
 - **Never leave a merged task's worktree standing**, and never remove one whose branch is not

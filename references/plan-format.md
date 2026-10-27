@@ -16,7 +16,7 @@ no skill ever `Read`s or `Edit`s `tasks/PLAN.md`.
 
 ## T-01 Count words in a file
 
-T-01 · status: todo · size: S · needs: — · files: src/count.js, test/count.test.js
+T-01 · status: todo · size: S · needs: — · group: count · files: src/count.js, test/count.test.js
 
 ### Acceptance
 - [ ] A file of three words reports 3
@@ -36,6 +36,7 @@ T-01 · status: todo · size: S · needs: — · files: src/count.js, test/count
 | Status | Exactly one of `todo`, `doing`, `done`, `blocked`. Nothing else parses. |
 | Size | Exactly `S` or `M`. Anything larger is split into two tasks before it is written. |
 | Needs | Comma-separated task IDs, or `—` (em dash) when there is no dependency. |
+| group | Optional. The feature the task belongs to — a lowercase slug (`auth`, `export-csv`), between `needs` and `files`. Absent on older plans; never `linked-…`. |
 | files | Comma-separated paths. Live field — `build` appends every file it touches. |
 
 ## The three-line rule
@@ -62,7 +63,9 @@ not project age** — a plan with 400 done tasks and 3 open ones costs what a 3-
 | one task's section | `ck-lite show T-05` | header to the line before the next task |
 | criteria for a wave | `ck-lite criteria T-02 T-05` | `== T-NN` then its acceptance boxes |
 | everything `build` needs for a task | `ck-lite context T-05` | `ARCHITECTURE.md`, the area docs its `files:` touch, the section |
-| dependency-ordered waves | `ck-lite waves T-02 T-05` · `--all` · `--next` | waves, unschedulable tasks with the reason |
+| dependency-ordered waves | `ck-lite waves T-02 T-05` · `--all` · `--group auth` · `--next` | waves, unschedulable tasks with the reason |
+| open work per feature | `ck-lite groups` · `--next` | one line per group with its counts and the tasks it pulls · the group to run next |
+| tag a feature | `ck-lite group auth T-05 T-06` (`-` removes it) | `T-05 T-06: group → auth` |
 | a status move | `ck-lite set doing T-05 T-06` | `T-05: todo → doing` |
 | record touched paths | `ck-lite files T-05 src/a.ts` | `files +N`, already-listed paths skipped |
 | a dated note | `ck-lite note T-05 "<text>"` | appended under `### Notes`, opened if absent |
@@ -103,6 +106,24 @@ treating it as done.
 `needs` and `files` carry a second job in a parallel run: `needs` orders the waves, and
 two tasks whose `files` lists share a path are never dispatched in the same wave. Neither
 field changes shape for it — an accurate `files` line simply buys more parallelism.
+
+## Groups
+
+A plan that keeps growing holds several features at once, and a run over all of it builds
+work nobody asked for yet. `group:` names the feature a task belongs to so a run can take one
+feature and nothing else.
+
+- **Tagged** — tasks sharing a `group:` value form that group. `start` tags every task it
+  writes, one group per feature; `ck-lite group` tags an older plan's tasks.
+- **Untagged** — open tasks with no `group:` are grouped by the `needs` links between them and
+  named after the lowest ID, `linked-T-04`. An old plan splits into features with no edit.
+- **Scope** — a group's todo tasks plus every todo task they `need`, transitively. A run on
+  `auth` builds the scaffold `auth` stands on, never a sibling feature.
+- **Next** — `ck-lite groups --next` takes the first group, by lowest open ID, whose scope has a
+  ready task — skipping one whose whole scope a larger group also builds.
+
+A group is a read-time view: no row, file or index records it, and the open-set invariant
+above still decides readiness.
 
 ## Appending
 

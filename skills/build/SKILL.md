@@ -1,7 +1,7 @@
 ---
 name: build
-description: Use when a task from tasks/PLAN.md needs implementing end-to-end with tests, when a task left in progress needs finishing, when several independent tasks can be built at once in isolated worktrees, or when the remaining plan should run in dependency-ordered waves. Argument is an optional task ID such as T-03 (with `--quick` or `--full`), several IDs, or `--waves`, optionally with `--auto` to run to the end without asking anything; with no argument, picks interactively.
-argument-hint: "[T-NN [--quick|--full] | T-NN T-NN … | --waves] [--auto]"
+description: Use when a task from tasks/PLAN.md needs implementing end-to-end with tests, when a task left in progress needs finishing, when several independent tasks can be built at once in isolated worktrees, or when the remaining plan should run in dependency-ordered waves. Argument is an optional task ID such as T-03 (with `--quick` or `--full`), several IDs, `--group <name>` (one feature) or `--waves`, optionally with `--auto` to run to the end unasked; with no argument, picks interactively.
+argument-hint: "[T-NN [--quick|--full] | T-NN T-NN … | --group <name> | --waves] [--auto]"
 effort: high
 allowed-tools: Bash(git status*) Bash(git diff*) Bash(git log*) Bash(git branch*) Bash(git rev-parse*) Bash(git checkout*) Bash(git switch*) Bash(git add*) Bash(git commit*) Bash(git merge*) Bash(git worktree*) Bash(cd*) Bash(ck-lite*) Bash(npm view*) Bash(pip index*) Bash(cargo search*) Bash(go list*) Bash(gem search*) Bash(npx -y ctx7*) WebSearch mcp__context7__resolve-library-id mcp__context7__query-docs mcp__plugin_context7_context7__resolve-library-id mcp__plugin_context7_context7__query-docs Skill
 ---
@@ -12,7 +12,7 @@ Implements a task from `tasks/PLAN.md`: failing test, minimum code, cleanup, iso
 manual sign-off, done. Four gates are non-negotiable and appear below in bold:
 **clarify**, **RED**, **QA**, **manual test**.
 
-**Two or more tasks** — two IDs, `--waves`, `--auto`, or a batch answer at Phase 1 — run through
+**Two or more tasks** — two IDs, `--group`, `--waves`, `--auto`, or a batch answer at Phase 1 — run through
 PARALLEL MODE: `Read` [parallel-mode.md](references/parallel-mode.md) and follow it in place of
 Phases 2–7. Every gate above still applies there; under `--auto` the manual test is deferred
 to a checklist in the final report, never dropped.
@@ -31,15 +31,18 @@ through `ck-lite-qa` ([tdd-cycle.md](../../references/tdd-cycle.md#running-tests
 
 ## INPUT
 
-`$ARGUMENTS` is empty, one task ID, several task IDs, or `--waves` — any of the last three
-optionally with `--auto`.
+`$ARGUMENTS` is empty, one task ID, several task IDs, `--group <name>`, or `--waves` — any of
+the last four optionally with `--auto`.
 
 - **One `T-NN`** — Phases 1–7.
-- **Two or more IDs, or `--waves`** — PARALLEL MODE. `--waves` always orchestrates, even when
-  one task remains: that wave is dispatched solo, never built inline here.
+- **Two or more IDs, `--group`, or `--waves`** — PARALLEL MODE. `--group <name>` scopes the run
+  to one feature: its tasks and the unfinished tasks they need, nothing else
+  ([groups](../../references/plan-format.md#groups)). `--waves` is the whole plan. Both always
+  orchestrate, even when one task remains: that wave is dispatched solo, never built inline here.
 - **`--auto`** — PARALLEL MODE with no question until the run ends: every question takes its
   recommended default ([auto mode](references/parallel-mode.md#auto-mode----auto)). Alone it
-  means `--waves --auto`; with one ID it orchestrates that task solo, like `--waves`.
+  runs **one feature** — the group `ck-lite groups --next` names — never the whole plan; that is
+  `--waves --auto`. With one ID it orchestrates that task solo, like `--waves`.
 - **Empty** — the Phase 1 menu.
 - **`--quick` / `--full`** (one `T-NN` only) — `--quick` asks for the [QUICK ROUTE](#quick-route),
   still subject to its eligibility check; `--full` never takes it. Without either, Phase 2.1
@@ -83,9 +86,11 @@ named lines to fix by hand in `tasks/PLAN.md` (it is plain Markdown), then re-ru
     `doing` tasks first (resume), then `READY` ones; any that do not fit are named in the
     question text with "pass the ID to pick it"
   - **no `doing`, one `READY`** — announce it and continue, no prompt
-  - **no `doing`, several `READY`** — one `AskUserQuestion` listing each with size and title,
-    plus **build all N ready tasks in parallel** and **build the whole plan in waves**. Either
-    batch answer enters PARALLEL MODE.
+  - **no `doing`, several `READY`** — run `ck-lite groups` too, then one `AskUserQuestion`
+    listing each ready task with size and title, plus **build feature `<groups --next>` in
+    waves** (its open count and what it pulls) and **build the whole plan in waves**; trim the
+    task options to fit 4. Either batch answer enters PARALLEL MODE (`--group <name>` or
+    `--waves`).
   - **nothing `doing` or `READY`** — report each `todo` task with what it waits on, and each
     `blocked` one with `ck-lite set todo T-NN` as the way to unpark it.
 

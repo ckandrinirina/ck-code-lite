@@ -203,6 +203,12 @@ Each task carries:
 - `### Acceptance` — checkboxes that are observably true or false. Every criterion must
   be something a test can assert.
 - `### Tasks` — the implementation steps, first of which is always the failing tests
+- `group:` — the feature it belongs to, a lowercase slug (`auth`, `export-csv`). One group per
+  feature, so `/ck-code-lite:build --group <name>` and a bare `--auto` build that feature and
+  nothing else ([groups](../../references/plan-format.md#groups)). EXTEND first runs
+  `ck-lite groups`: a task that grows an existing feature takes that feature's slug, a new
+  feature gets a new one. Existing tasks are never retagged unasked — `ck-lite group <name>
+  T-NN…` does it when the user asks.
 - `files:` — the paths expected to change, as a starting estimate
 
 Order tasks so dependencies flow forward, and record them in `needs`. A task that scaffolds
@@ -231,7 +237,7 @@ ck-lite next-id                   # first free ID: T-01 on a new plan
 ck-lite add <<'EOF'
 ## T-01 Count words in a file
 
-T-01 · status: todo · size: S · needs: — · files: src/count.js, test/count.test.js
+T-01 · status: todo · size: S · needs: — · group: count · files: src/count.js, test/count.test.js
 
 ### Acceptance
 - [ ] A file of three words reports 3
@@ -259,6 +265,7 @@ Print:
 **Mode:** NEW | ADOPT | EXTEND
 **Architecture:** docs/ARCHITECTURE.md — created | updated (<sections touched>)
 **Plan:** tasks/PLAN.md — <n> tasks created | <n> tasks appended (T-04 … T-07)
+**Groups:** <slug> (<n> tasks), … — build one with /ck-code-lite:build --group <slug> --auto
 **Commands:** test: <cmd> · build: <cmd> · lint: <cmd>
 **Stack:** <n> versions verified (<name> <version>, …) · <n> refreshed · <n> idioms unverified
 

@@ -53,7 +53,7 @@ export function planWriteReason(path: string): string | undefined {
   return (
     "ck-code-lite: tasks/PLAN.md is written only through `ck-lite` (references/plan-format.md). " +
     "Use `ck-lite set <status> <T-NN>`, `ck-lite done`, `ck-lite files`, `ck-lite note`, " +
-    "`ck-lite add` (new tasks on stdin) or `ck-lite drop`. " +
+    "`ck-lite add` (new tasks on stdin), `ck-lite group` or `ck-lite drop`. " +
     "A CORRUPT task that `ck-lite check` names is repaired by the user in their editor — " +
     "ask them to fix the named lines."
   );
