@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.15.1] — 2026-10-27
+
+### Changed
+- **build**: `--group` with no name now builds the next feature that has ready work (the same one a bare `--auto` picks) and still asks its usual questions, so you can launch the next feature interactively without looking up its name. `--group --auto` is the same as a bare `--auto`. Before this release, `--group` with no name was undefined.
+- **ck-lite**: `waves --group` with no name detects the group (`Group <name> (detected)`, or `no group has ready work`). `--next` prints only the IDs, as before.
+
 ## [1.15.0] — 2026-10-27
 
 ### Added
