@@ -175,7 +175,8 @@ NL='
 US="$(printf '\037')"   # field separator: a tab in IFS would merge empty fields
 
 # Deletes this runner's files in $TMP older than KEEP_DAYS, at most once a day: logs named
-# $1<number>-…, finished run directories (those holding an rc file) and stamps under $2…
+# $1<number>-…, and the stamps and run records under $2…. find deletes them itself and never
+# follows a symlink, so a planted link in a shared /tmp can never steer a deletion.
 qa_prune() {
   local prefix="$1" mark d; shift
   mark="$TMP/${prefix}qa-pruned"
@@ -185,9 +186,7 @@ qa_prune() {
   find "$TMP" -maxdepth 1 -type f -name "${prefix}qa-index.*" -mmin +1440 -exec rm -f {} + 2>/dev/null
   for d in "$@"; do
     [ -d "$d" ] || continue
-    find "$d" -mindepth 2 -maxdepth 3 -type f -name rc -mtime +"$KEEP_DAYS" 2>/dev/null \
-      | while IFS= read -r f; do rm -rf "$(dirname -- "$f")"; done
-    find "$d" -mindepth 1 -maxdepth 1 -type f -mtime +"$KEEP_DAYS" -exec rm -f {} + 2>/dev/null
+    find "$d" -mindepth 1 -maxdepth 3 -type f -mtime +"$KEEP_DAYS" -exec rm -f {} + 2>/dev/null
     find "$d" -mindepth 1 -type d -empty -delete 2>/dev/null
   done
   return 0
