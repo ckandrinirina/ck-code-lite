@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.1] — 2026-10-28
+
+### Fixed
+- **ck-lite-qa**: log pruning lets `find` delete old files itself and then the empty run directories, instead of piping paths to `rm -rf` — a symlink planted in a shared `/tmp` can no longer steer a deletion.
+
 ## [1.16.0] — 2026-10-28
 
 ### Added
