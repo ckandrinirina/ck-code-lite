@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.0] — 2026-10-28
+
+### Added
+- **ck-lite-qa**: a run leaves nothing that grows — its logs and run records age out after `CK_QA_KEEP_DAYS` (default 7), and the Docker containers its test commands created in this checkout are removed once stopped, with the volumes only they used; a still-running one is listed in a `NOTE`. `CK_QA_DOCKER=0` turns the Docker part off. New `ck-lite-qa docker-free <worktree>`. The block is byte-identical with ck-code's `ck-qa`.
+
+### Changed
+- **ck-lite-reclaim** and **ck-lite retire**: also remove the worktree's Docker containers and its own compose project's volumes.
+
 ## [1.15.1] — 2026-10-27
 
 ### Changed
