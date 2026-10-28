@@ -169,6 +169,12 @@ CMake or cargo build gets the slot's share of the cores (unless you set
 (`CK_QA_NICE`), and an installed [ccache](https://ccache.dev) serves every worktree's cold
 C/C++ build from one cache — `brew install ccache` to turn that on.
 
+Tests leave no disk behind. `ck-lite-qa` prunes its own logs after 7 days (`CK_QA_KEEP_DAYS`),
+and after each run removes the Docker containers its test commands created in this checkout once
+they have stopped, with the volumes only they used (`CK_QA_DOCKER=0` turns that off). Retiring
+or reclaiming a worktree also removes its containers and its own compose volumes. For a
+machine-wide cleanup, use ck-tools' `/ck-tools:disk-clean`.
+
 Two slow suites run less. `ctest` gets `-j` (the run's share of the cores) once a parallel run
 has passed like a serial one — 82 s → 10 s on a 590-test suite. An end-to-end suite
 (`test-e2e`) never runs whole inside a task: each task runs only its own specs, and `ship`
