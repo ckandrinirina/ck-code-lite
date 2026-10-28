@@ -643,6 +643,8 @@ cmd_retire() {
   # merged branch. Past this check only ignored files remain — build output — and --force
   # discards exactly those (and lets a worktree holding a submodule go).
   [ -z "$(git -C "$path" status --porcelain 2>/dev/null)" ] || { echo "UNCOMMITTED — $2 has uncommitted changes at $path; kept"; return 1; }
+  # its test containers and their volumes outlive the directory otherwise
+  "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)/ck-lite-qa" docker-free "$path" >/dev/null 2>&1
   git worktree remove --force "$path" || { echo "remove failed — $2 kept at $path"; return 1; }
   git branch -d "$2" >/dev/null || { echo "worktree removed, branch $2 kept"; return 1; }
   echo "retired $2 ($path)"

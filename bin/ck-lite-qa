@@ -7,6 +7,7 @@
 #   ck-lite-qa run <id> [--parallel] [--reuse] [--rerun] <label>=<command> [<label>=<command>…]
 #   ck-lite-qa wait <id>
 #   ck-lite-qa since <id> <label>
+#   ck-lite-qa docker-free <worktree-path>…
 #
 # state  prints the code-state id: the git tree of the working copy, untracked
 #        (non-ignored) files included, so an uncommitted change is a different state.
@@ -31,6 +32,12 @@
 #        or RUNNING again. Once it has ended, wait prints that result again.
 # since  prints the snapshot commit of <label>'s last run for <id> in this directory, the
 #        ref a runner's --changed flag narrows a re-run against.
+# docker-free  removes every Docker container whose compose working dir is inside each
+#        linked worktree <path>, running or not, with its own project's volumes — run
+#        before a worktree is parked or removed. Refuses the main checkout.
+# A run prunes this runner's logs and records older than CK_QA_KEEP_DAYS (default 7),
+#        and removes the stopped Docker containers and unused volumes its commands
+#        created here (CK_QA_DOCKER=0 turns that off).
 
 set -uo pipefail
 
@@ -150,6 +157,180 @@ slot_env() {
 }
 # <<< ck-cpu-slots
 
+# >>> ck-qa-hygiene — byte-identical in ck-code's ck-qa.sh and ck-code-lite's ck-lite-qa
+# (plugin-doctor compares the two). A QA run leaves nothing behind that keeps growing.
+# Its own logs, stamps and run records under $TMP age out after CK_QA_KEEP_DAYS (default 7).
+# Docker is the larger leak: test commands start containers (compose, testcontainers,
+# docker run) that nothing removes, every worktree gets its own compose project and volumes,
+# and the Docker VM's disk never shrinks by itself. Only what is provably this checkout's is
+# removed: a container whose compose working dir is inside it, or a testcontainers one,
+# created during the run and stopped by its end, with the volumes it created that nothing
+# uses any more, plus the stopped containers of a removed worktree. A container still running
+# is only reported. CK_QA_DOCKER=0 turns the Docker part off.
+QA_TAG="$(basename -- "$0" .sh)"
+KEEP_DAYS="${CK_QA_KEEP_DAYS:-7}"
+case "$KEEP_DAYS" in ''|*[!0-9]*|0) KEEP_DAYS=7 ;; esac
+NL='
+'
+US="$(printf '\037')"   # field separator: a tab in IFS would merge empty fields
+
+# Deletes this runner's files in $TMP older than KEEP_DAYS, at most once a day: logs named
+# $1<number>-…, finished run directories (those holding an rc file) and stamps under $2…
+qa_prune() {
+  local prefix="$1" mark d; shift
+  mark="$TMP/${prefix}qa-pruned"
+  [ -z "$(find "$mark" -maxdepth 0 -mmin -1440 2>/dev/null)" ] || return 0
+  : >"$mark" 2>/dev/null || return 0
+  find "$TMP" -maxdepth 1 -type f -name "${prefix}[0-9]*.log*" -mtime +"$KEEP_DAYS" -exec rm -f {} + 2>/dev/null
+  find "$TMP" -maxdepth 1 -type f -name "${prefix}qa-index.*" -mmin +1440 -exec rm -f {} + 2>/dev/null
+  for d in "$@"; do
+    [ -d "$d" ] || continue
+    find "$d" -mindepth 2 -maxdepth 3 -type f -name rc -mtime +"$KEEP_DAYS" 2>/dev/null \
+      | while IFS= read -r f; do rm -rf "$(dirname -- "$f")"; done
+    find "$d" -mindepth 1 -maxdepth 1 -type f -mtime +"$KEEP_DAYS" -exec rm -f {} + 2>/dev/null
+    find "$d" -mindepth 1 -type d -empty -delete 2>/dev/null
+  done
+  return 0
+}
+
+DK_ON=0; DK_C0=""; DK_V0=""
+
+dk_up() {  # 0 when a Docker daemon answers within 5 s, so a stopped VM never stalls a run
+  local p i=0
+  { [ "${CK_QA_DOCKER:-1}" != 0 ] && command -v docker >/dev/null 2>&1; } || return 1
+  docker version --format '{{.Server.Version}}' >/dev/null 2>&1 &
+  p=$!
+  while kill -0 "$p" 2>/dev/null; do
+    [ "$i" -lt 25 ] || { kill "$p" 2>/dev/null; return 1; }
+    sleep 0.2; i=$((i + 1))
+  done
+  wait "$p"
+}
+
+# One row per container, fields separated by $US: id, state, compose working dir, compose project,
+# testcontainers flag, name.
+dk_ps() {
+  docker ps -a --no-trunc --format "{{.ID}}$US{{.State}}$US{{.Label \"com.docker.compose.project.working_dir\"}}$US{{.Label \"com.docker.compose.project\"}}$US{{.Label \"org.testcontainers\"}}$US{{.Names}}" 2>/dev/null
+}
+
+under() { case "$1/" in "$2"/*) return 0 ;; esac; return 1; }   # path $1 is $2 or inside it
+
+dk_mark() {  # before the commands: what already exists is never touched
+  dk_up || return 0
+  DK_ON=1
+  DK_C0="$(dk_ps | cut -d "$US" -f1)"
+  DK_V0="$(docker volume ls -q 2>/dev/null)"
+}
+
+# The compose project name a worktree directory named $1 gets by default — the only name
+# provably its own: a compose file in a subfolder is named after that folder, and two
+# checkouts sharing that name share its volumes.
+own_proj() { printf '%s' "$1" | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9_-'; }
+
+# Removes containers $1 (space-separated ids, with their anonymous volumes), then each
+# volume no container uses that is either of a project in $2 (" p1 p2 ", any age) or listed
+# in $4 (newline-separated, created during the run) and anonymous or of a project in $3.
+# Prints "<containers> <volumes>" removed.
+dk_remove() {
+  local ids="$1" projs="$2" fprojs="$3" fresh="$4" nc=0 nv=0 v pj ok
+  # shellcheck disable=SC2086  # $ids is a word list of container ids
+  [ -z "${ids# }" ] || nc="$(docker rm -f -v $ids 2>/dev/null | grep -c .)"
+  while IFS="$US" read -r v pj; do
+    [ -n "$v" ] || continue
+    ok=0
+    case "$projs" in *" $pj "*) [ -z "$pj" ] || ok=1 ;; esac
+    case "$NL$fresh$NL" in *"$NL$v$NL"*)
+      if [ -n "$pj" ]; then case "$fprojs" in *" $pj "*) ok=1 ;; esac
+      else case "$v" in *[!0-9a-f]*) ;; *) [ "${#v}" -ne 64 ] || ok=1 ;; esac; fi ;;
+    esac
+    [ "$ok" = 1 ] && docker volume rm "$v" >/dev/null 2>&1 && nv=$((nv + 1))
+  done <<EOF
+$(docker volume ls -f dangling=true --format "{{.Name}}$US{{.Label \"com.docker.compose.project\"}}" 2>/dev/null)
+EOF
+  echo "$nc $nv"
+}
+
+# After the commands, for checkout $1: removes what the run left behind and prints one line
+# when it removed or found anything.
+dk_sweep() {
+  local top="$1" wts id st wd pj tc nm own c ids="" projs=" " fprojs=" " run="" fresh="" v r
+  [ "$DK_ON" = 1 ] && dk_up || return 0
+  wts="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" \
+    && wts="$(dirname -- "$wts")/.claude/worktrees"
+  while IFS="$US" read -r id st wd pj tc nm; do
+    [ -n "$id" ] || continue
+    own=""
+    case "$NL$DK_C0$NL" in *"$NL$id$NL"*) ;; *)
+      # a worktree nested in this checkout is its own checkout, never this run's
+      { [ -n "$wd" ] && under "$wd" "$top" && { [ -z "$wts" ] || under "$top" "$wts" || ! under "$wd" "$wts"; }; } \
+        || [ "$tc" = true ] && own=fresh ;;
+    esac
+    # a removed worktree's container: its directory is gone, nothing can use it again
+    if [ -n "$wd" ] && [ -n "$wts" ] && under "$wd" "$wts"; then
+      c="${wd#"$wts"/}"; c="${c%%/*}"; [ -d "$wts/$c" ] || own=gone
+    fi
+    [ -n "$own" ] || continue
+    case "$st" in
+      running|restarting|paused) run="$run $nm"; continue ;;
+    esac
+    ids="$ids $id"
+    [ -n "$pj" ] || continue
+    if [ "$own" = gone ]; then [ "$pj" != "$(own_proj "$c")" ] || projs="$projs$pj "
+    else fprojs="$fprojs$pj "; fi
+  done <<EOF
+$(dk_ps)
+EOF
+  while IFS= read -r v; do
+    case "$NL$DK_V0$NL" in *"$NL$v$NL"*) ;; *) [ -z "$v" ] || fresh="$fresh$v$NL" ;; esac
+  done <<EOF
+$(docker volume ls -q 2>/dev/null)
+EOF
+  r="$(dk_remove "$ids" "$projs" "$fprojs" "$fresh")"
+  [ "$r" = "0 0" ] || echo "$QA_TAG: Docker — removed ${r% *} stopped container(s) and ${r#* } volume(s) the test commands left behind"
+  [ -z "$run" ] || echo "$QA_TAG: NOTE — still running from the test commands:$run (docker compose down -v where they started frees them and their volumes)"
+  return 0
+}
+
+# Every container whose compose working dir is linked worktree $1 or inside it — running
+# or not — and the volumes of its own compose project: the worktree is being parked or
+# removed. Refuses the main checkout. Prints one line when it removed anything.
+dk_free() {
+  local root gd cd id st wd pj tc nm ids="" projs=" " mine r
+  root="$(CDPATH='' cd -- "$1" 2>/dev/null && pwd -P)" || { echo "$QA_TAG: $1 — no such directory"; return 1; }
+  gd="$(git -C "$root" rev-parse --absolute-git-dir 2>/dev/null)"
+  cd="$(git -C "$root" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+  if [ -z "$gd" ] || [ "$(CDPATH='' cd -- "$gd" && pwd -P)" = "$(CDPATH='' cd -- "$cd" && pwd -P)" ]; then
+    echo "$QA_TAG: $1 — not a linked worktree, refused (the main checkout's containers are the user's)"; return 1
+  fi
+  dk_up || return 0
+  mine="$(own_proj "$(basename -- "$root")")"
+  while IFS="$US" read -r id st wd pj tc nm; do
+    { [ -n "$id" ] && [ -n "$wd" ] && under "$wd" "$root"; } || continue
+    ids="$ids $id"; [ "$pj" != "$mine" ] || projs="$projs$pj "
+  done <<EOF
+$(dk_ps)
+EOF
+  [ -n "$ids" ] || return 0
+  r="$(dk_remove "$ids" "$projs" " " "")"
+  echo "$QA_TAG: Docker — removed ${r% *} container(s) and ${r#* } volume(s) of $1"
+}
+# Prints "<name> <state> <working dir>" for each container of this repository whose
+# worktree directory under .claude/worktrees/ is gone — read-only, for the doctor.
+dk_orphans() {
+  local wts id st wd pj tc nm c
+  dk_up || return 0
+  wts="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 0
+  wts="$(dirname -- "$wts")/.claude/worktrees"
+  while IFS="$US" read -r id st wd pj tc nm; do
+    { [ -n "$wd" ] && under "$wd" "$wts"; } || continue
+    c="${wd#"$wts"/}"; c="${c%%/*}"
+    [ -d "$wts/$c" ] || printf '%s %s %s\n' "$nm" "$st" "$wd"
+  done <<EOF
+$(dk_ps)
+EOF
+}
+# <<< ck-qa-hygiene
+
 # Waits on the run for $1 for up to CK_LITE_QA_WAIT seconds, then prints its result and exits
 # with its code, or prints RUNNING and exits 3 while it is still going.
 await_run() {
@@ -179,8 +360,11 @@ case "$CMD" in
   since) [ -n "${3:-}" ] || die "since needs an id and a label"
          last_field "$2" "$3" 1 || die "no recorded run of $3 for $2 in this directory — run the full command"
          exit 0 ;;
+  docker-free) shift; [ "$#" -gt 0 ] || die "docker-free needs a worktree path"
+               rc=0; for p in "$@"; do dk_free "$p" || rc=1; done; exit "$rc" ;;
+  docker-orphans) dk_orphans; exit 0 ;;
   run|__worker) ;;
-  -h|--help|"") sed -n '4,35p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -h|--help|"") sed -n '4,41p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) die "unknown command: $CMD (state|run|wait|since)" ;;
 esac
 shift
@@ -204,6 +388,7 @@ while [ "$#" -gt 0 ]; do
 done
 [ -n "$LABELS" ] || die "no <label>=<command> given"
 mkdir -p "$STAMPS" "$RUNS" || die "cannot create $STAMPS"
+[ "$CMD" != run ] || qa_prune ck-lite- "$STAMPS" "$TMP/ck-lite-qa-run"
 
 cmd_of() { eval "printf '%s' \"\$CMD_$1\""; }
 
@@ -265,6 +450,7 @@ done
 if [ -n "$TORUN" ]; then
   trap slot_free EXIT
   slot_take "${D:+$D/queued}"
+  dk_mark
 fi
 
 if [ "$PARALLEL" = 1 ]; then
@@ -279,6 +465,7 @@ else
   done
 fi
 
+DK_OUT="$(dk_sweep "$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)")"
 S1="$(state)"
 [ "$S0" = "$S1" ] || echo "ck-lite-qa: WARN — a command changed the working tree (formatter, snapshot update?); nothing stamped, fix that before trusting a PASS"
 
@@ -297,6 +484,7 @@ for l in $TORUN; do
   fi
 done
 
+[ -z "$DK_OUT" ] || echo "$DK_OUT"
 [ "$SLOT_WAITED" -lt 1 ] || echo "ck-lite-qa: waited ${SLOT_WAITED}s for a CPU slot ($CPU_SLOTS on this machine, CK_QA_SLOTS)"
 for r in $RESULT; do
   l="${r%%:*}"; v="${r#*:}"

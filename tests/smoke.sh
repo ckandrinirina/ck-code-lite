@@ -225,6 +225,16 @@ has "qa run: overall FAIL line" "ck-lite-qa: FAIL" "$out"
 lacks "qa: never clashes with ck-code's stamps" "ck-qa:" "$out"
 has "qa run: a hyphenated label is refused" "no hyphen" "$(QA run T-01 test-one='true')"
 
+# ---- ck-lite-qa hygiene ------------------------------------------------------------------
+echo "=== ck-lite-qa hygiene ==="
+cd "$WORK/qa"
+touch -t 202001010000 "$QT/ck-lite-1-old-x.log"; touch "$QT/ck-macopt-other.log"; rm -f "$QT/ck-lite-qa-pruned"
+QA run T-09 t='true' >/dev/null
+eq "qa run: a log older than CK_QA_KEEP_DAYS is pruned" "no" "$([ -e "$QT/ck-lite-1-old-x.log" ] && echo yes || echo no)"
+eq "qa run: another tool's ck-* file is never pruned" "yes" "$([ -e "$QT/ck-macopt-other.log" ] && echo yes || echo no)"
+has "qa docker-free: refuses the main checkout" "not a linked worktree, refused" "$(QA docker-free "$WORK/qa")"
+lacks "qa run: CK_QA_DOCKER=0 prints no Docker line" "Docker" "$(CK_QA_DOCKER=0 QA run T-10 t='true')"
+
 # ---- hardening (1.0.1 audit regressions) ------------------------------------------------
 echo "=== hardening ==="
 fresh hard; ck-lite init H >/dev/null; task T-01 A S — a | ck-lite add >/dev/null

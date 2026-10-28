@@ -293,7 +293,7 @@ commit count:
 
 - `MERGE NOW` — re-run QA on it, then P7's dry-run and merge; a conflict comes back here
 - `KEEP` — run `ck-lite-reclaim <path>…` first (drops rebuildable output such as `target/`,
-  `node_modules/`; keeps source and commits) and put its `freed` line in the report
+  `node_modules/`, and the worktree's Docker containers; keeps source and commits) and put its `freed` line in the report
 - `DISCARD` — only for a 🚫 blocked branch whose diff is empty
 
 A run may end with a worktree standing only through an explicit `KEEP`. Then print the
@@ -362,7 +362,7 @@ Every git step with a safety rule is a `ck-lite` call, so the rule is code rathe
 | `ck-lite base "$ROOT" "$TARGET"`      | exit 1 and the real location on drift                                                                                                                                                          |
 
 A kept worktree is printed in the report with its removal command:
-`git worktree remove --force <path> && git branch -D <branch>`.
+`ck-lite-reclaim <path>; git worktree remove --force <path> && git branch -D <branch>`.
 
 ## Ledger and report
 
