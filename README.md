@@ -16,6 +16,7 @@ scripted, so a run's cost tracks the work in front of it, not the age of the pro
 | `/ck-code-lite:design` | A project with a UI should be designed with Claude Design first — or you have a claude.ai/design URL to link — or you want an existing app replicated (`replicate <source>`) | `docs/design-brief.md`, `docs/design-system/`, `docs/replica/` |
 | `/ck-code-lite:build` | Implementing one task end to end — or several at once, in waves | Code, tests, tasks marked `done` |
 | `/ck-code-lite:ship` | Committing finished work | A conventional commit, an area test check before the push, and a PR |
+| `/ck-code-lite:report` | ck-code-lite itself did something wrong — or its hook spotted a crash in one of its scripts | A scrubbed GitHub issue on this repo (or a comment on the existing one), filed after your one yes |
 | `/ck-code-lite:release` | Publishing a new version: bump, tag, build, release | A merged release PR, a tag, the project's build started and checked |
 
 ```
@@ -174,6 +175,21 @@ and after each run removes the Docker containers its test commands created in th
 they have stopped, with the volumes only they used (`CK_QA_DOCKER=0` turns that off). Retiring
 or reclaiming a worktree also removes its containers and its own compose volumes. For a
 machine-wide cleanup, use ck-tools' `/ck-tools:disk-clean`.
+
+Wave runs clean up after themselves. `ck-lite retire` removes a merged worktree even while
+Claude Code's session-long `claude agent` lock is on it, lifting that lock only when its
+session is gone or is this one. Agent worktrees earlier runs left behind, merged and clean, are
+offered for retirement in one question (`ck-lite sweep`; retired by default under `--auto`);
+unmerged, dirty or hand-made ones are only reported. At the end of a run `ck-lite-qa reap` stops
+any wait loop an agent wrote by hand. Fresh worktrees fill their submodules from the main
+checkout (`ck-lite submodules`) instead of cloning them again.
+
+### Report a bug in ck-code-lite
+
+When one of ck-code-lite's own scripts crashes, a hook spots it and Claude offers to report
+it; `/ck-code-lite:report` does the same for anything you notice. Home paths, project names,
+emails and tokens are scrubbed, an existing report is found first, and nothing is filed
+without your yes. Without `gh` signed in you get a saved draft and a prefilled issue link.
 
 Two slow suites run less. `ctest` gets `-j` (the run's share of the cores) once a parallel run
 has passed like a serial one — 82 s → 10 s on a 590-test suite. An end-to-end suite
