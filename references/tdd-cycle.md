@@ -19,7 +19,11 @@ printed path for a `Read` when 40 lines are not enough. It stamps every pass wit
 code state, which is what lets the QA pass that follows skip a run on code that has not
 changed since. Exit 3 prints `RUNNING`: the suite is still going, so continue it with the
 `cd <dir> && ck-lite-qa wait T-05` line it prints (runs are per checkout) and never start it a
-second time.
+second time. Give every `ck-lite-qa` call a 600000 ms Bash timeout. **`ck-lite-qa wait` is the
+only way to wait**, in the foreground — it returns on its own within 9 minutes. Never write a
+wait loop (`until`/`while … sleep`, a `pgrep`, polling a task's output file): it outlives you,
+and some never end. A call the harness moved to the background is never polled either — run
+`ck-lite-qa wait T-05` in the foreground, which attaches to the same run.
 
 Every run on the machine shares one CPU queue (`CK_QA_SLOTS`, default cores ÷ 8, at least 1):
 worktrees building at once take turns instead of each taking every core, a CMake or cargo
@@ -83,7 +87,9 @@ test file — same framework, naming and layout. Add the obvious edge case per c
 input, missing resource, boundary value) where one exists. Assert observable behaviour, never
 implementation detail: a test that mirrors the code line for line passes a wrong one. An e2e
 test never opens a window in front of the user: follow [background-tests.md](background-tests.md)
-for its launch.
+for its launch. Every temp file, directory, settings file, port or database a test creates gets
+a per-run unique name (`mkdtemp`, the framework's tmp fixture, a random port) — the same suite
+runs at once in sibling worktrees, and a fixed name makes them collide at random.
 
 **Confirm they fail**, then report one line:
 

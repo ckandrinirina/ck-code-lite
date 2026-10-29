@@ -25,6 +25,8 @@
 #   ck-lite worktrees <target>         linked worktrees: branch, path, merged|unmerged, commits ahead
 #   ck-lite try-merge <branch>         merge dry-run onto HEAD, always aborted: CLEAN or CONFLICT (exit 1)
 #   ck-lite retire <target> <branch>   remove a fully merged branch's worktree, then the branch
+#   ck-lite sweep <target> [--list]    retire earlier runs' merged, clean agent worktrees (--list: only name them)
+#   ck-lite submodules <root>          fill a fresh worktree's submodules from <root>'s checkouts
 #
 # Reads the whole plan in a pipe and prints only what was asked, so a caller's cost is the
 # same at 5 tasks or 500. Writes hold a lock, build the new plan in a temp file, and replace
@@ -633,6 +635,80 @@ cmd_try_merge() {
   echo "$r $1"; [ "$r" = CLEAN ]
 }
 
+# its test containers and their volumes outlive the directory otherwise
+wt_free() { "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)/ck-lite-qa" docker-free "$1"; }
+
+# >>> ck-wt — keep this block byte-identical in ck-code's ck-worktree.sh and ck-code-lite's ck-lite
+# Claude Code locks each agent worktree "claude agent agent-<id> (pid <N>)" for the life of the
+# session process N, not of the agent: a merged worktree stays locked until the session exits.
+# wt_unlock lifts that lock only when N is gone or is this very session (an ancestor of this
+# shell, whose agents the caller has collected). Any other lock, or one held by another live
+# session, is kept and printed (exit 1). The caller defines wt_free <path> (its docker-free).
+wt_lock_reason() {  # path → prints the lock reason; exit 1 when the worktree is not locked
+  git worktree list --porcelain | awk -v w="$1" '
+    /^worktree /{ c = (substr($0, 10) == w) }
+    c && /^locked/{ r = $0; sub(/^locked ?/, "", r); print r; f = 1 }
+    END { exit !f }'
+}
+wt_ancestor() {  # pid → exit 0 when it is this shell or one of its ancestors
+  local p=$$
+  while [ -n "$p" ] && [ "$p" -gt 1 ] 2>/dev/null; do
+    [ "$p" = "$1" ] && return 0
+    p="$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')"
+  done
+  return 1
+}
+wt_unlock() {  # path → unlocks a lifted claude-agent lock; exit 1 with the reason when kept
+  local r pid
+  r="$(wt_lock_reason "$1")" || return 0
+  case "$r" in "claude agent "*"(pid "*")") ;; *) echo "locked (${r:-no reason})"; return 1 ;; esac
+  pid="${r##*(pid }"; pid="${pid%)}"
+  case "$pid" in ""|*[!0-9]*) echo "locked ($r)"; return 1 ;; esac
+  if kill -0 "$pid" 2>/dev/null && ! wt_ancestor "$pid"; then
+    echo "locked by another live Claude Code session (pid $pid)"; return 1
+  fi
+  git worktree unlock "$1" >/dev/null 2>&1 || { echo "unlock failed"; return 1; }
+}
+# wt_sweep <target> <0|1> — agent worktrees (under .claude/worktrees/) left by earlier runs.
+# One whose branch is 0 commits ahead of <target>, with a clean tree and untouched for 15 min,
+# holds nothing that can be lost: 1 lists it as stale, 0 retires it (lock lifted as above,
+# wt_free, remove, git branch -d). Every other worktree is printed as kept with its reason and
+# never touched — a hand-made worktree outside .claude/worktrees/ is not even listed.
+wt_sweep() {
+  local wts w b g st ahead why n=0 k=0
+  wts="$(git rev-parse --path-format=absolute --git-common-dir)" || return 2
+  wts="$(dirname -- "$wts")/.claude/worktrees"
+  git worktree prune
+  while IFS="$(printf '\t')" read -r w b; do
+    case "$w" in "$wts"/*) ;; *) continue ;; esac
+    why=""
+    # HEAD and its reflog move on every checkout and commit; the index is not read, since a
+    # status (ours below included) can rewrite it
+    g="$(git -C "$w" rev-parse --absolute-git-dir 2>/dev/null)"
+    [ -z "$(find "$g/HEAD" "$g/logs/HEAD" -mmin -15 2>/dev/null)" ] || why="used in the last 15 min"
+    ahead="$(git rev-list --count "$1..$b" 2>/dev/null || echo "?")"
+    [ -n "$why" ] || [ "$ahead" = 0 ] || why="unmerged ($ahead ahead of $1)"
+    # a status that fails prints nothing too — that is never read as clean
+    if [ -z "$why" ]; then
+      st="$(git -C "$w" --no-optional-locks status --porcelain 2>/dev/null)" || why="git status failed"
+      [ -n "$why" ] || [ -z "$st" ] || why="uncommitted changes"
+    fi
+    if [ -n "$why" ]; then echo "kept $b ($w) — $why"; k=$((k + 1)); continue; fi
+    if [ "$2" = 1 ]; then echo "stale $b ($w) — merged into $1, clean"; n=$((n + 1)); continue; fi
+    why="$(wt_unlock "$w")" || { echo "kept $b ($w) — $why"; k=$((k + 1)); continue; }
+    wt_free "$w" >/dev/null 2>&1
+    if ! git worktree remove --force "$w" >/dev/null 2>&1; then
+      echo "kept $b ($w) — remove failed"; k=$((k + 1)); continue
+    fi
+    if git branch -d "$b" >/dev/null 2>&1; then echo "retired $b ($w)"; else echo "retired $w, branch $b kept"; fi
+    n=$((n + 1))
+  done <<EOF
+$(git worktree list --porcelain | awk '/^worktree /{ w = substr($0, 10); n++ } /^branch /{ b = $2; sub("refs/heads/", "", b); if (n > 1) print w "\t" b }')
+EOF
+  if [ "$2" = 1 ]; then echo "sweep: $n stale · $k kept"; else echo "sweep: $n retired · $k kept"; fi
+}
+# <<< ck-wt
+
 cmd_retire() {
   need_git; [ "$#" -eq 2 ] || die "retire needs <target> <branch>"
   line="$(cmd_worktrees "$1" | awk -F'\t' -v b="$2" '$1 == b')"
@@ -642,12 +718,35 @@ cmd_retire() {
   # 0 commits ahead with uncommitted edits or new unignored files is unfinished work, not a
   # merged branch. Past this check only ignored files remain — build output — and --force
   # discards exactly those (and lets a worktree holding a submodule go).
-  [ -z "$(git -C "$path" status --porcelain 2>/dev/null)" ] || { echo "UNCOMMITTED — $2 has uncommitted changes at $path; kept"; return 1; }
-  # its test containers and their volumes outlive the directory otherwise
-  "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)/ck-lite-qa" docker-free "$path" >/dev/null 2>&1
+  st="$(git -C "$path" --no-optional-locks status --porcelain 2>/dev/null)" || { echo "UNREADABLE — git status failed at $path; $2 kept"; return 1; }
+  [ -z "$st" ] || { echo "UNCOMMITTED — $2 has uncommitted changes at $path; kept"; return 1; }
+  # Claude Code's agent lock outlives the agent; a merged, clean worktree has none running
+  why="$(wt_unlock "$path")" || { echo "LOCKED — $2 kept at $path: $why"; return 1; }
+  wt_free "$path" >/dev/null 2>&1
   git worktree remove --force "$path" || { echo "remove failed — $2 kept at $path"; return 1; }
   git branch -d "$2" >/dev/null || { echo "worktree removed, branch $2 kept"; return 1; }
   echo "retired $2 ($path)"
+}
+
+cmd_sweep() {
+  need_git
+  case "$#:${2:-}" in 1:) wt_sweep "$1" 0 ;; 2:--list) wt_sweep "$1" 1 ;; *) die "sweep needs <target> [--list]" ;; esac
+}
+
+# A new worktree's submodules are empty, and N agents cloning each one at once is slow. Each
+# is cloned against the main checkout's copy (--reference, then --dissociate so the worktree
+# never depends on it), then anything left — nested ones, one <root> lacks — the plain way.
+cmd_submodules() {
+  need_git; [ "$#" -eq 1 ] || die "submodules needs <root>"
+  [ -f .gitmodules ] || { echo "submodules: none"; return 0; }
+  git config -f .gitmodules --get-regexp '^submodule\..*\.path$' | while read -r _ p; do
+    if [ -e "$1/$p/.git" ]; then
+      git submodule update --init --reference "$1/$p" --dissociate -- "$p" >/dev/null 2>&1 \
+        || echo "submodules: $p — reference clone failed, falling back"
+    fi
+  done
+  git submodule update --init --recursive >/dev/null 2>&1 || { echo "submodules: FAILED — git submodule update --init --recursive"; return 1; }
+  echo "submodules: ready ($(git submodule status --recursive | wc -l | tr -d ' '))"
 }
 
 case "${1:-}" in
@@ -673,6 +772,8 @@ case "${1:-}" in
   worktrees) shift; cmd_worktrees "$@" ;;
   try-merge) shift; cmd_try_merge "$@" ;;
   retire) shift; cmd_retire "$@" ;;
-  -h|--help|"") sed -n '3,36p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  sweep) shift; cmd_sweep "$@" ;;
+  submodules) shift; cmd_submodules "$@" ;;
+  -h|--help|"") sed -n '3,38p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) die "unknown command: $1 (ck-lite --help)" ;;
 esac

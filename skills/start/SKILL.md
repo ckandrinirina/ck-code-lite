@@ -209,7 +209,10 @@ Each task carries:
   `ck-lite groups`: a task that grows an existing feature takes that feature's slug, a new
   feature gets a new one. Existing tasks are never retagged unasked — `ck-lite group <name>
   T-NN…` does it when the user asks.
-- `files:` — the paths expected to change, as a starting estimate
+- `files:` — the paths expected to change, as a starting estimate. It includes every shared
+  registration file the task adds an entry to — the app/route/module registration, the
+  source list a build reads, translation catalogs, a DI or plugin registry. `ck-lite waves`
+  sees overlap only through `files:`, and two tasks registering in one file conflict on merge
 
 Order tasks so dependencies flow forward, and record them in `needs`. A task that scaffolds
 the project or adds a dependency names the version `## Stack` records in its acceptance — e.g.

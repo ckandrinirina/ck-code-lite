@@ -57,6 +57,9 @@ If the criteria or the command list are missing, say so and stop. Do not go look
    this directory — it counts as a pass. Exit 3 (`RUNNING`) means the suite is still going:
    run the `cd <dir> && ck-lite-qa wait T-05` line it prints until it ends — runs are per
    checkout, so a `wait` from another directory finds nothing — and never start it again.
+   Give every `ck-lite-qa` call a 600000 ms Bash timeout; `wait`, in the foreground, is the
+   only way to wait — never an `until`/`while … sleep` loop, a `pgrep` or a poll of a task's
+   output file, and a call moved to the background is waited on with `wait`, never polled.
 2. Map each criterion to the test that covers it — `Grep` the test files for its behaviour,
    reading only the matches. A run that passed covers every test it contains; you never re-run
    a single test to prove one criterion.
@@ -103,6 +106,8 @@ when those commands pass.
 
 ## Constraints
 
+- Never write a wait loop (`until`/`while … sleep`, `pgrep`, polling an output file) —
+  `ck-lite-qa wait <id>` in the foreground is the only way to wait.
 - Never modify production code.
 - Never write, edit or delete a test. The caller owns the tests; you only read and run them.
 - Never edit `tasks/PLAN.md` or anything under `docs/` — you read state, you never mutate it.

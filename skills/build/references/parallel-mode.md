@@ -38,6 +38,7 @@ below is replaced by its default — the recommended answer — announced in one
 | P3 design pending        | build without it: `ck-lite note T-NN "built before the design was linked"` on each UI task — never stop the run for it |
 | P3 ambiguity             | take the narrowest reading closest to the literal criteria and the existing code's conventions; `ck-lite note T-NN "auto: assumed <reading>"`, then pass it as `Settled at P3`                                                                                                           |
 | P7 manual gate           | deferred: `ck-lite note T-NN "manual test pending (auto run)"`, then complete the task as on `PASS` so its dependents schedule                                                                                                                                                           |
+| P1/P8 stale agent worktrees | `RETIRE` — `ck-lite sweep "$TARGET"`; only merged, clean, idle ones go, so nothing can be lost |
 | P8 unmerged worktree     | `KEEP` (through `ck-lite-reclaim`) for any branch with commits; `DISCARD` only for a 🚫 blocked branch with an empty diff; never `MERGE NOW`                                                                                                                                             |
 
 Everything else is unchanged: QA with `reuse: no`, the integrity checks, the merged-suite
@@ -78,9 +79,13 @@ run drifted to, which is what the checks exist to catch. On `main`, `master`, `d
 `release/*`, create `batch/<slug>` in place (`git checkout -b`) and announce it; that branch is
 `$TARGET`, and merged work never lands on a protected branch.
 
-List worktrees left by earlier runs — `ck-lite worktrees "$TARGET"` — and **report them only**:
-branch, path, merged or unmerged, each with its removal command. This run did not create them,
-so it never removes them; the user may have made them by hand.
+List worktrees left by earlier runs — `ck-lite worktrees "$TARGET"` — then
+`ck-lite sweep "$TARGET" --list`. Its `stale` lines are earlier runs' agent worktrees (under
+`.claude/worktrees/`) that are merged into `$TARGET`, clean and idle for 15 min — nothing in
+them can be lost, but each holds its build output. Offer them in **one `AskUserQuestion`**:
+`RETIRE` → `ck-lite sweep "$TARGET"`, its count line in the report; `KEEP` → listed, untouched.
+Everything else — unmerged, dirty, freshly used, or outside `.claude/worktrees/` (the user may
+have made it by hand) — is **reported only**, with its removal command.
 
 List every `doing` task (`ck-lite open`) too — the leftovers of an interrupted or stopped run.
 `ck-lite waves` never schedules one, so name each with its kept worktree, if any, and
@@ -229,7 +234,9 @@ git merge --no-ff "<branch>" -m "feat(T-NN): <task title>"
 ```
 
 Each merged branch's worktree is retired at once — `ck-lite retire "$TARGET" "<branch>"`, which
-refuses unless the branch is fully merged and clean and never touches the main checkout.
+refuses unless the branch is fully merged and clean and never touches the main checkout. It
+lifts Claude Code's `claude agent …` lock itself (the lock lasts the session, not the agent);
+a `LOCKED` line names a lock it may not lift — report it, never `git worktree unlock` by hand.
 Whatever the sign-off says next, a merged task is finished on `$TARGET`, never in its worktree.
 A `CONFLICT` or `DIRTY` branch (a path it changes is uncommitted here, typically a docs edit)
 is reported and kept, never force-merged; it gets the same `branch:` note as P5. Solo: `Merge: none needed (solo on <$TARGET>).`
@@ -276,6 +283,11 @@ first.
 When it prints nothing, run `ck-lite waves <remaining scope>` once more without `--next`: its
 `Unschedulable` lines (dependents of a held or `ISSUES` task, for instance) go into the report,
 each with its reason — a task never drops out of a run silently.
+
+Then **stop leftover wait loops**: `ck-lite-qa reap` — every agent has returned, so a shell of
+this session still looping on a QA run is a leftover; put its `stopped N` line in the report.
+Then `ck-lite sweep "$TARGET" --list` once more, offered the P1 way, for agent worktrees that
+went stale since.
 
 Then **reconcile before reporting**: return to base, `ck-lite worktrees "$TARGET"`, and classify
 every worktree **this run created** (the ledger names each one):
@@ -359,6 +371,8 @@ Every git step with a safety rule is a `ck-lite` call, so the rule is code rathe
 | `ck-lite worktrees "$TARGET"`         | prunes stale records, never lists the main checkout; `merged` means 0 commits ahead of `$TARGET`                                                                                               |
 | `ck-lite try-merge "<branch>"`        | `DIRTY` when a path the branch changes is uncommitted here; else `git merge-tree`, which never touches the index or the tree — on an older git it refuses staged work, then aborts its dry run |
 | `ck-lite retire "$TARGET" "<branch>"` | removes only a clean linked worktree whose branch is fully merged, then `git branch -d`; uncommitted work or a failure keeps both and says so                                                  |
+| `ck-lite sweep "$TARGET" [--list]`   | only agent worktrees under `.claude/worktrees/`, 0 ahead, clean, HEAD idle 15 min; a foreign or live session's lock is kept                       |
+| `ck-lite-qa reap`                     | stops only this session's `until`/`while … sleep` shells on a QA run, a `pgrep` or a task output file, 2 min old or more                        |
 | `ck-lite base "$ROOT" "$TARGET"`      | exit 1 and the real location on drift                                                                                                                                                          |
 
 A kept worktree is printed in the report with its removal command:
@@ -407,7 +421,9 @@ or `no feature has ready work` when it prints nothing.
 - **Never leave a merged task's worktree standing**, and never remove one whose branch is not
   fully merged into `$TARGET` — retire through `ck-lite retire` only. `git worktree prune` is
   not removal.
-- **Never remove a worktree this run did not create** — earlier ones are reported, never swept.
+- **Never remove a worktree this run did not create** except through `ck-lite sweep`, after
+  its `RETIRE` answer (or `--auto`) — unmerged, dirty and hand-made ones are reported, never swept.
+- **Never end a run without `ck-lite-qa reap`** — an agent's hand-written wait loop outlives it.
 - **Never keep a worktree with its build output** — every `KEEP` goes through `ck-lite-reclaim`.
 - **Never enter a worktree from this context**, and never end a run with an unmerged worktree
   the user did not explicitly keep.

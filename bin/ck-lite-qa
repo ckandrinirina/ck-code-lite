@@ -8,6 +8,7 @@
 #   ck-lite-qa wait <id>
 #   ck-lite-qa since <id> <label>
 #   ck-lite-qa docker-free <worktree-path>…
+#   ck-lite-qa reap
 #
 # state  prints the code-state id: the git tree of the working copy, untracked
 #        (non-ignored) files included, so an uncommitted change is a different state.
@@ -32,6 +33,9 @@
 #        or RUNNING again. Once it has ended, wait prints that result again.
 # since  prints the snapshot commit of <label>'s last run for <id> in this directory, the
 #        ref a runner's --changed flag narrows a re-run against.
+# reap   stops the leftover hand-written wait loops (until/while … sleep on a QA run, a pgrep
+#        or a task output file) of this Claude Code session. Orchestrators only, after every
+#        agent they dispatched returned; the one way to wait on a run is `wait`.
 # docker-free  removes every Docker container whose compose working dir is inside each
 #        linked worktree <path>, running or not, with its own project's volumes — run
 #        before a worktree is parked or removed. Refuses the main checkout.
@@ -330,6 +334,47 @@ EOF
 }
 # <<< ck-qa-hygiene
 
+# >>> ck-qa-reap — byte-identical in ck-code's ck-qa.sh and ck-code-lite's ck-lite-qa
+# An agent that polls a QA run by hand — `until [ -s <task>.output ]; do sleep 10; done`,
+# `while pgrep -f "…qa…"; do sleep 5; done` — leaves that shell behind when it returns, and
+# some never end. qa_reap stops this session's leftover wait loops: shells under the nearest
+# `claude` ancestor process, at least CK_QA_REAP_AGE s old (120), whose command is an until/while loop that
+# sleeps on a QA run, a pgrep or a task output file (CK_QA_REAP_AGE sets the age, in s). Never this shell or its ancestors, never
+# another session. Prints one line per loop stopped, then the count. Only an orchestrator runs
+# it, once every agent it dispatched has returned — a live agent's wait would be stopped too.
+qa_reap() {
+  local p=$$ top="" chain=" " n=0 pid
+  while [ -n "$p" ] && [ "$p" -gt 1 ] 2>/dev/null; do
+    chain="$chain$p "
+    if [ "$(basename -- "$(ps -o comm= -p "$p" 2>/dev/null)")" = claude ]; then top=$p; break; fi
+    p="$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')"
+  done
+  [ -n "$top" ] || { echo "reap: no Claude Code session above this shell — nothing stopped"; return 0; }
+  for pid in $(ps -A -o pid=,ppid=,etime=,command= | awk -v top="$top" -v chain="$chain" -v min="${CK_QA_REAP_AGE:-120}" '
+      function secs(t,   a, n, d, s, i) {
+        d = 0; if (index(t, "-")) { d = substr(t, 1, index(t, "-") - 1); t = substr(t, index(t, "-") + 1) }
+        n = split(t, a, ":"); s = 0; for (i = 1; i <= n; i++) s = s * 60 + a[i]
+        return d * 86400 + s
+      }
+      { pid[NR] = $1; par[$1] = $2; age[$1] = secs($3); c = $0; sub(/^[ \t]*[0-9]+[ \t]+[0-9]+[ \t]+[^ \t]+[ \t]+/, "", c); cmd[$1] = c }
+      END {
+        for (i = 1; i <= NR; i++) {
+          q = pid[i]; if (index(chain, " " q " ") || age[q] < min + 0) continue
+          c = cmd[q]
+          if (c !~ /(^|[^A-Za-z_])(until|while)[ \t]/ || c !~ /sleep/) continue
+          if (c !~ /ck-(lite-)?qa|pgrep|\.output|\/rc([^A-Za-z]|$)/) continue
+          # a descendant of this session only
+          for (a = par[q]; a != "" && a > 1 && a != top; a = par[a]) ;
+          if (a == top) print q
+        }
+      }'); do
+    echo "reap: stopped $pid — $(ps -o command= -p "$pid" 2>/dev/null | sed -E 's/.*(^|[^A-Za-z_])((until|while)[[:space:]])/\2/' | cut -c1-100)"
+    pkill -TERM -P "$pid" 2>/dev/null; kill -TERM "$pid" 2>/dev/null && n=$((n + 1))
+  done
+  echo "reap: stopped $n leftover wait loop(s)"
+}
+# <<< ck-qa-reap
+
 # Waits on the run for $1 for up to CK_LITE_QA_WAIT seconds, then prints its result and exits
 # with its code, or prints RUNNING and exits 3 while it is still going.
 await_run() {
@@ -342,7 +387,7 @@ await_run() {
     fi
     if [ $((SECONDS - t0)) -ge "$budget" ]; then
       q=""; [ ! -f "$d/queued" ] || q=" (queued for a CPU slot — other runs hold all $CPU_SLOTS)"
-      echo "ck-lite-qa: RUNNING — $1 has run $(( $(date +%s) - $(cat "$d/start") ))s$q; run 'cd $(pwd -P) && ck-lite-qa wait $1' to keep waiting (runs are per checkout), never start it again"
+      echo "ck-lite-qa: RUNNING — $1 has run $(( $(date +%s) - $(cat "$d/start") ))s$q; run 'cd $(pwd -P) && ck-lite-qa wait $1' to keep waiting (runs are per checkout), never start it again and never poll it with your own until/while loop"
       exit 3
     fi
     # quick polls first, so a sub-second suite is not billed a 2 s sleep
@@ -362,9 +407,10 @@ case "$CMD" in
   docker-free) shift; [ "$#" -gt 0 ] || die "docker-free needs a worktree path"
                rc=0; for p in "$@"; do dk_free "$p" || rc=1; done; exit "$rc" ;;
   docker-orphans) dk_orphans; exit 0 ;;
+  reap) qa_reap; exit 0 ;;
   run|__worker) ;;
-  -h|--help|"") sed -n '4,41p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-  *) die "unknown command: $CMD (state|run|wait|since)" ;;
+  -h|--help|"") sed -n '4,44p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  *) die "unknown command: $CMD (state|run|wait|since|reap)" ;;
 esac
 shift
 ARGS=("$@")

@@ -42,7 +42,11 @@ If the criteria or the commands are missing, return `status: blocked` and say wh
 1. **Placement.** `worktree` — the harness put you in your own worktree, already on your
    branch; read and write at in-worktree paths. `solo` — you are in the main checkout: before
    your first edit run `git rev-parse --abbrev-ref HEAD`; if it does not print the branch named
-   in your prompt, return `status: blocked` with the branch you found and change nothing.
+   in your prompt, return `status: blocked` with the branch you found and change nothing. A
+   worktree of a repo with a `.gitmodules` has empty submodules: run
+   `ck-lite submodules <root>` once — `<root>` is the folder before `/tasks/PLAN.md` in your
+   `Context:` line —, before any
+   build — it clones each one against the main checkout's copy, far faster than N fresh clones.
 2. **Context.** Run the `Context:` line from your prompt exactly as given — it points `ck-lite`
    at the main checkout's plan and docs (your worktree's copies are the last commit). It prints
    the architecture core, the area docs this task's files touch, and the section. Then read
@@ -106,6 +110,9 @@ missing verdict is read as `partial`. The orchestrator verifies from git regardl
   command, and never remove a worktree — yours or a sibling's.
 - Never create or edit an implementation file before a test run has been observed failing,
   unless your prompt carries a settled test exception.
+- Never write a wait loop — `until`/`while … sleep`, a `pgrep`, a poll of a task's output
+  file. `ck-lite-qa wait <T-NN>` in the foreground is the only way to wait; a loop outlives
+  you and some never end.
 - Never delegate QA — the orchestrator runs `ck-code-lite:qa-validator` per task.
 - Never run the manual-test gate or ship — both happen once per wave, on the target.
 - Never write code beyond the acceptance criteria.
