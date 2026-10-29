@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.0] — 2026-10-29
+
+### Added
+- **report**: new skill — reports a bug in ck-code-lite itself as a scrubbed GitHub issue, finds duplicates first, and files only after the user's one yes. A `PostToolUse`/`PostToolUseFailure` hook (`ck-lite-report hook`) spots crashes in the plugin's own scripts and hands them over.
+- **ck-lite**: `sweep <target> [--list]` retires earlier runs' agent worktrees that are merged, clean and idle for 15 min (under `.claude/worktrees/` only). `submodules <root>` fills a fresh worktree's submodules from the main checkout (#1).
+- **ck-lite-qa**: `reap` stops this session's leftover hand-written wait loops (#1).
+
+### Changed
+- **ck-lite retire**: lifts Claude Code's session-long `claude agent` lock when its session is gone or is this one, instead of failing with `cannot remove a locked working tree`. A failed `git status` now keeps the worktree instead of reading as clean (#1).
+- **build**: wave runs offer stale agent worktrees for retirement at P1 and P8 (retired by default under `--auto`), and run `ck-lite-qa reap` before the final reconcile (#1).
+- **task-builder**, **qa-validator**, **tdd-cycle**: `ck-lite-qa wait` in the foreground is the only way to wait, and wait loops are forbidden. Tests use per-run unique temp paths, and task-builders fill submodules first (#1).
+- **start**: a task's `files:` lists every shared registration file it adds an entry to, so `ck-lite waves` sees the overlap (#1).
+
 ## [1.16.1] — 2026-10-28
 
 ### Fixed
