@@ -1,6 +1,32 @@
 {
-  "description": "ck-code-lite hooks: the mod (hooks module) for routing, the PLAN.md guard, the band and zero-model commands",
+  "description": "ck-code-lite hooks: the mod (hooks module) for routing, the PLAN.md guard, the band and zero-model commands, and the bug reporter that spots a crash in this plugin's own scripts",
   "modules": [
     "./mod/register.tsx"
-  ]
+  ],
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/bin/ck-lite-report hook",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/bin/ck-lite-report hook",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
 }

@@ -210,6 +210,62 @@ has "retire: removes a merged worktree" "retired task/a" "$(ck-lite retire main 
 has "retire: never the main checkout" "never retired" "$(ck-lite retire main main 2>&1)"
 has "base: DRIFTED inside a worktree" "DRIFTED" "$(cd "$WORK/wt-b" && ck-lite base "$P" main)"
 
+# ---- agent worktree locks, sweep, submodules (issue #1) -------------------------------
+echo "=== agent worktrees ==="
+fresh wt3; echo x >x; git add x; git commit -qm x; git branch -M main
+AW="$(pwd -P)/.claude/worktrees"; mkdir -p "$AW"; printf '.claude/\n' >.git/info/exclude
+age() { g="$(git -C "$1" rev-parse --absolute-git-dir)"; touch -t 202001010000 "$g/HEAD" "$g/logs/HEAD" 2>/dev/null; }
+mkwt() { git worktree add -q -b "$1" "$AW/$1" 2>/dev/null; }
+mkwt agent-a; git worktree lock --reason "claude agent agent-a (pid 99999)" "$AW/agent-a"
+has "retire: lifts a dead session's agent lock" "retired agent-a" "$(ck-lite retire main agent-a)"
+mkwt agent-z; git worktree lock --reason "mine" "$AW/agent-z"
+has "retire: keeps a lock that is not Claude Code's" "LOCKED" "$(ck-lite retire main agent-z)"
+mkwt agent-b; git worktree lock --reason "claude agent agent-b (pid $$)" "$AW/agent-b"; age "$AW/agent-b"
+sleep 60 & LIVE=$!
+mkwt agent-c; git worktree lock --reason "claude agent agent-c (pid $LIVE)" "$AW/agent-c"; age "$AW/agent-c"
+mkwt agent-d; ( cd "$AW/agent-d" && echo d >d && git add d && git commit -qm d ); age "$AW/agent-d"
+mkwt agent-e; echo wip >"$AW/agent-e/wip"; age "$AW/agent-e"
+mkwt agent-f
+git worktree add -q -b hand "$WORK/hand" 2>/dev/null; age "$WORK/hand"
+out="$(ck-lite sweep main --list)"
+has "sweep --list: a merged, clean, idle agent worktree is stale" "stale agent-b" "$out"
+has "sweep --list: unmerged work is kept" "kept agent-d" "$out"
+has "sweep --list: uncommitted work is kept" "agent-e ($AW/agent-e) — uncommitted" "$out"
+has "sweep --list: a worktree used in the last 15 min is kept" "agent-f ($AW/agent-f) — used in the last 15 min" "$out"
+lacks "sweep: a hand-made worktree is never listed" "hand" "$out"
+eq  "sweep --list: removes nothing" "yes" "$([ -d "$AW/agent-b" ] && echo yes || echo no)"
+out="$(ck-lite sweep main)"
+has "sweep: retires this session's merged agent worktree" "retired agent-b" "$out"
+has "sweep: keeps one locked by another live session" "agent-c ($AW/agent-c) — locked by another live" "$out"
+has "sweep: counts" "sweep: 1 retired · 5 kept" "$out"
+eq  "sweep: the uncommitted file survives" "wip" "$(cat "$AW/agent-e/wip")"
+eq  "sweep: the hand-made worktree survives" "yes" "$([ -d "$WORK/hand" ] && echo yes || echo no)"
+kill "$LIVE" 2>/dev/null
+has "submodules: none in a plain repo" "submodules: none" "$(ck-lite submodules "$P")"
+fresh sublib; echo l >l; git add l; git commit -qm l
+fresh subapp; git -c protocol.file.allow=always submodule add -q "$WORK/sublib" lib 2>/dev/null; git commit -qm sub
+git worktree add -q -b agent-s "$WORK/wt-s" 2>/dev/null
+has "submodules: a fresh worktree's are filled from the main checkout" "submodules: ready (1)" "$(cd "$WORK/wt-s" && GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=protocol.file.allow GIT_CONFIG_VALUE_0=always ck-lite submodules "$P")"
+eq  "submodules: the content is there" "l" "$(cat "$WORK/wt-s/lib/l" 2>/dev/null)"
+
+# ---- bug reporter hook ----------------------------------------------------------------
+echo "=== ck-lite-report ==="
+RT="$WORK/rt"; mkdir -p "$RT"
+ev() { printf '{"session_id":"%s","hook_event_name":"PostToolUseFailure","tool_input":{"command":"%s"},"error":"Exit code 1\\n%s"}' "$1" "$2" "$3"; }
+out="$(ev s1 'ck-lite open' "$ROOT/bin/ck-lite: line 9: X: unbound variable" | TMPDIR="$RT" ck-lite-report hook)"
+has "report hook: a crash in the plugin's own script is flagged" "ck-code-lite:report skill with" "$out"
+lacks "report hook: the plugin path is hidden" "$ROOT" "$out"
+eq  "report hook: flagged once per session" "" "$(ev s1 'ck-lite open' "$ROOT/bin/ck-lite: line 9: X: unbound variable" | TMPDIR="$RT" ck-lite-report hook)"
+eq  "report hook: a deliberate ERROR line is not a bug" "" "$(ev s2 'ck-lite open' 'ck-lite: ERROR — no plan' | TMPDIR="$RT" ck-lite-report hook)"
+eq  "report hook: a project script's crash is not ours" "" "$(ev s3 'npm test' '/p/run.sh: line 3: x: unbound variable' | TMPDIR="$RT" ck-lite-report hook)"
+sig="$(printf '%s' "$out" | sed -n 's/.*Signature \([0-9a-f]*\)\..*/\1/p')"
+has "report show: keeps the details for the skill" "unbound variable" "$(TMPDIR="$RT" ck-lite-report show "$sig")"
+has "report scrub: hides home, emails and tokens" "~/x <email> <token>" "$(printf '%s/x a@b.io ghp_abcdefghij123\n' "$HOME" | ck-lite-report scrub)"
+mkdir -p "$RT/bin"; printf '#!/bin/sh\nexit 1\n' >"$RT/bin/gh"; chmod +x "$RT/bin/gh"; printf 'body\n' >"$RT/b.md"
+out="$(PATH="$RT/bin:$PATH" CK_REPORT_DRAFTS="$RT/drafts" ck-lite-report file "t: x" "$RT/b.md" abc)"
+has "report file: without gh signed in, a draft and a link" "open: https://github.com/ckandrinirina/ck-code-lite/issues/new" "$out"
+has "report file: the draft carries the signature" "ck-sig: abc" "$(cat "$RT"/drafts/*.md)"
+
 # ---- ck-lite-qa -------------------------------------------------------------------------
 echo "=== ck-lite-qa ==="
 fresh qa; echo a >a.txt; git add a.txt; git commit -qm init
