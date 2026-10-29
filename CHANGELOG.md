@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.1] — 2026-10-29
+
+### Security
+- **report**: the hook keeps its state in a private `~/.cache/ck-report` (mode 700, owner-checked, never through a symlink) instead of a shared `/tmp`, and writes through `mktemp` + `mv`. The context it gives the model is fixed wording only (the error kind, the script and the line), never the captured output line. `file`/`comment` post only drafts under `~/.claude/ck-reports/`, and they are no longer pre-approved in `allowed-tools`. `scrub` also hides `KEY=value` secrets, credentials in URLs, Bearer tokens, JWTs, PEM blocks and base64 that contains `/`.
+
 ## [1.17.0] — 2026-10-29
 
 ### Added
