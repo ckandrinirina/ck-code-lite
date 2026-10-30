@@ -34,7 +34,7 @@ import { join, basename, dirname, resolve, sep, extname } from 'node:path';
 import { createServer } from 'node:http';
 import { inflateSync, deflateSync } from 'node:zlib';
 
-const VERSION = '1.2.0';
+const VERSION = '1.2.1';
 const NAME = basename(process.argv[1] || 'ck-replicate').replace(/\.mjs$/, '');
 const VIEWPORTS = {
   desktop: { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false },
@@ -877,6 +877,9 @@ function summarize(r) {
 const MIME = { '.html': 'text/html', '.htm': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.otf': 'font/otf' };
 // a cached card never holds its binary fonts — --fonts lends the app's own files, matched by name
 const FONT_EXT = /\.(woff2?|ttf|otf)$/i;
+// a requested name comes from the untrusted card: only a plain font file name is ever recorded or printed
+const FONT_NAME = /^[\w.\- ]{1,100}\.(woff2?|ttf|otf)$/i;
+const note = (set, name) => { if (FONT_NAME.test(name) && set.size < 20) set.add(name); };
 const fontKey = (f) => basename(f).replace(/\.[^.]+$/, '').toLowerCase().replace(/[^a-z0-9]/g, '');
 function fontIndex(dirsOpt) {
   const idx = new Map();
@@ -920,8 +923,8 @@ async function serveFile(file, rootOpt, fontsOpt) {
     try { p = realpathSync(resolve(root, '.' + rel)); } catch {}
     if (!p && fonts && FONT_EXT.test(rel)) {
       const f = fonts.get(fontKey(rel));
-      if (!f) { missing.add(basename(rel)); return no(); }
-      lent.add(basename(rel));
+      if (!f) { note(missing, basename(rel)); return no(); }
+      note(lent, basename(rel));
       return res.writeHead(200, { 'content-type': MIME[extname(f).toLowerCase()] }).end(readFileSync(f));
     }
     const type = p && MIME[extname(p).toLowerCase()];
@@ -931,7 +934,7 @@ async function serveFile(file, rootOpt, fontsOpt) {
   await new Promise((ok) => srv.listen(0, '127.0.0.1', ok));
   host = `127.0.0.1:${srv.address().port}`;
   const rel = abs.slice(root.length + 1).split(sep).map(encodeURIComponent).join('/');
-  const fontLine = () => fonts && `${NAME}: fonts ${lent.size} from --fonts · missing ${missing.size ? [...missing].sort().join(', ') : 'none'}`;
+  const fontLine = () => fonts && `${NAME}: fonts ${lent.size} from --fonts · missing ${missing.size ? [...missing].sort().map((m) => JSON.stringify(m)).join(', ') : 'none'}`;
   return { url: `http://${host}/${token}/${rel}`, fontLine, close: () => srv.close() };
 }
 
