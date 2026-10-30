@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.18.1] — 2026-10-30
+
+### Security
+- **replicate**: the `shot --fonts` summary line records only plain font file names (at most 20) and prints them quoted — a card is untrusted, and its requested file names reached the agent verbatim.
+
 ## [1.18.0] — 2026-10-30
 
 ### Added
