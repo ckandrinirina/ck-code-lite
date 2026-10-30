@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.18.0] — 2026-10-30
+
+### Added
+- **design**: links a regular Claude Design project, not only a design system — each page is cached as a screen card with its runtime, its CSS variables (with per-theme values) become the tokens, and each component is built from the screen that draws it; read-only, nothing converted. A project can link a design system and a design together (`pairedProject`, `cards/paired/`): the system's tokens and component cards, the design's screens.
+- **ck-lite-replicate 1.2.0**: `shot --fonts <dir>[,<dir>]` serves a card's font files from the app's own fonts, matched by file name, and lists the missing ones — the cache never holds binary fonts, so card shots rendered in fallback fonts.
+
 ## [1.17.1] — 2026-10-29
 
 ### Security
