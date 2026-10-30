@@ -69,6 +69,13 @@ left over. A UI task reached while the design is still pending asks once: paste 
 link now, build without it, or stop. `/ck-code-lite:design` again refreshes the cache — one call
 when nothing changed.
 
+A **regular Claude Design project** — screens drawn directly, not a design system — links the
+same way from its URL: each page is a screen card, its CSS variables (per theme) are the tokens,
+and each component is built from the screen that draws it. A project can also link **both** a
+design system and a design: the system's tokens and component cards, the design's screens.
+Fidelity screenshots borrow the app's own font files (`--fonts`), since Claude Design's font
+files are never cached.
+
 ### Replicate an existing app
 
 Point `design` at software you want copied and it captures it, then writes a spec to plan from:
