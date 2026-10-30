@@ -5,9 +5,10 @@
 //
 // Usage:
 //   <name> capture <url> --out <dir> [--pages 12] [--depth 2] [--profile] [--include <regex>]
-//   <name> shot <url|file.html> --out <prefix> [--viewport desktop|mobile|both|<w>x<h>] [--root <dir>] [--profile]
+//   <name> shot <url|file.html> --out <prefix> [--viewport desktop|mobile|both|<w>x<h>] [--root <dir>] [--fonts <dir>[,<dir>]] [--profile]
 //                           a local file is served from a throwaway 127.0.0.1 server rooted at --root
-//                           (default: its folder), so its relative assets and fonts load as they would online
+//                           (default: its folder), so its relative assets and fonts load as they would online;
+//                           a font file missing under --root is served from --fonts, matched by file name
 //   <name> diff <reference.png> <candidate.png> --out <diff.png>
 //   <name> login <url>      opens a visible Chrome on a saved profile; sign in, then close it
 //   <name> electron <App.app|executable> --out <dir> [--explore 10]   (quit the app first)
@@ -26,14 +27,14 @@
 // bin/ck-lite-replicate; keep the two byte-identical. Contract: references/replicate.md.
 
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync, readFileSync, existsSync, mkdtempSync, rmSync, realpathSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, mkdtempSync, rmSync, realpathSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { tmpdir, homedir } from 'node:os';
 import { join, basename, dirname, resolve, sep, extname } from 'node:path';
 import { createServer } from 'node:http';
 import { inflateSync, deflateSync } from 'node:zlib';
 
-const VERSION = '1.1.1';
+const VERSION = '1.2.0';
 const NAME = basename(process.argv[1] || 'ck-replicate').replace(/\.mjs$/, '');
 const VIEWPORTS = {
   desktop: { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false },
@@ -874,7 +875,33 @@ function summarize(r) {
 
 // a local file (a Claude Design card) is shot over http, never file:// — Chrome blocks file:// fonts
 const MIME = { '.html': 'text/html', '.htm': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.otf': 'font/otf' };
-async function serveFile(file, rootOpt) {
+// a cached card never holds its binary fonts — --fonts lends the app's own files, matched by name
+const FONT_EXT = /\.(woff2?|ttf|otf)$/i;
+const fontKey = (f) => basename(f).replace(/\.[^.]+$/, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+function fontIndex(dirsOpt) {
+  const idx = new Map();
+  const walk = (d, depth) => {
+    if (depth > 6 || idx.size >= 2000) return;
+    let ents;
+    try { ents = readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of ents) {
+      const p = join(d, e.name);
+      // real files and folders only: a symlink never leads out of the folders named
+      if (e.isDirectory()) { if (e.name !== '.git' && e.name !== 'node_modules') walk(p, depth + 1); }
+      else if (e.isFile() && FONT_EXT.test(e.name) && !idx.has(fontKey(e.name))) idx.set(fontKey(e.name), p);
+    }
+  };
+  for (const d of String(dirsOpt).split(',').filter(Boolean)) {
+    if (!existsSync(d)) die(`--fonts: no such folder ${d}`);
+    walk(realpathSync(resolve(d)), 0);
+  }
+  return idx;
+}
+
+async function serveFile(file, rootOpt, fontsOpt) {
+  const fonts = fontsOpt && fontsOpt !== true ? fontIndex(fontsOpt) : null;
+  const lent = new Set();
+  const missing = new Set();
   const abs = realpathSync(resolve(file));
   const root = realpathSync(resolve(rootOpt && rootOpt !== true ? rootOpt : dirname(abs)));
   const inside = (p) => p === root || p.startsWith(root + sep);
@@ -885,20 +912,27 @@ async function serveFile(file, rootOpt) {
   const srv = createServer((req, res) => {
     const no = () => res.writeHead(404).end();
     if (req.method !== 'GET' || req.headers.host !== host) return no();
-    let p;
-    try {
-      const path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
-      if (!path.startsWith(`/${token}/`)) return no();
-      p = realpathSync(resolve(root, '.' + path.slice(token.length + 1)));
-    } catch { return no(); }
-    const type = MIME[extname(p).toLowerCase()];
-    if (!inside(p) || !type) return no();
+    let rel;
+    try { rel = decodeURIComponent(new URL(req.url, 'http://x').pathname); } catch { return no(); }
+    if (!rel.startsWith(`/${token}/`)) return no();
+    rel = rel.slice(token.length + 1);
+    let p = null;
+    try { p = realpathSync(resolve(root, '.' + rel)); } catch {}
+    if (!p && fonts && FONT_EXT.test(rel)) {
+      const f = fonts.get(fontKey(rel));
+      if (!f) { missing.add(basename(rel)); return no(); }
+      lent.add(basename(rel));
+      return res.writeHead(200, { 'content-type': MIME[extname(f).toLowerCase()] }).end(readFileSync(f));
+    }
+    const type = p && MIME[extname(p).toLowerCase()];
+    if (!p || !inside(p) || !type) return no();
     try { res.writeHead(200, { 'content-type': type }).end(readFileSync(p)); } catch { no(); }
   });
   await new Promise((ok) => srv.listen(0, '127.0.0.1', ok));
   host = `127.0.0.1:${srv.address().port}`;
   const rel = abs.slice(root.length + 1).split(sep).map(encodeURIComponent).join('/');
-  return { url: `http://${host}/${token}/${rel}`, close: () => srv.close() };
+  const fontLine = () => fonts && `${NAME}: fonts ${lent.size} from --fonts · missing ${missing.size ? [...missing].sort().join(', ') : 'none'}`;
+  return { url: `http://${host}/${token}/${rel}`, fontLine, close: () => srv.close() };
 }
 
 function viewportOf(v) {
@@ -914,7 +948,8 @@ async function shot(target, opt) {
   const vps = which === 'both' ? ['desktop', 'mobile'] : [which];
   const sizes = vps.map(viewportOf);
   mkdirSync(dirname(opt.out), { recursive: true });
-  const local = /^https?:\/\//i.test(target) ? null : await serveFile(target, opt.root);
+  if (opt.fonts && /^https?:\/\//i.test(target)) die('--fonts applies to a local file only');
+  const local = /^https?:\/\//i.test(target) ? null : await serveFile(target, opt.root, opt.fonts);
   const url = local ? local.url : target;
   const b = await launch({ userDataDir: opt.profile && !local ? profileDir(url) : undefined });
   try {
@@ -925,6 +960,7 @@ async function shot(target, opt) {
       console.log(`${NAME}: ${v} → ${r.file}${r.truncated ? ' (cut at the image limit)' : ''}`);
     }
     await page.close();
+    if (local?.fontLine()) console.log(local.fontLine());
   } finally {
     b.cleanup();
     local?.close();

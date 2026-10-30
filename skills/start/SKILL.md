@@ -147,7 +147,7 @@ Header:   Design
 Options:
   - Design first (Recommended) — after the plan, I describe the product with you and write the
     prompt for claude.ai/design. UI tasks then build against its exact tokens and components.
-  - I already have one — link my claude.ai/design design system (paste its URL as Other).
+  - I already have one — link my claude.ai/design design system or design (paste its URL as Other).
   - Skip — build the UI from the architecture doc alone.
 ```
 

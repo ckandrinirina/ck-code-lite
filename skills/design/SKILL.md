@@ -1,6 +1,6 @@
 ---
 name: design
-description: Use when a project with a user interface should be designed with Claude Design before building — describing the product and writing the prompt to paste into claude.ai/design, linking a finished design system from its URL, or refreshing the linked design — or when an existing app should be copied, a website, desktop or mobile app, or CLI (`replicate <source>`). Also when the user pastes a claude.ai/design URL. Argument is an optional idea, spec path, claude.ai/design URL, or `replicate <source>`.
+description: Use when a UI project should be designed with Claude Design before building — writing the prompt to paste into claude.ai/design, linking a finished design system or design from its URL, or refreshing the linked design — or when an existing app (website, desktop or mobile app, CLI) should be copied (`replicate <source>`). Also when the user pastes a claude.ai/design URL. Argument is an optional idea, spec path, claude.ai/design URL, or `replicate <source>`.
 argument-hint: "[idea | path/to/spec.md | claude.ai/design URL | link | replicate <url|app|cli cmd|path>]"
 effort: high
 allowed-tools: Bash(git rev-parse*) Bash(ls*) Bash(grep*) Bash(mkdir*) Bash(shasum*) Bash(ck-lite*) Bash(pbcopy*) Bash(wl-copy*) Bash(xclip*) DesignSync Skill
@@ -10,8 +10,8 @@ allowed-tools: Bash(git rev-parse*) Bash(ls*) Bash(grep*) Bash(mkdir*) Bash(shas
 
 Designs the UI before any of it is built. Claude describes the project with the user, writes the
 best possible prompt for [claude.ai/design](https://claude.ai/design), and — once the user hands
-back the finished design system's URL — caches it in the repository so every UI task builds
-against its exact tokens and markup.
+back the URL of the finished design system or design project (or both) — caches it in the
+repository so every UI task builds against its exact tokens and markup.
 
 One command, four modes, chosen from the argument and the project state:
 
@@ -133,7 +133,7 @@ derived from the confirmed description and the 2.1 reads. `mkdir -p docs` first.
 ```
 ## Design brief ready — docs/design-brief.md (copied to the clipboard)
 
-1. Open https://claude.ai/design and start a **design system** project.
+1. Open https://claude.ai/design and start a **design system** project (a design project links too).
 2. Paste the brief. Iterate there until it looks right.
 3. Copy the project URL and run: /ck-code-lite:design <url> — now or in any later session.
 ```
@@ -151,15 +151,17 @@ UI tasks will ask for the link once.
    and stop.
 2. Run [§ Linking](../../references/design-system.md#linking) steps 1–6, with
    `mkdir -p docs/design-system/cards` before the first write. A project id different from an
-   existing `manifest.json` → confirm the switch first.
+   existing `manifest.json` → pair or replace per
+   [§ Design system and design together](../../references/design-system.md#design-system-and-design-together),
+   asked before anything is written.
 3. When `docs/ARCHITECTURE.md` exists, set its `## Design` line to
-   `- Claude Design: linked — <project name> (docs/design-system/)`. Keep
+   `- Claude Design: linked — <project name>[ + <paired name>] (docs/design-system/)`. Keep
    `docs/design-brief.md` — it records what was asked for.
 4. Report:
 
 ```
 === DESIGN SYSTEM LINKED ===
-Project: <name> (<projectId>)
+Project: <name> (<projectId>) · <system | design>[ · paired with <name> (<type>)]
 Cached:  <n> cards (<n> components, <n> screens) · <n> skipped (binary / too large)
 Tokens:  <n> extracted · <m> low-confidence — confirm the ⚠️ rows in docs/design-system/index.md
 Next:    /ck-code-lite:build — UI tasks build against it  |  /ck-code-lite:start — no plan yet
@@ -170,7 +172,7 @@ The cache ships with the next `/ck-code-lite:ship`.
 ## PHASE 4: REFRESH
 
 Tool check as in LINK, then [§ Freshness](../../references/design-system.md#freshness) from
-Tier 0, announcing the starting tier. Report `up to date — 1 call`, or the added / changed /
+Tier 0 (Tier 1 for a design project) — for each linked project — announcing the starting tier. Report `up to date — 1 call`, or the added / changed /
 removed cards and any token that changed value — a changed token touches every screen, so name
 it.
 

@@ -502,6 +502,12 @@ if command -v node >/dev/null 2>&1 && [ "$(node -p 'process.versions.node.split(
   has "ck-lite-replicate cli: cli.md holds a subcommand's help" "fake serve [--port N]" "$(cat "$RR/cli/cli.md")"
   eq  "ck-lite-replicate cli: never runs anything but help" "absent" "$([ -e "$RR/fake.ran" ] && cat "$RR/fake.ran" || echo absent)"
   ck-lite-replicate bogus >/dev/null 2>&1; eq  "ck-lite-replicate: an unknown command exits 2" 2 "$?"
+  printf '<html></html>' >"$RR/card.html"
+  RF_OUT=$(ck-lite-replicate shot "$RR/card.html" --fonts "$RR/none" --out "$RR/s" 2>&1); RF_RC=$?
+  eq  "ck-lite-replicate shot: a missing --fonts folder exits 2" 2 "$RF_RC"
+  has "ck-lite-replicate shot: names the missing --fonts folder" "no such folder" "$RF_OUT"
+  ck-lite-replicate shot https://example.com --fonts "$RR" --out "$RR/s" >/dev/null 2>&1
+  eq  "ck-lite-replicate shot: --fonts on a URL exits 2" 2 "$?"
   rm -rf "$RR"
 else
   echo "skip    node >= 22 not on PATH — skipping ck-lite-replicate checks"

@@ -1,7 +1,8 @@
 # Claude Design — Shared Contract
 
-Owns the ck-code-lite ↔ [claude.ai/design](https://claude.ai/design) integration: the design
-state of a project, the local cache, how `build` reproduces a component exactly, and how every
+Owns the ck-code-lite ↔ [claude.ai/design](https://claude.ai/design) integration — a design
+system project or a regular design project ([§ Regular design projects](#regular-design-projects)):
+the design state of a project, the local cache, how `build` reproduces a component exactly, and how every
 touchpoint behaves when the integration is absent.
 
 Read by `start` (the design-first question), `design` (brief, link, refresh), `build` (UI tasks,
@@ -89,6 +90,7 @@ PR diff then shows when a component's source changed.
 {
   "projectId": "…",
   "projectName": "…",
+  "projectType": "system",
   "projectUpdatedAt": "…",
   "syncedAt": "…",
   "tokensPath": "pending",
@@ -105,7 +107,9 @@ PR diff then shows when a component's source changed.
 ```
 
 `sha256` is computed locally over the cached bytes (`shasum -a 256 <file>`); a
-`cached: false` card has none. `tokensPath` stays `"pending"` until the first UI task writes
+`cached: false` card has none. `projectType` is `system` (a design system) or `design` (a
+regular design project); a manifest without it is a `system`. `projectUpdatedAt` is `null` for a
+`design`, which `list_projects` never lists. `tokensPath` stays `"pending"` until the first UI task writes
 the token file ([Token materialization](#token-materialization)).
 
 ### `index.md`
@@ -120,24 +124,28 @@ No frontmatter. Four sections:
 
 ## Linking
 
-1. `list_projects`. Empty → tell the user to create a design system at claude.ai/design
-   first, and stop. Nothing is written.
-2. **Resolve the project.** A uuid anywhere in the argument
+1. **A uuid anywhere in the argument**
    (`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`, case-insensitive) is the
-   id — never parse the URL by path position. No uuid → match the argument, trimmed and
-   case-insensitive, against project names: exactly one match proceeds. Otherwise
-   `AskUserQuestion` over the projects (name, owner, `updatedAt`) with a Cancel option.
-3. `get_project` — confirm `type: PROJECT_TYPE_DESIGN_SYSTEM`. A regular project is a hard
-   stop: the type is fixed at creation, so the user must start a design-system project. A
+   id — never parse the URL by path position — go to step 3.
+2. **No uuid** → `list_projects` (it lists design systems only). Empty → tell the user to
+   create a design system at claude.ai/design, or to paste the URL of a design project, and
+   stop. Nothing is written. Otherwise match the argument, trimmed and case-insensitive,
+   against project names: exactly one match proceeds; else `AskUserQuestion` over the projects
+   (name, owner, `updatedAt`) with a Cancel option.
+3. `get_project` → its `type`. `PROJECT_TYPE_DESIGN_SYSTEM` → `projectType: system`; any other
+   type → `projectType: design`, linked the same way
+   ([§ Regular design projects](#regular-design-projects)) — never refused, never converted. A
    user-supplied id that cannot be reached is a hard stop naming it — never a silent fallback
    to the picker.
 4. `list_files` → the inventory. `get_file` every non-binary card under 256 KiB, issued
-   together in one message. Write each to `cards/<path>` and record its `sha256`.
+   together in one message. Write each to `cards/<path>` exactly as returned — copy the file
+   when the tool output was saved to one, never retype or reflow it — and record its `sha256`.
 5. Extract tokens (below), write `index.md` and `manifest.json` (`"tokensPath": "pending"`).
-6. Report: project, card count, tokens extracted, every `⚠️` row to confirm.
+6. Report: project and its type, card count, tokens extracted, every `⚠️` row to confirm.
 
-Re-linking a different project id than `manifest.json` holds replaces the whole cache —
-confirm first.
+Linking a different project id than `manifest.json` holds: another type pairs or replaces
+([§ Design system and design together](#design-system-and-design-together)); the same type
+replaces that project's cache — confirm first.
 
 ### Token extraction
 
@@ -147,6 +155,63 @@ Cards are free-form HTML, so extraction is best-effort and never guesses silentl
 2. **Otherwise literal declarations** — record the value with its source card, name it
    `--ds-<category>-<name>`, and mark the row `⚠️`.
 3. A value that appears in no card is a gap to report, never a blank to fill.
+4. **Themes.** A property redefined under a theme selector (`[data-theme="day"]`, `.dark`,
+   `@media (prefers-color-scheme: dark)`) is one token with a value per theme — the value cell
+   reads `<theme>: <value> · <theme>: <value>`, the selector named in the row — and
+   materialization emits each theme under that same selector, verbatim.
+
+## Regular design projects
+
+A Claude Design project that is not a design system — screens drawn directly, often beside a
+page of tokens — links read-only like one. Nothing is converted and nothing is written to the
+user's account. What differs:
+
+- **Only by link.** `list_projects` lists design systems only, so a design is linked from its
+  URL or uuid, never picked from the list.
+- **Classified by file** — a design has no card groups. In `index.md` § Components, each page
+  (`*.html`, including `*.dc.html`) is a `Screens` row named after its file; a page named for a
+  design system, tokens, styles or foundations is read for `## Foundations` too; scripts, JSON
+  and stylesheets are `Runtime` rows — cached, since the pages need them to render, never
+  ported. Binary files stay `cached: false, reason: binary`.
+- **Tokens** are the CSS custom properties its pages and shared files define, by
+  [§ Token extraction](#token-extraction) — a page-local literal is not promoted to a token.
+- **No component cards.** A design draws its components inside its screens. The design map
+  points each component at the screen that draws it (`save→Mixer.dc.html`), and that screen's
+  markup is its spec under [§ Fidelity rules](#fidelity-rules). Component lookup step 3 (build
+  from tokens) applies only to a component no screen draws.
+- **Rendered markup.** A page may render through its runtime — `{{ … }}` bindings, loop
+  elements, a script holding its sample data. The spec is what renders: read the markup with
+  the data its script supplies, and let the card shot settle what it looks like.
+- **Freshness has no Tier 0** — no `updatedAt` reaches it. Refresh starts at Tier 1 and
+  refetches every cached file at Tier 2, rewriting only a changed digest.
+
+The fidelity loop, the 3-pass limit and QA are the same for both types.
+
+## Design system and design together
+
+A project may link **one design system and one regular design** at once — the system for its
+tokens and component cards, the design for the screens drawn with them. The first project
+linked keeps the top-level manifest keys and `cards/<path>`; the second is the **paired**
+project:
+
+- `manifest.json` gains `"pairedProject": { "projectId", "projectName", "projectType",
+  "projectUpdatedAt", "syncedAt" }`, after `tokensPath`; its card entries carry the
+  `paired/` prefix in `path`, cached under `cards/paired/<path>` — two projects' files never
+  collide, and a card's relative assets still resolve inside its own folder.
+- **Linking a project of the other type** while one is linked → `AskUserQuestion`: `Use both
+  (Recommended)` pairs it, `Replace` swaps the whole cache, `Cancel` writes nothing. A link of
+  the **same** type as a linked project replaces that project's cards only, after
+  confirmation. Never more than two projects, never two of one type.
+- **Precedence**, applied by the design map:
+  - **Tokens** — the system's are canonical. A custom property only the design defines is
+    added with the design page as its source. One both define with different values is a `⚠️`
+    row naming both values: on the design's screens the screen's value wins (the card is the
+    spec), everywhere else the system's.
+  - **Screens** — the design's pages first; a system `Screens` card covers only a screen the
+    design does not draw.
+  - **Components** — the system's component card first; else the screen that draws it.
+- **Freshness** runs per project, each by its own tiers; the report names both.
+- **Unpairing** — delete `cards/paired/`, the `pairedProject` key and its rows in `index.md`.
 
 ## Freshness
 
@@ -158,7 +223,8 @@ Tiered, so an unchanged design costs one call.
 | 1    | `list_files`, diff against `manifest.cards`                                      | added / removed / possibly changed paths      |
 | 2    | `get_file` per flagged path, `shasum -a 256`, rewrite only on a different digest | `cards/`, `index.md`, `manifest.json` updated |
 
-A missing or incomparable `updatedAt` skips Tier 0 — never read it as "unchanged". There is
+A missing or incomparable `updatedAt` — always, for a `design` — skips Tier 0; never read it
+as "unchanged". There is
 no timer and no refresh during a build: the user refreshes with `/ck-code-lite:design`.
 
 ## Component lookup order
@@ -168,6 +234,9 @@ Followed by every UI task, inline or in a `task-builder`:
 0. **Design map first.** Before writing any UI code, map every screen and component the task
    builds to its card path — a `Screens` card per screen, a component card per component — or
    to `no card`, from `index.md` § Components. It is recorded with the fidelity line.
+   A regular design project has no component cards: a component maps to the screen that draws
+   it; with a paired project, the system's component card first, then that screen
+   ([§ Design system and design together](#design-system-and-design-together)).
 1. **A `Screens` card for the screen this task builds** → read it first for layout and
    composition.
 2. **A cached card for each component** → read it and port it per
@@ -196,6 +265,11 @@ their component cards). It uses `ck-lite-replicate`, the engine of
 [`replicate.md`](replicate.md); a card is shot from its local file, served over a throwaway
 `127.0.0.1` server so its relative assets and fonts load.
 
+0. **Fonts.** A card's font files are binary and never cached, so the card shot borrows the
+   app's: port each `@font-face` keeping its file name, and pass the app's font folder(s) as
+   `--fonts <dir>[,<dir>]`. The engine serves a font the card asks for from there, matched by
+   file name with any extension, and prints `fonts N from --fonts · missing <files>`. A missing
+   font is a difference to fix — the app does not load that face yet — never a `(content)` one.
 1. **Viewport.** Shoot at the size the card was drawn for: a fixed frame width in its CSS
    (`width`/`max-width` on `body` or its root) → `--viewport <width>x<height>`; a fluid card →
    `--viewport both` (1440×900 and 390×844).
@@ -204,7 +278,7 @@ their component cards). It uses `ck-lite-replicate`, the engine of
 
    ```bash
    OUT="$(git rev-parse --git-dir)/ck-fidelity"; DS="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)/docs/design-system"
-   ck-lite-replicate shot "$DS/cards/screens/settings/index.html" --root "$DS/cards" --out "$OUT/settings-card" --viewport both
+   ck-lite-replicate shot "$DS/cards/screens/settings/index.html" --root "$DS/cards" --fonts public/fonts --out "$OUT/settings-card" --viewport both
    ```
 
 3. **Run.** Web stack with a dev command in `## Commands` or the architecture doc → start it in
