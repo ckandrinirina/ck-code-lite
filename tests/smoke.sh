@@ -381,6 +381,19 @@ has "qa slots: a dead holder's slot is taken back" "ck-lite-qa: PASS" "$(CK_QA_S
 has "qa slots: a nested run uses its parent's slot" "ck-lite-qa: PASS" \
   "$(CK_QA_SLOTS=1 CK_LITE_QA_WAIT=20 QA2 run T-07 t='ck-lite-qa run T-08 u=true')"
 [ -z "$(ls "$QSL")" ] && ok "qa slots: every slot is freed after the run" || bad "qa slots: every slot is freed after the run" "$(ls "$QSL")"
+mkdir -p "$QSL/1"; sleep 60 & QHOLD=$!; echo "$QHOLD" >"$QSL/1/pid"
+has "qa slots: CK_QA_OVERFLOW=0 never starts beside a busy slot" "queued for a CPU slot" \
+  "$(CK_QA_SLOTS=1 CK_QA_OVERFLOW=0 CK_LITE_QA_WAIT=3 QA2 run T-10 t='true')"
+QL="$( (sysctl -n vm.loadavg 2>/dev/null | tr -d '{}' | awk '{print $1}'; cut -d' ' -f1 /proc/loadavg 2>/dev/null) | head -1)"
+if [ $(( ${QL%%.*} * 2 )) -lt "$(getconf _NPROCESSORS_ONLN)" ]; then
+  has "qa slots: a waiting run starts beside busy slots on a half-idle machine" "half-idle" \
+    "$(CK_QA_SLOTS=1 CK_QA_OVERFLOW=1 CK_LITE_QA_WAIT=20 QA2 run T-11 t='true')"
+else echo "  SKIP qa slots: idle start (this machine's load is too high to test it)"; fi
+kill "$QHOLD" 2>/dev/null; wait "$QHOLD" 2>/dev/null; CK_LITE_QA_WAIT=10 QA2 wait T-10 >/dev/null; rm -rf "$QSL"
+QA_TO="$(CK_QA_TIMEOUT=1 CK_LITE_QA_WAIT=60 QA2 run T-12 t='sleep 41; echo late')"
+has "qa deadline: a run past CK_QA_TIMEOUT fails as timed out" "t: FAIL — timed out after 1s" "$QA_TO"
+has "qa deadline: the timed-out run reports FAIL" "ck-lite-qa: FAIL — t" "$QA_TO"
+[ -z "$(pgrep -f 'sleep 41')" ] && ok "qa deadline: the timed-out command's processes are stopped" || bad "qa deadline: the timed-out command's processes are stopped" "$(pgrep -fl 'sleep 41')"
 
 # The prompt router is the mod's prompt.submit hook since 1.3.0: tests/mod/hooks.test.ts.
 

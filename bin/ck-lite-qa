@@ -19,8 +19,8 @@
 #        and reports every failure; the default is in order, stopping at the first one.
 #        Prints one line per command, the last 40 log lines of each failure, then
 #        `ck-lite-qa: PASS` (exit 0) or `ck-lite-qa: FAIL — <labels>` (exit 1).
-#        The commands run detached, and run waits up to CK_LITE_QA_WAIT seconds (default 540,
-#        under the 600 s cap of one agent Bash call). A longer run prints
+#        The commands run detached, and run waits up to CK_LITE_QA_WAIT seconds (default 170,
+#        under the 180 s after which Claude Code moves a sub-agent's Bash call to the background). A longer run prints
 #        `ck-lite-qa: RUNNING` (exit 3) and keeps going. The same run started again while it
 #        is going waits on it instead of starting a second copy.
 #        Every command that ran on an unchanged tree also records its last run for
@@ -108,13 +108,27 @@ case "$CPU_SLOTS" in ''|*[!0-9]*) CPU_SLOTS=1 ;; esac
 [ -n "${CK_QA_SLOTS:-}" ] || [ "$CPU_SLOTS" -ge 1 ] || CPU_SLOTS=1
 QA_NICE="${CK_QA_NICE:-10}"
 case "$QA_NICE" in ''|*[!0-9]*) QA_NICE=10 ;; esac
-SLOT=""; SLOT_WAITED=0
+SLOT=""; SLOT_WAITED=0; SLOT_IDLE=0
+QA_TIMEOUT="${CK_QA_TIMEOUT:-3600}"
+case "$QA_TIMEOUT" in ''|*[!0-9]*) QA_TIMEOUT=3600 ;; esac
+QA_OVERFLOW="${CK_QA_OVERFLOW:-30}"
+case "$QA_OVERFLOW" in ''|*[!0-9]*) QA_OVERFLOW=30 ;; esac
+
+# The 1-minute load average as a whole number, or nothing when it cannot be read.
+load1() {
+  local l
+  l="$(sysctl -n vm.loadavg 2>/dev/null | tr -d '{}' | awk '{print $1}')"
+  [ -n "$l" ] || l="$(cut -d' ' -f1 /proc/loadavg 2>/dev/null)"
+  l="${l%%.*}"
+  case "$l" in ''|*[!0-9]*) return 0 ;; esac
+  printf '%s' "$l"
+}
 
 # Takes a free slot, waiting while every one is busy, with $1 (when given) touched while it
 # waits. A slot whose holder is gone is taken back. A run nested in one that holds a slot
 # (CK_QA_IN_SLOT) runs in its parent's slot, so it can never wait on itself.
 slot_take() {
-  local i p t0=$SECONDS
+  local i p l t0=$SECONDS
   { [ "$CPU_SLOTS" -gt 0 ] && [ -z "${CK_QA_IN_SLOT:-}" ]; } || return 0
   mkdir -p "$SLOTS_DIR" 2>/dev/null || return 0
   while :; do
@@ -133,12 +147,57 @@ slot_take() {
       fi
       i=$((i + 1))
     done
+    # Every slot is busy, but the machine is half idle (the holders are linking, running a
+    # serial test, waiting on Docker): after CK_QA_OVERFLOW seconds of waiting (default 30,
+    # 0 = never), start anyway. At most one such start per 30 s machine-wide (an atomic
+    # mkdir), so waiters that all see the same low load do not all start before the load
+    # average catches up.
+    if [ "$QA_OVERFLOW" -gt 0 ] && [ $((SECONDS - t0)) -ge "$QA_OVERFLOW" ]; then
+      l="$(load1)"
+      if [ -n "$l" ] && [ $((l * 2)) -lt "$NCPU" ] \
+        && mkdir "$SLOTS_DIR/o$(( $(date +%s) / 30 ))" 2>/dev/null; then
+        find "$SLOTS_DIR" -maxdepth 1 -name 'o*' -mmin +2 -exec rm -rf {} + 2>/dev/null
+        SLOT=""; SLOT_IDLE=1; SLOT_WAITED=$((SECONDS - t0))
+        [ -z "${1:-}" ] || rm -f "$1"
+        slot_env; return 0
+      fi
+    fi
     [ -z "${1:-}" ] || : >"$1"
     sleep 1
   done
 }
 
 slot_free() { [ -z "$SLOT" ] || rm -rf "${SLOTS_DIR:?}/$SLOT"; SLOT=""; }
+
+# Runs QA command $1 into log $2 in its own process group, under a deadline: past
+# CK_QA_TIMEOUT seconds (default 3600, 0 = none) the whole group is stopped and $2.timeout
+# is left, so a hung build or a suite stuck on a lost container frees its slot instead of
+# holding it for hours. Every run is a background run: an e2e suite that reads E2E_HEADLESS
+# keeps its window hidden, and PWDEBUG (Playwright's headed inspector) never leaks in.
+# Returns the command's exit code, 124 on a timeout.
+run_capped() {
+  local pid wd="" rc
+  rm -f "$2.timeout"
+  set -m
+  env -u PWDEBUG E2E_HEADLESS=1 nice -n "$QA_NICE" bash -c "$1" >"$2" 2>&1 &
+  pid=$!
+  set +m
+  if [ "$QA_TIMEOUT" -gt 0 ]; then
+    ( t=0
+      while kill -0 "$pid" 2>/dev/null; do
+        if [ "$t" -ge "$QA_TIMEOUT" ]; then
+          : >"$2.timeout"; kill -TERM -- "-$pid" 2>/dev/null
+          sleep 5; kill -KILL -- "-$pid" 2>/dev/null; exit 0
+        fi
+        sleep 5; t=$((t + 5))
+      done ) &
+    wd=$!
+  fi
+  wait "$pid" 2>/dev/null; rc=$?
+  [ -z "$wd" ] || { kill "$wd" 2>/dev/null; wait "$wd" 2>/dev/null; }
+  [ ! -f "$2.timeout" ] || rc=124
+  return "$rc"
+}
 
 # Inside a slot, a build tool the project left unset gets this slot's share of the cores
 # (CK_QA_JOBS carries it for a command that asks, e.g. ctest -j "${CK_QA_JOBS:-4}"),
@@ -378,7 +437,7 @@ qa_reap() {
 # Waits on the run for $1 for up to CK_LITE_QA_WAIT seconds, then prints its result and exits
 # with its code, or prints RUNNING and exits 3 while it is still going.
 await_run() {
-  local d="$RUNS/$1" budget="${CK_LITE_QA_WAIT:-540}" t0=$SECONDS polls=0 q
+  local d="$RUNS/$1" budget="${CK_LITE_QA_WAIT:-170}" t0=$SECONDS polls=0 q
   [ -f "$d/pid" ] || die "no ck-lite-qa run for $1 — start it with ck-lite-qa run $1 …"
   while [ ! -f "$d/rc" ]; do
     if ! kill -0 "$(cat "$d/pid")" 2>/dev/null; then
@@ -476,9 +535,7 @@ RESULT=""   # "<label>:<PASS|FAIL|REUSED|SKIPPED>" words
 
 run_one() {  # label → writes the exit code to <log>.rc
   local l="$1" log; log="$(log_of "$l")"
-  # Every run is a background run: an e2e suite that reads E2E_HEADLESS keeps its window
-  # hidden, and PWDEBUG (Playwright's headed inspector) never leaks in from the shell.
-  env -u PWDEBUG E2E_HEADLESS=1 nice -n "$QA_NICE" bash -c "$(cmd_of "$l")" >"$log" 2>&1
+  run_capped "$(cmd_of "$l")" "$log"
   echo $? >"$log.rc"
 }
 
@@ -525,12 +582,14 @@ for l in $TORUN; do
     RESULT="$RESULT $l:PASS"
     [ -n "$SNAP" ] && : >"$STAMPS/$(stamp_of "$S0" "$(full_of "$l")")"
   else
-    RESULT="$RESULT $l:FAIL"; FAILED="$FAILED $l"
+    v=FAIL; [ ! -f "$(log_of "$l").timeout" ] || v=TIMEOUT
+    rm -f "$(log_of "$l").timeout"
+    RESULT="$RESULT $l:$v"; FAILED="$FAILED $l"
   fi
 done
 
 [ -z "$DK_OUT" ] || echo "$DK_OUT"
-[ "$SLOT_WAITED" -lt 1 ] || echo "ck-lite-qa: waited ${SLOT_WAITED}s for a CPU slot ($CPU_SLOTS on this machine, CK_QA_SLOTS)"
+[ "$SLOT_WAITED" -lt 1 ] || echo "ck-lite-qa: waited ${SLOT_WAITED}s for a CPU slot ($CPU_SLOTS on this machine, CK_QA_SLOTS)$( [ "$SLOT_IDLE" = 0 ] || echo "; started beside them on a half-idle machine")"
 for r in $RESULT; do
   l="${r%%:*}"; v="${r#*:}"
   case "$v" in
@@ -541,6 +600,7 @@ for r in $RESULT; do
              else
                echo "$l: PASS — log $(log_of "$l")"
              fi ;;
+    TIMEOUT) echo "$l: FAIL — timed out after ${QA_TIMEOUT}s (CK_QA_TIMEOUT) and was stopped, its processes with it; log $(log_of "$l")" ;;
     *)       echo "$l: $v — log $(log_of "$l")" ;;
   esac
 done

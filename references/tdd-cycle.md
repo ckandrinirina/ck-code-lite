@@ -20,7 +20,8 @@ code state, which is what lets the QA pass that follows skip a run on code that 
 changed since. Exit 3 prints `RUNNING`: the suite is still going, so continue it with the
 `cd <dir> && ck-lite-qa wait T-05` line it prints (runs are per checkout) and never start it a
 second time. Give every `ck-lite-qa` call a 600000 ms Bash timeout. **`ck-lite-qa wait` is the
-only way to wait**, in the foreground — it returns on its own within 9 minutes. Never write a
+only way to wait**, in the foreground — it returns on its own within 170 s, under the 180 s
+after which a sub-agent's Bash call is moved to the background. Never write a
 wait loop (`until`/`while … sleep`, a `pgrep`, polling a task's output file): it outlives you,
 and some never end. A call the harness moved to the background is never polled either — run
 `ck-lite-qa wait T-05` in the foreground, which attaches to the same run.
@@ -29,7 +30,10 @@ Every run on the machine shares one CPU queue (`CK_QA_SLOTS`, default cores ÷ 8
 worktrees building at once take turns instead of each taking every core, a CMake or cargo
 build gets the slot's share of the cores, an installed `ccache` serves every worktree's cold
 C/C++ build, and commands run under `nice`. A queued run says so in its `RUNNING` line and its
-result; the wait is expected, never a stall to work around. A run also cleans up after itself:
+result; the wait is expected, never a stall to work around. After 30 s of waiting
+(`CK_QA_OVERFLOW`), a run starts anyway when the machine is half idle. A command still running
+after `CK_QA_TIMEOUT` seconds (default 3600) is stopped with its processes and reports
+`FAIL — timed out`: diagnose the hang, never raise the deadline and re-run. A run also cleans up after itself:
 its logs age out after 7 days, and the Docker containers its commands created here (with the
 volumes only they used) are removed once stopped. A `NOTE` lists any still running, which are
 left alone (`CK_QA_DOCKER=0` turns the Docker part off).

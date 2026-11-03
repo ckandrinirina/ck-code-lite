@@ -175,7 +175,10 @@ core, so the first result arrives sooner and the machine stays responsive. Insid
 CMake or cargo build gets the slot's share of the cores (unless you set
 `CMAKE_BUILD_PARALLEL_LEVEL` / `CARGO_BUILD_JOBS`), commands run under `nice -n 10`
 (`CK_QA_NICE`), and an installed [ccache](https://ccache.dev) serves every worktree's cold
-C/C++ build from one cache — `brew install ccache` to turn that on.
+C/C++ build from one cache — `brew install ccache` to turn that on. A run that has waited 30 s
+starts anyway when the machine is half idle (`CK_QA_OVERFLOW`), and a command still running
+after an hour (`CK_QA_TIMEOUT`, default 3600 s) is stopped with its processes and fails as
+timed out, so a hung run never holds a slot for hours.
 
 Tests leave no disk behind. `ck-lite-qa` prunes its own logs after 7 days (`CK_QA_KEEP_DAYS`),
 and after each run removes the Docker containers its test commands created in this checkout once
