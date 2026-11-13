@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.20.0] — 2026-11-13
+
+### Added
+- **ck-lite-bootstrap**: commits a plugin guard (`.claude/ck-code-lite-required.sh`) and the project opt-in (`enabledPlugins`, `extraKnownMarketplaces` for `ckandrinirina/ck-code`, the `SessionStart` hook) into `.claude/settings.json`. In a cloud session, which never installs a repo's plugins, the guard installs `ck-code-lite@ck-marketplace` and asks for `/reload-plugins`; on a clone without the plugin it asks for the install. Before, the skills were simply missing in cloud sessions.
+- **start**, **ship**: run `ck-lite-bootstrap install --quiet`, so new projects get the guard and older ones commit it with their next ship.
+
 ## [1.19.0] — 2026-11-03
 
 ### Changed
