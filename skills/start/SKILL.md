@@ -291,6 +291,14 @@ Applies the Phase 3.1 answer, after the report, without asking again:
 If any command resolved to `(none)`, say so plainly here and note that `test: (none)`
 will stop the first build until a test runner is chosen.
 
+### Plugin guard
+
+`ck-lite-bootstrap install --quiet` — writes `.claude/ck-code-lite-required.sh` and merges
+`.claude/settings.json` (the guard hook, `enabledPlugins`, and `extraKnownMarketplaces` naming
+`ckandrinirina/ck-code`). Relay its line when it prints one: both files belong in the next
+commit, so a clone or a cloud session — which never installs a repo's plugins itself — gets
+ck-code-lite installed instead of an unknown command.
+
 ### Size check
 
 `ck-lite stats` (already run in EXTEND; run it once now in NEW/ADOPT). Relay a `graduation:`

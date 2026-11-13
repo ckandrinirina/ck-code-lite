@@ -66,6 +66,7 @@ commit on GitHub availability** — the commit is the valuable part.
 ## PHASE 2: CONTEXT
 
 ```bash
+ck-lite-bootstrap install --quiet
 git status
 git diff --stat
 git diff --staged --stat
@@ -73,6 +74,12 @@ git log --oneline -5
 ```
 
 Nothing staged and a clean tree → "Nothing to commit." → STOP.
+
+`ck-lite-bootstrap` prints a line only when it wrote the plugin guard
+(`.claude/ck-code-lite-required.sh`, `.claude/settings.json`) — in a project with a
+`tasks/PLAN.md` that predates it. Those two files are **Source / config** in 3.1: committed,
+they make a clone, a teammate or a cloud session (which never installs a plugin on its own)
+get ck-code-lite installed.
 
 The last five commits fix the repo's style: conventional vs free-form, scope usage,
 imperative vs past tense. Match what is already there; default to conventional commits

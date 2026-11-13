@@ -618,6 +618,42 @@ eq  "release watch: still running at the cap exits 3" "3" "$RW_RC"
 has "release watch: still running at the cap prints RUNNING" "RUNNING" "$RW_OUT"
 rm -rf "$RG"
 
+echo "== ck-lite-bootstrap: plugin guard for clones and cloud sessions"
+GB="$(mktemp -d)"; mkdir -p "$GB/repo" "$GB/cfg" "$GB/stub"
+git -C "$GB/repo" init -q
+NOPLAN="$(cd "$GB/repo" && ck-lite-bootstrap install 2>&1)"
+has "bootstrap: writes nothing without tasks/PLAN.md" "nothing written" "$NOPLAN"
+eq  "bootstrap: no guard without tasks/PLAN.md" "no" "$([ -f "$GB/repo/.claude/ck-code-lite-required.sh" ] && echo yes || echo no)"
+mkdir -p "$GB/repo/tasks" "$GB/repo/.claude"; : > "$GB/repo/tasks/PLAN.md"
+printf '{"enabledPlugins":{"ck-code-lite@ck-marketplace":false}}\n' > "$GB/repo/.claude/settings.json"
+B1="$(cd "$GB/repo" && ck-lite-bootstrap install --quiet 2>&1)"
+has "bootstrap: announces what it wrote" "commit them" "$B1"
+GSET="$(cat "$GB/repo/.claude/settings.json")"
+has "bootstrap: declares where ck-marketplace lives" '"repo": "ckandrinirina/ck-code"' "$GSET"
+has "bootstrap: keeps an explicit enabledPlugins false" '"ck-code-lite@ck-marketplace": false' "$GSET"
+has "bootstrap: wires the guard as a SessionStart hook" "ck-code-lite-required.sh" "$GSET"
+eq  "bootstrap: --quiet is silent once current" "" "$(cd "$GB/repo" && ck-lite-bootstrap install --quiet 2>&1)"
+printf '#!/bin/sh\necho "$*" >> "%s/calls"\n[ -f "%s/fail" ] && exit 1\nexit 0\n' "$GB" "$GB" > "$GB/stub/claude"
+chmod +x "$GB/stub/claude"
+guard() { (cd "$GB/repo" && env -i HOME="$GB" PATH="$GB/stub:/usr/bin:/bin" CLAUDE_CONFIG_DIR="$GB/cfg" CLAUDE_PROJECT_DIR="$GB/repo" "$@" bash .claude/ck-code-lite-required.sh); }
+G_LOCAL="$(guard)"
+has "guard (local): asks for the install and /reload-plugins" "/reload-plugins" "$G_LOCAL"
+eq  "guard (local): never installs anything itself" "" "$(cat "$GB/calls" 2>/dev/null)"
+G_CLOUD="$(guard CLAUDE_CODE_REMOTE=true)"
+has "guard (cloud): installs the plugin at user scope" "plugin install ck-code-lite@ck-marketplace --scope user" "$(cat "$GB/calls")"
+has "guard (cloud): tells the user to /reload-plugins" "was just installed" "$G_CLOUD"
+touch "$GB/fail"
+has "guard (cloud): a failed install names the network fix" "github.com" "$(guard CLAUDE_CODE_REMOTE=true)"
+if command -v python3 >/dev/null 2>&1; then
+  for out in "$G_LOCAL" "$G_CLOUD"; do
+    eq "guard: emits valid JSON" "0" "$(printf '%s' "$out" | python3 -c 'import json,sys; json.load(sys.stdin)' >/dev/null 2>&1; echo $?)"
+  done
+fi
+mkdir -p "$GB/cfg/plugins/cache/ck-marketplace/ck-code-lite/9.9.9/.claude-plugin"
+: > "$GB/cfg/plugins/cache/ck-marketplace/ck-code-lite/9.9.9/.claude-plugin/plugin.json"
+eq  "guard: silent once the plugin is installed" "" "$(guard CLAUDE_CODE_REMOTE=true)"
+rm -rf "$GB"
+
 echo
 echo "passed $PASS · failed $FAIL"
 [ "$FAIL" -eq 0 ]
