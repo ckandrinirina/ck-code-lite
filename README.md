@@ -378,11 +378,14 @@ and point at `/ck-code:migrate`. It is a notice, not a wall.
 /plugin install ck-code-lite@ck-marketplace
 ```
 
-Per-project opt-in via `.claude/settings.json`:
-
-```json
-{ "enabledPlugins": { "ck-code-lite@ck-marketplace": true } }
-```
+`start` (and `ship`, in a project that predates it) runs `ck-lite-bootstrap install`, which
+commits the project opt-in into `.claude/settings.json` — `enabledPlugins`, an
+`extraKnownMarketplaces` entry naming `ckandrinirina/ck-code`, and a `SessionStart` hook running
+`.claude/ck-code-lite-required.sh`. That guard is silent wherever ck-code-lite is installed. On
+a clone without it, it asks for the install; in a **cloud session** (claude.ai/code, Desktop or
+mobile), which never installs a repo's plugins itself, it installs `ck-code-lite@ck-marketplace`
+and asks you to type `/reload-plugins` once. Remote Control uses your own machine's plugins; an
+SSH session uses the remote host's, where the committed marketplace entry offers the install.
 
 Tested against Claude Code 2.1.299. The skills run on any recent release; [the mod](#the-mod)
 needs 2.1.287 or later.
