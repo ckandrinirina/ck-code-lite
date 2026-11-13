@@ -78,7 +78,7 @@ settings_write() {
     printf '    "hooks": { "SessionStart": [ { "hooks": [ { "type": "command", "command": "%s" } ] } ] }\n' "$GUARD_CMD"
     return 1
   fi
-  SETTINGS="$SETTINGS" GUARD_CMD="$GUARD_CMD" python3 - <<'PY'
+  SETTINGS="$SETTINGS" GUARD_CMD="$GUARD_CMD" python3 -I - <<'PY'
 import json, os, sys
 path, guard = os.environ['SETTINGS'], os.environ['GUARD_CMD']
 data = {}
@@ -120,6 +120,11 @@ PY
 cmd_install() {
   local had wrote="" keys
   [ -f "$ROOT/tasks/PLAN.md" ] || { say "guard: no tasks/PLAN.md — not a ck-code-lite project, nothing written"; return 0; }
+  # A cloned repo could commit these paths as symlinks; following one would overwrite a file
+  # outside the project.
+  if [ -L "$ROOT/.claude" ] || [ -L "$GUARD" ] || [ -L "$SETTINGS" ]; then
+    printf '  ! .claude, %s or %s is a symlink — nothing written\n' "$GUARD_REL" "$SETTINGS_REL" >&2; return 1
+  fi
   had=$(installed_version)
   if [ "$had" != "$GUARD_VERSION" ]; then
     mkdir -p "$ROOT/.claude" && emit_guard > "$GUARD" && chmod +x "$GUARD" ||
