@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.20.1] — 2026-11-13
+
+### Fixed
+- **ck-lite-bootstrap**: merges `.claude/settings.json` with `python3 -I`, so a `json.py` in a cloned project is never imported, and refuses to write when `.claude`, the guard or the settings file is a symlink, so a cloned repo cannot redirect the write outside the project.
+
 ## [1.20.0] — 2026-11-13
 
 ### Added
