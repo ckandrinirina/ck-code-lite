@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.21.0] — 2026-11-17
+
+### Added
+- **ck-lite-affected**: C/C++ is traced through `#include`, C/C++ test files are recognised (`*Tests.cpp`, `*_test.cc`, sources under `tests/`), and `--command` splices `{tags}`, a Catch2 file-tag filter.
+- **stack-commands / build**: a Catch2 v3 project gets a `test-one` that runs each test binary once with `-# {tags}` instead of one ctest process per case, so RED, GREEN and the closing run take seconds instead of the whole suite (measured at 13–21 min a run on a 2,745-case suite). The full `test` keeps `ctest -j`.
+- **stack-commands / build / ship**: a database, container or server suite is a `test-integration` line, kept apart like `test-e2e` — a task runs only its own specs, `ship` runs it whole once with the area check.
+- **build** (tdd-cycle): one test file per source file, never a catch-all or root-`App` test, so the affected trace selects only what a task reaches.
+
+### Changed
+- **build** (tdd-cycle): a `test` line running `ctest` without `-j` and no serial note, written before the parallel rule, is checked once by the next build instead of staying serial forever.
+
+### Fixed
+- **ck-lite-affected**: `CMakeLists.txt` was classed as a `.txt` asset, so changing a C++ build ran no tests; the root one is now FULL, and a nested one is traced through its code.
+
 ## [1.20.1] — 2026-11-13
 
 ### Fixed
