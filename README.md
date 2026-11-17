@@ -201,10 +201,15 @@ it; `/ck-code-lite:report` does the same for anything you notice. Home paths, pr
 emails and tokens are scrubbed, an existing report is found first, and nothing is filed
 without your yes. Without `gh` signed in you get a saved draft and a prefilled issue link.
 
-Two slow suites run less. `ctest` gets `-j` (the run's share of the cores) once a parallel run
-has passed like a serial one — 82 s → 10 s on a 590-test suite. An end-to-end suite
-(`test-e2e`) never runs whole inside a task: each task runs only its own specs, and `ship`
-runs the whole e2e suite once with the area check, before the first push.
+Slow suites run less. `ctest` gets `-j` (the run's share of the cores) once a parallel run
+has passed like a serial one — 82 s → 10 s on a 590-test suite — and an older line without it
+is checked once by the next build. On Catch2, a task's own runs skip ctest's one process per
+case: each test binary runs once, filtered by file (`-# {tags}`), so RED and GREEN take
+seconds instead of the whole suite. An end-to-end suite (`test-e2e`) or an integration suite
+needing a database or a server (`test-integration`) never runs whole inside a task: each task
+runs only its own specs, and `ship` runs each whole suite once with the area check, before the
+first push. Tests go in the file that mirrors the code under test, never a catch-all, so a
+change selects only the tests that really reach it.
 
 ### Every prompt goes through the workflow
 
@@ -359,7 +364,7 @@ buy no tokens and add a lookup to every dependency check.
 **Fast without fewer checks.** RED and GREEN run only the task's own tests (the optional
 `test-one` command). After cleanup, the closing run covers every test the task can reach: the
 tests of each changed file, then of every file importing it — a service's test, the test of
-the controller that uses it, and on up the chain. `ck-lite-affected` works that out with `git`
+the controller that uses it, and on up the chain (C/C++ through `#include`). `ck-lite-affected` works that out with `git`
 and `grep`, at no token cost. A wave's merged result and `ship`, before the first push, run
 every test of each **area** the change touches — a workspace package or a row of `## Areas` —
 so a backoffice change never runs the client's suite. The whole suite runs only for repo-root
