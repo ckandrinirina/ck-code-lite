@@ -43,6 +43,13 @@ run only the task's test files through it (`{files}` → the paths, space-separa
 [closing run](#close--every-test-the-task-can-reach-once) runs **once**, as the cycle's last
 step, so a break elsewhere surfaces before QA. With no `test-one`, every run is the full `test`.
 
+**C/C++ lines, once per project, before RED.** A `test` line running `ctest` with neither `-j`
+nor `--parallel` and no serial note gets the one parallel check of
+[stack-commands.md § 5](stack-commands.md#5-ctest-runs-its-tests-in-parallel). A Catch2 v3
+suite (`catch_discover_tests` in a `CMakeLists.txt`) with no `test-one` gets one: the § 4
+Catch2 row, written into `## Commands` with `Edit`. Each is checked once — a line already
+there is never questioned again.
+
 **The closing run is the task's reach, never the whole suite by default.** `ck-lite-affected`
 works it out with `git` and `grep`, so no file is read to find it: the tests of every file
 the task changed, then the tests of every file importing those — a changed service's test,
@@ -68,7 +75,8 @@ different slice of the same output is the most expensive habit this cycle can ha
 ### End-to-end specs
 
 An e2e suite is minutes long and never the inner loop. When `## Commands` has a `test-e2e`
-line (or `test-e2e-*` lines), a task runs **only its own specs**, by path, through `ck-lite-qa`
+line (or `test-e2e-*` or `test-integration` lines — an integration suite follows every rule
+here), a task runs **only its own specs**, by path, through `ck-lite-qa`
 (`e2e="npm run test:e2e -- e2e/export.spec.ts"`). Its closing run adds, on Playwright, the
 specs that import a changed file (`-- --only-changed=<base> --pass-with-no-tests`). The whole
 e2e suite never runs inside a task: `ship` runs it once with the area check, before the first
@@ -87,7 +95,12 @@ as though RED happened. Under a recorded exception, RED and the Close run are sk
 cleanup still applies; QA is told so with `exception: <reason>`.
 
 **Write the tests.** At least one per `### Acceptance` checkbox, following the nearest existing
-test file — same framework, naming and layout. Add the obvious edge case per criterion (empty
+test file — same framework, naming and layout. A test goes in the test file that mirrors the
+file under test (`cart.ts` → `cart.test.ts`, `Clip.cpp` → `ClipTests.cpp`), created when
+missing: never append to a catch-all file (`App.test.tsx`, `misc.test.ts`), and never mount
+the root `App` to test one component unless the criterion is about the app shell.
+`ck-lite-affected` picks a test file by what it imports, so a file importing the whole app
+runs on every task. Add the obvious edge case per criterion (empty
 input, missing resource, boundary value) where one exists. Assert observable behaviour, never
 implementation detail: a test that mirrors the code line for line passes a wrong one. An e2e
 test never opens a window in front of the user: follow [background-tests.md](background-tests.md)

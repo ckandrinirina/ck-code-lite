@@ -171,10 +171,11 @@ say `Area check: skipped (no ## Commands)` and push:
 ck-lite-qa run ship --reuse test="$(ck-lite-affected auto --area --command '<test>' '<test-one>')"
 ```
 
-When `ck-lite commands` lists `test-e2e` lines, add each one to the same call as its own label
-(`e2e='<test-e2e>'`, `e2e_mobile='<test-e2e-mobile>'`, without the parenthetical note), after
-`test` and without `--parallel`: this is the one place the whole e2e suite runs, since a task
-runs only its own specs.
+When `ck-lite commands` lists `test-e2e` or `test-integration` lines, add each one to the
+same call as its own label (`e2e='<test-e2e>'`, `e2e_mobile='<test-e2e-mobile>'`,
+`integration='<test-integration>'`, without the parenthetical note), after `test` and without
+`--parallel`: this is the one place those whole suites run, since a task runs only its own
+specs.
 
 `<test>` and `<test-one>` come from `ck-lite commands` (no `test-one` → `<test>` twice). An
 area is a workspace package or a row of `## Areas`; the whole suite runs only for repo-root

@@ -10,8 +10,10 @@
 #                                                   the ready test command: <full> for a FULL
 #                                                   scope, <one> with {files} replaced by the
 #                                                   test files and {dirs} by their folders
-#                                                   (`./internal/api`, for go test), or `: …`
-#                                                   when no test is affected
+#                                                   (`./internal/api`, for go test) and {tags}
+#                                                   by a Catch2 filename-tag filter
+#                                                   ('[#ClipTests],[#TrackTests]', for -#), or
+#                                                   `: …` when no test is affected
 #
 # <base> is a commit, branch or `auto` (the merge-base of HEAD with the trunk). The changed
 # files are `git diff <base>` (working tree, committed or not) plus untracked files.
@@ -26,8 +28,9 @@
 #   imports (a service's test, the test of the controller that uses it, …). JS/TS and
 #   Python imports are resolved to the file (relative paths, `@/` aliases, workspace
 #   package names, dotted and relative modules); Ruby, PHP and Go match by name, and Go
-#   adds a package's own tests. An area whose change cannot be traced (its
-#   own manifest or config, a Rust/C++/JVM file, more than CK_LITE_AFFECTED_CAP files reached) is
+#   adds a package's own tests. C/C++ follows #include by header name: a changed Foo.cpp
+#   or Foo.h reaches every file that includes a Foo header. An area whose change cannot be traced (its
+#   own manifest or config, a Rust/JVM file, more than CK_LITE_AFFECTED_CAP files reached) is
 #   `all`: every test in it runs.
 # Area scope (--area): every test of every reached area, plus areas whose manifest depends on
 #   one. Areas nothing reaches are skipped.
@@ -134,6 +137,10 @@ is_test() {  # a file a runner executes as a test
   local b="${1##*/}"
   case "$b" in
     *.test.* | *.spec.* | *.cy.* | test_*.py | *_test.py | *_test.go | *_spec.rb | *Test.php) return 0 ;;
+    # C/C++ test sources: by name, or any source under a tests/ or test/ folder.
+    *.c | *.cc | *.cpp | *.cxx | *.m | *.mm)
+      case "${b%.*}" in *Test | *Tests | *_test | *_tests | test_*) return 0 ;; esac
+      case "/$1" in */tests/* | */test/*) return 0 ;; esac ;;
   esac
   case "/$1" in */__tests__/*.[jt]s | */__tests__/*.[jt]sx | */__tests__/*.mjs) return 0 ;; esac
   return 1
@@ -174,7 +181,8 @@ is_config() {  # a file that changes how a whole area builds, lints or runs its 
     .eslintrc* | .prettierrc* | prettier.config.* | biome.json* | next.config.* | nuxt.config.* | \
     svelte.config.* | astro.config.* | .npmrc | .nvmrc | .python-version | ruff.toml | .ruff.toml | pytest.ini | \
     tox.ini | conftest.py | .rubocop.yml | .rspec | spec_helper.rb | rails_helper.rb | test_helper.* | \
-    phpunit.xml* | Makefile | Dockerfile* | docker-compose* | compose.yaml | compose.yml) return 0 ;;
+    phpunit.xml* | Makefile | Dockerfile* | docker-compose* | compose.yaml | compose.yml | \
+    CMakeLists.txt | *.cmake | CMakePresets.json | CMakeUserPresets.json | meson.build | vcpkg.json | conanfile.*) return 0 ;;
   esac
   return 1
 }
@@ -186,6 +194,7 @@ family() {  # how importers of this file name it
     *.rb) echo rb ;;
     *.php) echo php ;;
     *.go) echo go ;;
+    *.c | *.cc | *.cpp | *.cxx | *.c++ | *.h | *.hh | *.hpp | *.hxx | *.h++ | *.inl | *.ipp | *.tpp | *.m | *.mm) echo c ;;
     *.css | *.scss | *.sass | *.less | *.svg | *.png | *.jpg | *.jpeg | *.gif | *.webp | *.ico | *.json | \
     *.yaml | *.yml | *.html | *.graphql | *.gql | *.txt | *.csv | *.woff | *.woff2 | *.ttf | *.mp3 | *.wav) echo asset ;;
     *) echo none ;;
@@ -211,6 +220,9 @@ while read -r f; do
     [ "$a" = . ] && { full "$f changed with no manifest change"; continue; }
     echo "$a" >>"$W/allareas"; echo "$a	$f" >>"$W/why"; continue
   fi
+  # A nested CMakeLists.txt lists a target's sources: the full build QA always runs proves it,
+  # and its code is traced. Only the root one and *.cmake files configure the whole build.
+  case "$f" in */CMakeLists.txt) continue ;; esac
   if is_config "$f"; then
     [ "$a" = . ] && { full "$f configures the whole repo"; continue; }
     echo "$a" >>"$W/allareas"; echo "$a	$f" >>"$W/why"; continue
@@ -335,7 +347,7 @@ cont { buf = buf " " $0; if (index($0, ")")) { cont = 0; if (check(buf)) { print
 AWK
 
 # file → "family<TAB>fixed key<TAB>ERE" for the families matched loosely (Ruby constants, PHP
-# classes, Go package paths, assets). JS/TS and Python resolve exactly above.
+# classes, Go package paths, C/C++ headers, assets). JS/TS and Python resolve exactly above.
 loose() {
   local f="$1" b stem dir c rel m
   b="${f##*/}"; stem="${b%.*}"; dir="${f%/*}"; [ "$dir" = "$f" ] && dir=.
@@ -346,6 +358,10 @@ loose() {
       c="$(printf '%s' "$stem" | awk -F_ '{ s = ""; for (i = 1; i <= NF; i++) s = s toupper(substr($i, 1, 1)) substr($i, 2); print s }')"
       printf 'rb\t%s\trequire(_relative)?[[:space:](]*[\x27"]([^\x27"]*/)?%s(\\.rb)?[\x27"]\n' "$stem" "$(esc "$stem")"
       printf 'rb\t%s\t(^|[^A-Za-z0-9_])%s([^A-Za-z0-9_]|$)\n' "$c" "$(esc "$c")" ;;
+    c)
+      # A Foo.cpp is reached through its Foo header, a Foo.h directly: any #include of a
+      # header named Foo, in any folder.
+      printf 'c\t%s\t#[[:space:]]*(include|import)[[:space:]]*[<"]([^">]*/)?%s\\.(h|hh|hpp|hxx|h\\+\\+|inl|ipp|tpp)[">]\n' "$stem" "$(esc "$stem")" ;;
     php)
       printf 'php\t%s\t(^|[^A-Za-z0-9_])%s([^A-Za-z0-9_]|$)\n' "$stem" "$(esc "$stem")" ;;
     go)
@@ -361,6 +377,7 @@ pathspecs() {  # family → git pathspecs
   case "$1" in
     js) echo "*.ts *.tsx *.js *.jsx *.mjs *.cjs *.mts *.cts *.vue *.svelte *.astro" ;;
     py) echo "*.py" ;; rb) echo "*.rb *.erb" ;; php) echo "*.php" ;; go) echo "*.go" ;;
+    c) echo "*.c *.cc *.cpp *.cxx *.c++ *.h *.hh *.hpp *.hxx *.h++ *.inl *.ipp *.tpp *.m *.mm" ;;
     all) echo "*.ts *.tsx *.js *.jsx *.mjs *.cjs *.vue *.svelte *.astro *.py *.rb *.erb *.php *.go *.css *.scss *.html" ;;
   esac
 }
@@ -402,9 +419,9 @@ while [ -s "$W/frontier" ]; do
   fi
   # Everything else traced by name.
   while read -r f; do
-    case "$(family "$f")" in rb | php | go | asset) loose "$f" >>"$W/pats" ;; esac
+    case "$(family "$f")" in rb | php | go | c | asset) loose "$f" >>"$W/pats" ;; esac
   done <"$W/frontier"
-  for fam in rb php go all; do
+  for fam in rb php go c all; do
     grep "^$fam	" "$W/pats" | cut -f2 | sort -u >"$W/k.$fam"
     [ -s "$W/k.$fam" ] || continue
     grep "^$fam	" "$W/pats" | cut -f3- | sort -u >"$W/p.$fam"
@@ -493,8 +510,8 @@ case "$MODE" in
       AREA)
         rel_tests >"$W/rel"
         k="$(wc -l <"$W/rel" | tr -d ' ')"
-        # An area that runs whole but has no test file to name (Rust and C++ keep tests
-        # inside the source) can only run through the full command.
+        # An area that runs whole but has no test file to name (Rust keeps tests inside
+        # the source) can only run through the full command.
         inline=no
         while read -r a; do grep -qxF "$a" <(areas_of <"$W/alltests") || inline=yes; done <"$W/whole"
         if [ "$inline" = yes ]; then printf '%s\n' "$FULLCMD"
@@ -505,12 +522,16 @@ case "$MODE" in
           files="$(shq <"$W/rel" | tr '\n' ' ' | sed 's/ $//')"
           dirs="$(sed -e 's|/[^/]*$||' -e 's|^[^/]*$|.|' -e 's|^\([^.]\)|./\1|' "$W/rel" | sort -u |
             shq | tr '\n' ' ' | sed 's/ $//')"
+          # Catch2's -# tags every case with its file name, extension dropped: one filter, one
+          # process per test binary, instead of one ctest process per case.
+          tags="$(sed -e 's|.*/||' -e 's|\.[^.]*$||' "$W/rel" | sort -u |
+            awk '{ printf "%s[#%s]", (NR > 1 ? "," : ""), $0 } END { print "" }' | shq)"
           # Literal splice: awk -v and gsub would both rewrite the backslashes of the quoting.
-          printf '%s\n' "$ONECMD" | F="$files" D="$dirs" awk '
+          printf '%s\n' "$ONECMD" | F="$files" D="$dirs" G="$tags" awk '
             function put(s, k, v,   i, o) { o = ""
               while ((i = index(s, k)) > 0) { o = o substr(s, 1, i - 1) v; s = substr(s, i + length(k)) }
               return o s }
-            { print put(put($0, "{files}", ENVIRON["F"]), "{dirs}", ENVIRON["D"]) }'
+            { print put(put(put($0, "{files}", ENVIRON["F"]), "{dirs}", ENVIRON["D"]), "{tags}", ENVIRON["G"]) }'
         fi ;;
     esac
     exit 0 ;;

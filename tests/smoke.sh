@@ -448,6 +448,25 @@ eq  "affected: no code changed runs nothing" ": no code changed" "$(ck-lite-affe
 rm README.md; echo '{}' >tsconfig.json
 eq  "affected: root config runs the full command" "full" "$(ck-lite-affected HEAD --command full 'one {files}')"
 rm tsconfig.json
+# A CMake/Catch2 project: #include traced, the tests named to Catch2 by file tag.
+CX="$(mktemp -d)"; (
+  cd "$CX" && git init -q && git config user.email t@t && git config user.name t
+  w CMakeLists.txt 'project(x)'
+  w src/core/Clip.h '#pragma once'
+  w src/core/Clip.cpp '#include "Clip.h"'
+  w src/core/Track.h '#include "core/Clip.h"'
+  w src/ui/ClipPanel.h '#pragma once'
+  w tests/ClipTests.cpp '#include "core/Clip.h"'
+  w tests/TrackTests.cpp '#include <core/Track.h>'
+  w tests/PanelTests.cpp '#include "ui/ClipPanel.h"'
+  w tests/CMakeLists.txt 'add_executable(t ClipTests.cpp)'
+  git add -A; git commit -qm base
+  echo '//' >>src/core/Clip.cpp; echo '#' >>tests/CMakeLists.txt
+  eq "affected: C++ — the tests including the header, through headers, as Catch2 file tags" \
+     "run -# '[#ClipTests],[#TrackTests]'" "$(ck-lite-affected HEAD --command full 'run -# {tags}')"
+  echo '#' >>CMakeLists.txt
+  eq "affected: C++ — the root CMakeLists.txt runs the full command" "full" "$(ck-lite-affected HEAD --command full 'run -# {tags}')"
+); rm -rf "$CX"
 
 # ---- reclaim ----------------------------------------------------------------------------
 echo "=== reclaim ==="

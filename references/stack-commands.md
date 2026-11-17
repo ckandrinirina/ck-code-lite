@@ -60,7 +60,7 @@ directory exists. Otherwise `python -m unittest discover`.
 
 Written only when the runner takes test paths, so RED/GREEN runs a task's own tests, and the
 closing run, the wave check and ship's area check run only the tests a change can reach
-(`ck-lite-affected` splices them into `{files}`). With no `test-one` each of those runs `test`. `{files}` is replaced by space-separated test paths, `{dirs}` by the package folders of those files, deduplicated, as `./path` (Go tests a package, not a file).
+(`ck-lite-affected` splices them into `{files}`). With no `test-one` each of those runs `test`. `{files}` is replaced by space-separated test paths, `{dirs}` by the package folders of those files, deduplicated, as `./path` (Go tests a package, not a file), `{tags}` by a Catch2 filter naming each test file (`'[#ClipTests],[#TrackTests]'`).
 
 | Runner | `test-one` |
 |---|---|
@@ -70,7 +70,8 @@ closing run, the wave check and ship's area check run only the tests a change ca
 | rspec | `bundle exec rspec {files}` |
 | phpunit | `vendor/bin/phpunit {files}` |
 | go | `go test {dirs}` — expands to package folders such as `./internal/count` |
-| cargo, ctest, `python -m unittest` | omit — filters are by test name, not by path |
+| ctest on Catch2 v3 (`catch_discover_tests`) | `<test's configure and build> && for t in <the test binaries' glob>; do if ! "$t" -# {tags} --allow-running-no-tests; then exit 1; fi; done` ([§ 5](#5-ctest-runs-its-tests-in-parallel)) |
+| cargo, ctest on GoogleTest or Catch2 v2, `python -m unittest` | omit — filters are by test name, not by path |
 
 A `test` script that already pins files or runs several tools (`"test": "lint && vitest"`)
 gets no `test-one`: appending paths would change what it means.
@@ -85,11 +86,32 @@ writing the line: record `-j` only when both pass. A suite that passes serially 
 parallel has tests sharing a file, port or directory — keep the serial form and note why under
 `## Commands`.
 
-### 6. `test-e2e` — the end-to-end suite, kept apart
+A `test` line written before this rule — `ctest` with neither `-j` nor `--parallel`, and no
+serial note — is checked once by the next build ([tdd-cycle.md](tdd-cycle.md#running-tests)):
+one run with `-j`; `PASS` → `Edit` the line to add it; `FAIL` → one serial run, and a note
+when only the serial one passes. Measured on a 2,745-case suite run serially: 13–21 min a run,
+every run.
+
+**Catch2 — one process per binary.** `catch_discover_tests` makes every `TEST_CASE` its own
+ctest test, so ctest starts the binary once per case (median 0.13 s, nearly all of it process
+start). The `test-one` row above skips ctest: it builds, then runs each test binary once with
+Catch2's file-name tags (`-#`), selecting only the cases of the given test files — 0.2 s for
+two files against 13 min for the suite. Name the binaries by the build folder's glob
+(`build/tests/tests/*_tests`), so a new test target is never missed. The full `test` stays
+`ctest -j`: one process per case is what catches a case that passes only because another ran
+before it.
+
+### 6. `test-e2e` and `test-integration` — slow suites, kept apart
 
 A declared e2e script (`test:e2e`, `e2e`, a Playwright or Cypress config) is recorded as its own
 `test-e2e` line, never chained into `test`: a task runs only its own specs, and the whole e2e
 suite runs once, at ship ([tdd-cycle.md](tdd-cycle.md#end-to-end-specs)).
+
+A suite that needs a database, a container or a running server (`test:integration`,
+`test:db`, `test:e2e:db`, a Testcontainers or docker-compose test config) is a
+`test-integration` line on the same terms — never chained into `test`, a task runs only its
+own specs, ship runs it whole. Measured at 20–24 min a run when chained into every task's QA.
+Give it a `test-integration-one` line when its runner takes paths (`{files}`, as `test-one`).
 
 ## Writing the result
 
