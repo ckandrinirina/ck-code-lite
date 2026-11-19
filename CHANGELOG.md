@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.23.2] — 2026-11-19
+
+### Fixed
+- **ck-lite-replicate** 1.3.2 (`figma pull`): a frame with a fractional size (526.33 × 2327.16) now gets its rebuild check — the viewport is the size of Figma's own PNG, recorded as `viewport` in `figma.json` — and the fidelity loop uses that size. SVG exports are requested 100 per call and assets download 16 at a time (a 30-frame file with 1,281 SVGs dropped from 7.5 minutes).
+
 ## [1.23.1] — 2026-11-19
 
 ### Fixed
