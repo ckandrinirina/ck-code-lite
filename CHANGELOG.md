@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.23.1] — 2026-11-19
+
+### Fixed
+- **ck-lite-replicate** 1.3.1 (`figma`): every CSS value from a Figma file is sanitized before it reaches `index.html` or `spec.md` — font names allowlisted, blend modes from a fixed set, image refs validated, `<` escaped — so a hostile layer cannot break out of `<style>`. Asset downloads are pinned to Figma's own hosts and its S3 bucket (not every `amazonaws.com` host), and each redirect hop is re-checked.
+
 ## [1.23.0] — 2026-11-19
 
 ### Added
