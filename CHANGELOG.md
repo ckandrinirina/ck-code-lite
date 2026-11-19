@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.0] — 2026-11-19
+
+### Added
+- **ck-lite-qa**: a failing run prints up to three lessons from `~/.claude/ck-lessons.md` whose error regex matches the failed log, the fixes another project on this machine already found. It prints nothing when no lesson matches, so a passing or unmatched run costs no tokens.
+- **build** / **task-builder**: a `lesson:` line under a failure is tried first, and a failure fixed in the environment rather than the code is recorded with `ck-lite-release learn qa,on-error`; a code bug never is. **qa-validator** carries any `lesson:` line into its verdict verbatim.
+
 ## [1.21.0] — 2026-11-17
 
 ### Added
