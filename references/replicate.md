@@ -11,6 +11,9 @@ The pack is **identical to ck-code's** `docs/replica/` — same path, same files
 `/ck-code:migrate` leaves it where it is, and `bin/ck-lite-replicate` is byte-identical to
 ck-code's `scripts/ck-replicate.mjs`. Never diverge from either without changing both.
 
+The same engine imports a Figma file (`ck-lite-replicate figma`, owned by [figma.md](figma.md)) and
+serves the design preview (`ck-lite-replicate preview`, [design-system.md § Preview](design-system.md#preview)).
+
 ## The off switch
 
 No `docs/replica/` directory → no touchpoint does anything. It is created only by an explicit

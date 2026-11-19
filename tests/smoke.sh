@@ -543,6 +543,40 @@ if command -v node >/dev/null 2>&1 && [ "$(node -p 'process.versions.node.split(
   has "ck-lite-replicate shot: names the missing --fonts folder" "no such folder" "$RF_OUT"
   ck-lite-replicate shot https://example.com --fonts "$RR" --out "$RR/s" >/dev/null 2>&1
   eq  "ck-lite-replicate shot: --fonts on a URL exits 2" 2 "$?"
+  # figma: a loopback mock stands in for api.figma.com — the token reaches API calls only, never a file
+  FM_PORT_FILE="$RR/fm.port"; node "$ROOT/tests/figma-mock.mjs" 30 >"$FM_PORT_FILE" & FM_PID=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$FM_PORT_FILE" ] && break; sleep 0.3; done
+  FAPI="http://127.0.0.1:$(cat "$FM_PORT_FILE")/v1"; FTOK="figd_smoke-token-0123456789abcdef"
+  FURL="https://www.figma.com/design/AbCdEfGhIjKlMnOp/Mock-App?node-id=0-1"
+  FP_OUT=$(CK_FIGMA_API="$FAPI" FIGMA_TOKEN="$FTOK" ck-lite-replicate figma pull "$FURL" --out "$RR/fig" --no-check 2>&1)
+  has "ck-lite-replicate figma pull: one frame from a page link" "1 frames" "$FP_OUT"
+  lacks "ck-lite-replicate figma pull: every render, SVG and image downloads (no token on asset hosts)" "missing" "$FP_OUT"
+  eq  "ck-lite-replicate figma pull: frame.png, index.html, spec.md, node.json" "4" "$(ls "$RR/fig/screens/settings" | grep -cE '^(frame\.png|index\.html|spec\.md|node\.json)$')"
+  eq  "ck-lite-replicate figma pull: the vector icon is an SVG asset" "OK" "$([ -s "$RR/fig/assets/1-5.svg" ] && echo OK)"
+  eq  "ck-lite-replicate figma pull: the image fill is a sniffed .png asset" "OK" "$([ -s "$RR/fig/assets/abc123.png" ] && echo OK)"
+  has "ck-lite-replicate figma pull: auto-layout becomes flex with the exact gap" "gap: 16px" "$(cat "$RR/fig/screens/settings/spec.md")"
+  has "ck-lite-replicate figma pull: instances name their component set" "component Button / Size=md" "$(cat "$RR/fig/screens/settings/spec.md")"
+  has "ck-lite-replicate figma pull: a named text style becomes a token" '"--heading-h2"' "$(cat "$RR/fig/figma.json")"
+  has "ck-lite-replicate figma pull: variables over REST report Enterprise-only" "Enterprise only" "$(cat "$RR/fig/figma.json")"
+  eq  "ck-lite-replicate figma pull: the token is written nowhere" "" "$(grep -rl "$FTOK" "$RR/fig" 2>/dev/null)"
+  has "ck-lite-replicate figma pull: an unchanged version costs one call" "up to date" "$(CK_FIGMA_API="$FAPI" FIGMA_TOKEN="$FTOK" ck-lite-replicate figma pull "$FURL" --out "$RR/fig" --no-check 2>&1)"
+  kill "$FM_PID" 2>/dev/null; wait "$FM_PID" 2>/dev/null
+  ( unset FIGMA_TOKEN; HOME="$RR" ck-lite-replicate figma pull "$FURL" --out "$RR/x" >/dev/null 2>&1 ); eq "ck-lite-replicate figma pull: no token exits 4" 4 "$?"
+  FM_OUT=$(FIGMA_TOKEN="$FTOK" ck-lite-replicate figma pull "https://www.figma.com/make/AbCdEfGhIjKlMnOp/x" --out "$RR/x" 2>&1)
+  has "ck-lite-replicate figma pull: a Make file is refused by name" "no design layers" "$FM_OUT"
+  FM_OUT=$(CK_FIGMA_API="https://evil.example/v1" FIGMA_TOKEN="$FTOK" ck-lite-replicate figma pull "https://evil.example/design/AbCdEfGhIjKlMnOp/x" --out "$RR/x" 2>&1)
+  has "ck-lite-replicate figma pull: a non-Figma URL is refused" "figma.com" "$FM_OUT"
+  ck-lite-replicate figma render "$RR/fig/screens/settings/node.json" --out "$RR/rend" >/dev/null 2>&1
+  has "ck-lite-replicate figma render: a linear gradient keeps its angle and stops" "linear-gradient(90deg, #3B5CDB 0%, #6633E6 100%)" "$(cat "$RR/rend/index.html")"
+  has "ck-lite-replicate figma render: per-side strokes never move content" "inset 0 -1px 0 0" "$(cat "$RR/rend/index.html")"
+  # preview: a static gallery over a design folder with a Figma frame
+  mkdir -p "$RR/ds/cards" && cp -R "$RR/fig/." "$RR/ds/cards/"
+  printf '{"projectName":"Mock","projectType":"figma","cards":[]}\n' >"$RR/ds/manifest.json"
+  printf '## Foundations\n\n| token | value | source |\n|---|---|---|\n| --brand | #3B5BDB | style |\n' >"$RR/ds/index.md"
+  PV_OUT=$(ck-lite-replicate preview "$RR/ds" --write "$RR/ds/preview.html" 2>&1)
+  has "ck-lite-replicate preview --write: counts the Figma frame and the token" "1 Figma frames, 1 tokens" "$PV_OUT"
+  has "ck-lite-replicate preview --write: the gallery embeds the frame" '"dir":"cards/screens/settings"' "$(cat "$RR/ds/preview.html")"
+  ck-lite-replicate preview "$RR/none" >/dev/null 2>&1; eq "ck-lite-replicate preview: a missing folder exits 2" 2 "$?"
   rm -rf "$RR"
 else
   echo "skip    node >= 22 not on PATH — skipping ck-lite-replicate checks"
