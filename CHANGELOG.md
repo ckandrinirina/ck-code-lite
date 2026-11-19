@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.23.0] — 2026-11-19
+
+### Added
+- **design**: a `figma.com` URL links a Figma frame, page or file into `docs/design-system/` exactly — Figma's own 1× render as the fidelity reference, the raw layer tree, every layer's CSS derived by fixed rules in `spec.md`, a static `index.html` rebuild checked against the render, SVG icons, image fills and named-style tokens. Without a personal access token, the official Figma plugin's MCP gives the mcp tier. Contract: `references/figma.md`.
+- **design**: `figma [idea]` writes the brief and draws it in a new Figma file through the official Figma plugin, then links it; `preview` serves the cached design (tokens, cards, Figma frames beside their rebuild, design · app · diff with an overlay) on 127.0.0.1.
+- **ck-lite-replicate** 1.3.0: `figma pull | render | fetch` and `preview`; `diff` composites transparency over white. The token is sent only to api.figma.com and never written.
+
+### Changed
+- **design** SKILL.md grew 20 % (12.1 → 14.6 KB) for the two new modes.
+
 ## [1.22.0] — 2026-11-19
 
 ### Added
