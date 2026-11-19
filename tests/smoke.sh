@@ -290,6 +290,9 @@ has "qa run --reuse: an untracked file is a new state" "test: PASS" "$(QA run T-
 out="$(QA run T-01 a='false' b='true')";
 has "qa run: stops at the first failure" "b: SKIPPED" "$out"
 has "qa run: overall FAIL line" "ck-lite-qa: FAIL" "$out"
+printf '%s\n' "- qa,on-error :: EADDRINUSE :: free the port first :: x 2026" >"$QT/lessons.md"
+has "qa run: a failure prints the lesson its log matches" "lesson: qa,on-error :: EADDRINUSE" "$(CK_LESSONS="$QT/lessons.md" QA run T-01 p='echo "listen EADDRINUSE :3000"; exit 1')"
+lacks "qa run: no lesson when nothing matches" "lesson:" "$(CK_LESSONS="$QT/lessons.md" QA run T-01 p='exit 1')"
 lacks "qa: never clashes with ck-code's stamps" "ck-qa:" "$out"
 has "qa run: a hyphenated label is refused" "no hyphen" "$(QA run T-01 test-one='true')"
 

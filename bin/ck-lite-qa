@@ -17,7 +17,9 @@
 #        (state, directory, command). --reuse reports a command already passed on that
 #        exact triple as REUSED instead of running it. --parallel runs them concurrently
 #        and reports every failure; the default is in order, stopping at the first one.
-#        Prints one line per command, the last 40 log lines of each failure, then
+#        Prints one line per command, the last 40 log lines of each failure, up to 3
+#        `lesson:` lines from ${CK_LESSONS:-~/.claude/ck-lessons.md} whose regex matches a failed
+#        log (a fix another project found), then
 #        `ck-lite-qa: PASS` (exit 0) or `ck-lite-qa: FAIL — <labels>` (exit 1).
 #        The commands run detached, and run waits up to CK_LITE_QA_WAIT seconds (default 170,
 #        under the 180 s after which Claude Code moves a sub-agent's Bash call to the background). A longer run prints
@@ -530,6 +532,20 @@ fi
 
 log_of() { printf '%s/ck-lite-%s-%s-%s.log' "$TMP" "$REPO" "$ID" "$1"; }
 
+# The lessons (shared with the release script) whose error regex matches the end of failed
+# log $1: a fix already found in another project. Silent when nothing matches.
+LESSONS_FILE="${CK_LESSONS:-$HOME/.claude/ck-lessons.md}"
+lessons_for() {
+  local text line re
+  [ -f "$LESSONS_FILE" ] || return 0
+  text="$(tail -n 200 "$1" 2>/dev/null)"
+  grep '^- ' "$LESSONS_FILE" | while IFS= read -r line; do
+    re="$(printf '%s\n' "$line" | awk -F' :: ' '{print $2}')"
+    [ -n "$re" ] || continue
+    printf '%s\n' "$text" | grep -Eiq -- "$re" 2>/dev/null && printf 'lesson: %s\n' "${line#- }"
+  done
+}
+
 S0="$(state)"
 RESULT=""   # "<label>:<PASS|FAIL|REUSED|SKIPPED>" words
 
@@ -608,6 +624,8 @@ for l in $FAILED; do
   echo "--- $l (last 40 lines of $(log_of "$l")) ---"
   tail -n 40 "$(log_of "$l")"
 done
+LESSON_OUT="$(for l in $FAILED; do lessons_for "$(log_of "$l")"; done | awk '!seen[$0]++' | head -n 3)"
+[ -z "$LESSON_OUT" ] || { echo "--- known fixes from $LESSONS_FILE (try them first) ---"; echo "$LESSON_OUT"; }
 
 if [ -n "$FAILED" ]; then echo "ck-lite-qa: FAIL —${FAILED}"; exit 1; fi
 echo "ck-lite-qa: PASS"

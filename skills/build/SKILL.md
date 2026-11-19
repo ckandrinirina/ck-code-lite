@@ -236,7 +236,8 @@ since — those tests already passed on this exact state. Build and lint always 
 criterion is still mapped to its covering test.
 
 **Iteration cap 3.** On `QA: FAIL`, fix the specific failure, re-run the task's tests and the
-closing run, and re-delegate. At the third failure, escalate (`AskUserQuestion`):
+closing run, and re-delegate. A `lesson:` line under the failure is a fix another project
+already found: try it first. At the third failure, escalate (`AskUserQuestion`):
 
 - `FIX MANUALLY` — hand back, task stays `doing`
 - `ACCEPT AS-IS` — `ck-lite note T-05 "<the shortfall>"`, then continue

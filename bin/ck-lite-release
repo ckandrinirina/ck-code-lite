@@ -49,7 +49,8 @@ seed() {
   mkdir -p "$(dirname -- "$LESSONS")" 2>/dev/null || return 0
   cat >"$LESSONS" <<'EOF'
 # ck lessons — learned in one project's releases, reused by every project on this machine.
-# Read by /ck-code:release and /ck-code-lite:release through ck-release / ck-lite-release.
+# Read by /ck-code:release and /ck-code-lite:release through ck-release / ck-lite-release,
+# and printed by ck-qa / ck-lite-qa under a failure whose log matches a lesson's regex.
 # One lesson per line:  - <tag,tag…> :: <error regex> :: <what to do> :: <origin>
 - private,budget-blocked :: budget is preventing|spending limit|recent account payments have failed :: This private repo has no Actions minutes left: never wait on its runs. Build in a public repo that checks out this one with a read-only SOURCE_TOKEN secret, started by `gh workflow run <workflow> -R <owner>/<releases-repo> -f tag=vX.Y.Z` after the tag is pushed. The private run's failure is expected, never the blocker. With no such repo yet, propose one as a task (the CI files kept in public-ci/ and copied there). :: ck-plugins seed
 - releases-repo,on-error :: repository not found|could not read Username|Bad credentials|Resource not accessible by integration :: The public build repo cannot read the private source: its SOURCE_TOKEN secret is missing or expired (fine-grained, Contents read-only on the source repo). Ask the user to renew it in the releases repo's Actions secrets, then re-dispatch. :: ck-plugins seed

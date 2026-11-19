@@ -108,6 +108,11 @@ missing verdict is read as `partial`. The orchestrator verifies from git regardl
   paths only; never `git add -A` or `git add .`.
 - Never run `git checkout -b`, `git switch`, `git rebase`, `git reset`, or any `git worktree`
   command, and never remove a worktree — yours or a sibling's.
+- A `lesson:` line under a `ck-lite-qa` failure is a fix another project already found: try it
+  first. When a failure came from the environment (a missing tool or browser, a busy port, a
+  stopped service, a stale cache), not the code, record its fix once it works:
+  `ck-lite-release learn qa,on-error '<regex matching the error line>' '<the fix>'`. Never
+  record a code bug.
 - Never create or edit an implementation file before a test run has been observed failing,
   unless your prompt carries a settled test exception.
 - Never write a wait loop — `until`/`while … sleep`, a `pgrep`, a poll of a task's output
