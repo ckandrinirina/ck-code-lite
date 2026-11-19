@@ -140,7 +140,9 @@ following.
 
 - **Step 0, fonts.** There is no card shot to lend fonts to. `spec.md`'s `Fonts:` line lists
   every face the app must load. A missing face shows up as a text difference.
-- **Step 1, viewport.** Use the frame's size from `figma.json`: `--viewport <width>x<height>`.
+- **Step 1, viewport.** Use the frame's `viewport` from `figma.json`, which is the size of `frame.png`
+  (Figma rounds a fractional frame like 526.33 × 2327.16 when it renders). When it is absent, read
+  the PNG's size with `file frame.png`. Then pass `--viewport <width>x<height>`.
 - **Step 2, reference.** There is no shot to take, because Figma's render is the reference:
 
   ```bash

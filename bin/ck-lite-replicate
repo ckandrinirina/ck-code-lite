@@ -43,7 +43,7 @@ import { join, basename, dirname, resolve, sep, extname } from 'node:path';
 import { createServer } from 'node:http';
 import { inflateSync, deflateSync } from 'node:zlib';
 
-const VERSION = '1.3.1';
+const VERSION = '1.3.2';
 const NAME = basename(process.argv[1] || 'ck-replicate').replace(/\.mjs$/, '');
 const VIEWPORTS = {
   desktop: { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false },
@@ -1839,7 +1839,7 @@ async function figmaPull(url, opt) {
   const save = (rel, buf) => { const f = join(out, rel); mkdirSync(dirname(f), { recursive: true }); writeFileSync(f, buf); written.push(rel); };
   const fetchAll = async (map, name) => {
     let missing = 0;
-    for (const part of chunks(Object.entries(map), 8)) await Promise.all(part.map(async ([k, u]) => {
+    for (const part of chunks(Object.entries(map), 16)) await Promise.all(part.map(async ([k, u]) => {
       if (!u) { missing++; return; }
       try { name(k, await figmaDownload(u)); } catch (e) { missing++; console.log(`${NAME}: ${k} — ${e.message}`); }
     }));
@@ -1857,7 +1857,7 @@ async function figmaPull(url, opt) {
   const renders = {};
   for (const part of chunks(targets.map((t) => t.id), 20)) Object.assign(renders, (await figmaApi(`/images/${ref.key}?ids=${part.map(encodeURIComponent).join(',')}&format=png&scale=1&use_absolute_bounds=true`, token)).images);
   const svgs = {};
-  for (const part of chunks([...svgIds], 50)) Object.assign(svgs, (await figmaApi(`/images/${ref.key}?ids=${part.map(encodeURIComponent).join(',')}&format=svg&svg_outline_text=true&svg_include_id=false&svg_simplify_stroke=true`, token)).images);
+  for (const part of chunks([...svgIds], 100)) Object.assign(svgs, (await figmaApi(`/images/${ref.key}?ids=${part.map(encodeURIComponent).join(',')}&format=svg&svg_outline_text=true&svg_include_id=false&svg_simplify_stroke=true`, token)).images);
   let fills = {};
   if (refs.size) fills = (await figmaApi(`/files/${ref.key}/images`, token)).meta?.images || {};
   const imgPath = new Map();
@@ -1916,12 +1916,15 @@ async function figmaCheck(out, frames) {
     for (const f of todo) {
       const local = await serveFile(join(out, f.dir, 'index.html'), out);
       try {
-        const vp = { width: Math.round(f.width), height: Math.round(f.height), deviceScaleFactor: 1, mobile: false };
+        // Figma rounds a fractional frame (526.33 × 2327.16) when it renders: the PNG's own size is the viewport
+        const ref = decodePng(join(out, f.dir, 'frame.png'));
+        f.viewport = `${ref.w}x${ref.h}`;
+        const vp = { width: ref.w, height: ref.h, deviceScaleFactor: 1, mobile: false };
         await navigate(page, local.url, vp);
         const shotFile = join(tmp, 'shot.png');
         await screenshot(page, vp, shotFile);
-        const ref = decodePng(join(out, f.dir, 'frame.png'));
-        if (ref.w === vp.width) f.match = +(100 - diffPixels(ref, decodePng(shotFile)).pct).toFixed(1);
+        const r = diffPixels(ref, decodePng(shotFile));
+        if (r) f.match = +(100 - r.pct).toFixed(1);
       } finally { local.close(); }
     }
     await page.close();
