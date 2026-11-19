@@ -41,6 +41,10 @@ build is watched in the background down to one result line. What one project lea
 one-line lesson in `~/.claude/ck-lessons.md`, which every project on the machine and both ck
 plugins read. A lesson is printed only when it matches the project's facts or the error at hand,
 so it costs nothing until it applies.
+The build reuses them too: when a QA command fails, `ck-lite-qa` prints up to three lessons whose
+error matches the log, and a failure fixed in the environment (a missing browser, a busy port,
+a stopped service) rather than the code is recorded with `ck-lite-release learn`, so the next
+project skips that debugging.
 
 ### Design first with Claude Design
 
