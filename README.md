@@ -13,7 +13,7 @@ scripted, so a run's cost tracks the work in front of it, not the age of the pro
 | Skill | Use it when | Produces |
 |---|---|---|
 | `/ck-code-lite:start` | A project needs its plan — new idea, existing codebase, or more tasks | `docs/ARCHITECTURE.md`, `tasks/PLAN.md` |
-| `/ck-code-lite:design` | A project with a UI should be designed with Claude Design first — or you have a claude.ai/design URL to link — or you want an existing app replicated (`replicate <source>`) | `docs/design-brief.md`, `docs/design-system/`, `docs/replica/` |
+| `/ck-code-lite:design` | A project with a UI should be designed first, in Claude Design or Figma — or you have a claude.ai/design or figma.com URL to link — or you want to see the linked design (`preview`), or an existing app replicated (`replicate <source>`) | `docs/design-brief.md`, `docs/design-system/`, `docs/replica/` |
 | `/ck-code-lite:build` | Implementing one task end to end — or several at once, in waves | Code, tests, tasks marked `done` |
 | `/ck-code-lite:ship` | Committing finished work | A conventional commit, an area test check before the push, and a PR |
 | `/ck-code-lite:report` | ck-code-lite itself did something wrong — or its hook spotted a crash in one of its scripts | A scrubbed GitHub issue on this repo (or a comment on the existing one), filed after your one yes |
@@ -79,6 +79,29 @@ and each component is built from the screen that draws it. A project can also li
 design system and a design: the system's tokens and component cards, the design's screens.
 Fidelity screenshots borrow the app's own font files (`--fonts`), since Claude Design's font
 files are never cached.
+
+### Design in Figma, imported exactly
+
+A Figma file links the same way as a Claude Design project, from a frame, page or file URL:
+
+```
+/ck-code-lite:design https://www.figma.com/design/<key>/App?node-id=12-34   # import exactly
+/ck-code-lite:design figma "a habit tracker for runners"                    # brief → drawn in a new Figma file
+/ck-code-lite:design preview                                                # see the cached design in a browser
+```
+
+With a Figma personal access token (saved once to `~/.config/ck/figma-token`, or `FIGMA_TOKEN`),
+each frame is imported **exactly**: Figma's own 1× render as the fidelity reference, the raw layer
+tree, every layer's CSS derived by fixed rules (auto-layout → flex, exact px, colors, gradients,
+strokes, shadows), a static HTML rebuild checked against the render, SVG icons and image fills,
+and named styles as tokens. Nothing is estimated, and icons are never swapped for a library's.
+Without a token, the official Figma plugin (`claude plugin install figma@claude-plugins-official`)
+gives the MCP tier: Figma's render plus its reference code. `figma [idea]` writes the brief and,
+with that plugin, draws it in a new Figma file, then links it. UI tasks build against the cache
+with the same fidelity loop, diffing the app against Figma's own render.
+
+`preview` serves the cached design on `127.0.0.1`: every token as a swatch, every card, each
+Figma frame beside its rebuild, and the last build's design · app · diff with an overlay.
 
 ### Replicate an existing app
 
