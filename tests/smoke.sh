@@ -553,7 +553,7 @@ if command -v node >/dev/null 2>&1 && [ "$(node -p 'process.versions.node.split(
   lacks "ck-lite-replicate figma pull: every render, SVG and image downloads (no token on asset hosts)" "missing" "$FP_OUT"
   eq  "ck-lite-replicate figma pull: frame.png, index.html, spec.md, node.json" "4" "$(ls "$RR/fig/screens/settings" | grep -cE '^(frame\.png|index\.html|spec\.md|node\.json)$')"
   eq  "ck-lite-replicate figma pull: the vector icon is an SVG asset" "OK" "$([ -s "$RR/fig/assets/1-5.svg" ] && echo OK)"
-  eq  "ck-lite-replicate figma pull: the image fill is a sniffed .png asset" "OK" "$([ -s "$RR/fig/assets/abc123.png" ] && echo OK)"
+  eq  "ck-lite-replicate figma pull: the image fill is a sniffed .png asset" "OK" "$([ -s "$RR/fig/assets/0123456789abcdef0123456789abcdef01234567.png" ] && echo OK)"
   has "ck-lite-replicate figma pull: auto-layout becomes flex with the exact gap" "gap: 16px" "$(cat "$RR/fig/screens/settings/spec.md")"
   has "ck-lite-replicate figma pull: instances name their component set" "component Button / Size=md" "$(cat "$RR/fig/screens/settings/spec.md")"
   has "ck-lite-replicate figma pull: a named text style becomes a token" '"--heading-h2"' "$(cat "$RR/fig/figma.json")"
@@ -569,6 +569,11 @@ if command -v node >/dev/null 2>&1 && [ "$(node -p 'process.versions.node.split(
   ck-lite-replicate figma render "$RR/fig/screens/settings/node.json" --out "$RR/rend" >/dev/null 2>&1
   has "ck-lite-replicate figma render: a linear gradient keeps its angle and stops" "linear-gradient(90deg, #3B5CDB 0%, #6633E6 100%)" "$(cat "$RR/rend/index.html")"
   has "ck-lite-replicate figma render: per-side strokes never move content" "inset 0 -1px 0 0" "$(cat "$RR/rend/index.html")"
+  node -e 'const f=require("fs"),d=JSON.parse(f.readFileSync(process.argv[1]));d.children[0].style.fontFamily="Inter</style><script>x</script>";d.children[0].blendMode="x;}</style><script>";f.writeFileSync(process.argv[2],JSON.stringify(d))' "$RR/fig/screens/settings/node.json" "$RR/evil.json"
+  ck-lite-replicate figma render "$RR/evil.json" --out "$RR/evil" >/dev/null 2>&1
+  lacks "ck-lite-replicate figma render: a hostile font or blend name never breaks out of <style>" "<script" "$(cat "$RR/evil/index.html")"
+  has "ck-lite-replicate figma fetch: an S3 host other than Figma's bucket is refused" "outside Figma's hosts" "$(ck-lite-replicate figma fetch https://evil.s3.amazonaws.com/x --out "$RR/x.png" 2>&1)"
+  has "ck-lite-replicate figma fetch: a figma.com lookalike host is refused" "outside Figma's hosts" "$(ck-lite-replicate figma fetch https://figma.com.evil.io/x --out "$RR/x.png" 2>&1)"
   # preview: a static gallery over a design folder with a Figma frame
   mkdir -p "$RR/ds/cards" && cp -R "$RR/fig/." "$RR/ds/cards/"
   printf '{"projectName":"Mock","projectType":"figma","cards":[]}\n' >"$RR/ds/manifest.json"

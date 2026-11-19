@@ -43,7 +43,7 @@ import { join, basename, dirname, resolve, sep, extname } from 'node:path';
 import { createServer } from 'node:http';
 import { inflateSync, deflateSync } from 'node:zlib';
 
-const VERSION = '1.3.0';
+const VERSION = '1.3.1';
 const NAME = basename(process.argv[1] || 'ck-replicate').replace(/\.mjs$/, '');
 const VIEWPORTS = {
   desktop: { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false },
@@ -1438,15 +1438,23 @@ async function figmaApi(path, token) {
   }
 }
 
-// an asset URL comes from a Figma response — only https on Figma's own or its S3 hosts, never with the token
-const FIG_ASSET_HOST = /(^|\.)figma\.com$|(^|\.)amazonaws\.com$/i;
+// an asset URL comes from a Figma response — only https on Figma's own hosts or its own S3 bucket, never
+// with the token; a redirect is followed by hand so every hop passes the same check
+const FIG_ASSET_HOST = /^(?:[a-z0-9-]+\.)*figma\.com$|^figma-alpha-api\.s3\.[a-z0-9-]+\.amazonaws\.com$/i;
+function figmaAssetOk(u) {
+  if (FIGMA_MOCK && u.protocol === 'http:' && u.hostname === '127.0.0.1') return true;
+  return u.protocol === 'https:' && !u.username && !u.password && !u.port && FIG_ASSET_HOST.test(u.hostname);
+}
 async function figmaDownload(url) {
-  const u = new URL(url);
-  const mock = FIGMA_MOCK && u.protocol === 'http:' && u.hostname === '127.0.0.1';
-  if (!mock && (u.protocol !== 'https:' || !FIG_ASSET_HOST.test(u.hostname))) throw new Error(`refusing an asset URL outside Figma's hosts (${u.hostname})`);
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`asset download ${r.status}`);
-  return Buffer.from(await r.arrayBuffer());
+  let u = new URL(url);
+  for (let hop = 0; hop < 4; hop++) {
+    if (!figmaAssetOk(u)) throw new Error(`refusing an asset URL outside Figma's hosts (${u.hostname})`);
+    const r = await fetch(u, { redirect: 'manual' });
+    if (r.status >= 300 && r.status < 400 && r.headers.get('location')) { u = new URL(r.headers.get('location'), u); continue; }
+    if (!r.ok) throw new Error(`asset download ${r.status}`);
+    return Buffer.from(await r.arrayBuffer());
+  }
+  throw new Error('asset download: too many redirects');
 }
 const sniff = (b) => (b[0] === 0x89 && b[1] === 0x50 ? '.png' : b[0] === 0xff && b[1] === 0xd8 ? '.jpg' : b.toString('ascii', 0, 3) === 'GIF' ? '.gif' : b.toString('ascii', 8, 12) === 'WEBP' ? '.webp' : b.toString('utf8', 0, 200).includes('<svg') ? '.svg' : '.bin');
 const chunks = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
@@ -1504,9 +1512,9 @@ function figBackground(fills, w, h, ctx, warn) {
     else if (p.type === 'GRADIENT_RADIAL') layers.push(figRadial(p, w, h, op));
     else if (p.type === 'IMAGE') {
       if (p.filters && Object.values(p.filters).some((v) => v)) warn.push('image filters (exposure, contrast…) are not applied — the image file is unfiltered');
-      layers.push(figImageLayer(p, ctx.img(p.imageRef), warn));
+      layers.push(figImageLayer(p, ctx.img(figRef(p.imageRef)), warn));
     }
-    if (p.blendMode && !['NORMAL', 'PASS_THROUGH'].includes(p.blendMode)) warn.push(`fill blend ${p.blendMode}`);
+    if (FIG_BLEND.has(p.blendMode)) warn.push(`fill blend ${p.blendMode}`);
   }
   return layers.length ? ['background', layers.join(', ')] : null;
 }
@@ -1585,8 +1593,8 @@ function figLayout(n, D, warn) {
   if (n.itemReverseZIndex) warn.push('first item on top (reverse z-order)');
 }
 function figTextStyle(s, fills, D) {
-  if (s.fontFamily) D.push(['font-family', `'${s.fontFamily.replace(/'/g, '')}'`]);
-  if (s.fontWeight) D.push(['font-weight', String(s.fontWeight)]);
+  if (s.fontFamily) D.push(['font-family', `'${figFont(s.fontFamily)}'`]);
+  if (s.fontWeight) D.push(['font-weight', String(+s.fontWeight || 400)]);
   if (s.fontSize) D.push(['font-size', fpx(s.fontSize)]);
   if (s.italic) D.push(['font-style', 'italic']);
   if (s.lineHeightUnit === 'INTRINSIC_%') D.push(['line-height', 'normal']);
@@ -1613,6 +1621,11 @@ function figText(n, D, warn) {
   if (s.paragraphSpacing) warn.push(`paragraph spacing ${s.paragraphSpacing}px between paragraphs`);
   if (s.listOptions || (n.lineTypes || []).some((t) => t !== 'NONE')) warn.push('list formatting in text');
 }
+// every value in a <style> block or style attribute comes from the (untrusted) design file
+const FIG_BLEND = new Set(['MULTIPLY', 'SCREEN', 'OVERLAY', 'DARKEN', 'LIGHTEN', 'COLOR_DODGE', 'COLOR_BURN', 'HARD_LIGHT', 'SOFT_LIGHT', 'DIFFERENCE', 'EXCLUSION', 'HUE', 'SATURATION', 'COLOR', 'LUMINOSITY', 'LINEAR_BURN', 'LINEAR_DODGE']);
+const figFont = (f) => String(f).replace(/[^\w .\-]/g, '').slice(0, 80);
+const figRef = (r) => (/^[0-9a-f]{8,64}$/i.test(String(r)) ? String(r) : 'invalid-image-ref');
+const figCss = (v) => String(v).replace(/</g, '\\3c ').replace(/[{}]/g, '');
 const figEsc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 function figRuns(n) {
   const chars = n.characters || '';
@@ -1629,7 +1642,7 @@ function figRuns(n) {
     if (id && st) {
       const D = [];
       figTextStyle(st, st.fills, D);
-      out += D.length ? `<span style="${figEsc(D.map(([k, v]) => `${k}:${v}`).join(';'))}">${text}</span>` : text;
+      out += D.length ? `<span style="${figEsc(D.map(([k, v]) => `${k}:${figCss(v)}`).join(';'))}">${text}</span>` : text;
     } else out += text;
     i = j;
   }
@@ -1689,15 +1702,15 @@ function figmaRender(root, ctx) {
       if (n.opacity != null && n.opacity < 1) D.push(['opacity', String(fnum(n.opacity))]);
     }
     if (shadows.length) D.push(['box-shadow', shadows.join(', ')]);
-    if (n.blendMode && !['NORMAL', 'PASS_THROUGH'].includes(n.blendMode)) D.push(['mix-blend-mode', n.blendMode.toLowerCase().replace(/_/g, '-').replace('linear-burn', 'color-burn').replace('linear-dodge', 'color-dodge')]);
+    if (FIG_BLEND.has(n.blendMode)) D.push(['mix-blend-mode', n.blendMode.toLowerCase().replace(/_/g, '-').replace('linear-burn', 'color-burn').replace('linear-dodge', 'color-dodge')]);
     const c = cls(n);
-    css.push(`.${c} { ${D.map(([k, v]) => `${k}: ${v}`).join('; ')}; }`);
+    css.push(`.${c} { ${D.map(([k, v]) => `${k}: ${figCss(v)}`).join('; ')}; }`);
     const comp = n.componentId && ctx.names(n.componentId);
     const st = Object.entries(n.styles || {}).map(([k, id]) => `${k}=${safe(ctx.styleName(id) || id)}`);
     if (Object.keys(n.styles || {}).length) styleUse.push(n);
     const ind = '  '.repeat(depth);
     spec.push(`${ind}- ${n.type} "${safe(n.name)}"${comp ? ` → component ${safe(comp)}` : ''} · ${fnum(b.width)}×${fnum(b.height)}${n.type === 'TEXT' ? ` — "${safe((n.characters || '').slice(0, 160))}"` : ''}${flat ? ` · SVG (${flat}) ${ctx.svg(n.id)}` : ''}${st.length ? ` · styles ${st.join(', ')}` : ''}`);
-    spec.push(`${ind}  \`.${c} { ${D.map(([k, v]) => `${k}: ${v}`).join('; ')} }\``);
+    spec.push(`${ind}  \`.${c} { ${D.map(([k, v]) => `${k}: ${safe(figCss(v))}`).join('; ')} }\``);
     for (const w of warn) { spec.push(`${ind}  ⚠️ ${w}`); warnAll.push(`${safe(n.name)}: ${w}`); }
     layers++;
     // children after their parent: the spec reads top-down, paint order is document order
@@ -1735,7 +1748,7 @@ function figmaStyleValue(n, kind) {
   const D = [];
   if (kind === 'text') {
     const s = n.style || {};
-    return `${s.italic ? 'italic ' : ''}${s.fontWeight} ${fpx(s.fontSize)}/${s.lineHeightUnit === 'INTRINSIC_%' ? 'normal' : fpx(s.lineHeightPx)} '${s.fontFamily}'${s.letterSpacing ? ` · letter-spacing ${fpx(s.letterSpacing)}` : ''}`;
+    return `${s.italic ? 'italic ' : ''}${s.fontWeight} ${fpx(s.fontSize)}/${s.lineHeightUnit === 'INTRINSIC_%' ? 'normal' : fpx(s.lineHeightPx)} '${figFont(s.fontFamily)}'${s.letterSpacing ? ` · letter-spacing ${fpx(s.letterSpacing)}` : ''}`;
   }
   if (kind === 'fill' || kind === 'stroke') {
     const bg = figBackground(kind === 'fill' ? n.fills : n.strokes, n.absoluteBoundingBox?.width || 100, n.absoluteBoundingBox?.height || 100, { img: () => 'image' }, []);
@@ -1816,7 +1829,7 @@ async function figmaPull(url, opt) {
   const walk = (n, isRoot) => {
     if (n.visible === false) return;
     if (figAsImage(n, isRoot)) { svgIds.add(n.id); return; }
-    for (const p of [...shown(n.fills), ...shown(n.strokes)]) if (p.type === 'IMAGE' && p.imageRef) refs.add(p.imageRef);
+    for (const p of [...shown(n.fills), ...shown(n.strokes)]) if (p.type === 'IMAGE' && p.imageRef) refs.add(figRef(p.imageRef));
     for (const c of kidsOf(n)) walk(c, false);
   };
   for (const t of targets) walk(t, true);
