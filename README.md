@@ -233,9 +233,10 @@ has passed like a serial one — 82 s → 10 s on a 590-test suite — and an ol
 is checked once by the next build. On Catch2, a task's own runs skip ctest's one process per
 case: each test binary runs once, filtered by file (`-# {tags}`), so RED and GREEN take
 seconds instead of the whole suite. An end-to-end suite (`test-e2e`) or an integration suite
-needing a database or a server (`test-integration`) never runs whole inside a task: each task
-runs only its own specs, and `ship` runs each whole suite once with the area check, before the
-first push. Tests go in the file that mirrors the code under test, never a catch-all, so a
+needing a database or a server (`test-integration`) never runs inside a task: declared in
+`.ck-heavy-tests`, it is dropped from every QA pass, a task runs only the spec file it wrote (marked
+`// ck-heavy: T-05`), and `ship` asks before the push: this branch's specs, every affected one, the
+whole suite, or skip. Tests go in the file that mirrors the code under test, never a catch-all, so a
 change selects only the tests that really reach it.
 
 ### Every prompt goes through the workflow
