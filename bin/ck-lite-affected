@@ -15,6 +15,9 @@
 #                                                   ('[#ClipTests],[#TrackTests]', for -#), or
 #                                                   `: …` when no test is affected
 #
+# Test files of a .ck-heavy-tests suite (ck-lite-heavy) never count as tests to run: a build does not
+# run them. --heavy prints only those instead (with --tests, for ck-lite-heavy's own scope).
+#
 # <base> is a commit, branch or `auto` (the merge-base of HEAD with the trunk). The changed
 # files are `git diff <base>` (working tree, committed or not) plus untracked files.
 #
@@ -46,10 +49,11 @@ die() { echo "ck-lite-affected: ERROR — $*" >&2; exit 2; }
 CAP="${CK_LITE_AFFECTED_CAP:-2000}"
 MAXF="${CK_LITE_AFFECTED_MAX_FILES:-800}"
 
-BASE=""; MODE=summary; SCOPE=story; FULLCMD=""; ONECMD=""
+BASE=""; MODE=summary; SCOPE=story; HEAVY=no; FULLCMD=""; ONECMD=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --area) SCOPE=area ;;
+    --heavy) HEAVY=yes ;;
     --tests) MODE=tests ;;
     --command) MODE="command"; [ "$#" -ge 3 ] || die "--command needs <full> <one>"
                FULLCMD="$2"; ONECMD="$3"; shift 2 ;;
@@ -60,6 +64,7 @@ while [ "$#" -gt 0 ]; do
 done
 [ -n "$BASE" ] || die "usage: ck-lite-affected <base> [--area] [--tests | --command <full> <one>]"
 TOP="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not a git repository"
+HERE="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)"
 CWD="$(pwd -P)"
 cd "$TOP" || die "cannot enter $TOP"
 TOP="$(pwd -P)"
@@ -87,6 +92,11 @@ git ls-files --cached --others --exclude-standard | sort -u >"$W/all"
 # delete-only change is never NONE. --no-renames lists both sides of a rename.
 { git diff --name-only --no-renames "$BASE" -- 2>/dev/null
   git ls-files --others --exclude-standard; } | sort -u >"$W/changed"
+
+: >"$W/heavy"
+if [ -f .ck-heavy-tests ]; then
+  bash "$HERE/ck-lite-heavy" files >"$W/heavy" 2>/dev/null || : >"$W/heavy"
+fi
 
 # Declared areas: "name<TAB>glob" lines.
 : >"$W/declared"
@@ -149,7 +159,7 @@ is_test() {  # a file a runner executes as a test
 is_doc() {
   case "$1" in
     *.md | *.mdx | *.markdown | docs/* | tasks/* | .github/* | .claude/* | .vscode/* | .idea/* | \
-    LICENSE* | */LICENSE* | .env.example | */.env.example | .env.sample | */.env.sample | .gitignore | */.gitignore | .gitattributes | .editorconfig | CODEOWNERS) return 0 ;;
+    .ck-heavy-tests | LICENSE* | */LICENSE* | .env.example | */.env.example | .env.sample | */.env.sample | .gitignore | */.gitignore | .gitattributes | .editorconfig | CODEOWNERS) return 0 ;;
   esac
   return 1
 }
@@ -485,6 +495,16 @@ fi
 if [ "$SCOPE" = area ]; then cp "$W/reached" "$W/whole"; else cp "$W/allareas" "$W/whole"; fi
 while read -r f; do is_test "$f" && ! is_doc "$f" && echo "$f"; done <"$W/all" >"$W/alltests"
 { in_areas "$W/whole" <"$W/alltests"; cat "$W/tests"; } | sort -u >"$W/out"
+if [ "$HEAVY" = yes ]; then
+  # A heavy file need not be named like a test (*.e2e-spec.ts): any traced one counts.
+  cat "$W/out" "$W/visited" | sort -u | grep -xF -f "$W/heavy" >"$W/kept" || true
+  # A FULL scope reaches every heavy file; a migration is what most of them exist to check.
+  [ -z "$FULL_REASON" ] || cp "$W/heavy" "$W/kept"
+  mv "$W/kept" "$W/out"
+elif [ -s "$W/heavy" ]; then
+  grep -vxF -f "$W/heavy" "$W/out" >"$W/kept" || true
+  mv "$W/kept" "$W/out"
+fi
 
 # ---- output ---------------------------------------------------------------------------------
 rel_tests() {  # tests under the caller's directory, relative to it
@@ -502,6 +522,7 @@ if [ -n "$FULL_REASON" ]; then STATE=FULL; elif [ "$CODE" -eq 0 ]; then STATE=NO
 case "$MODE" in
   tests)
     [ "$STATE" = AREA ] && rel_tests
+    [ "$STATE" = FULL ] && [ "$HEAVY" = yes ] && rel_tests
     exit 0 ;;
   command)
     case "$STATE" in

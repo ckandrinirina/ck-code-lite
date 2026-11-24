@@ -158,7 +158,10 @@ Never `git add -A` or `git add .`.
 
 ## PHASE 4: PULL REQUEST
 
-One `AskUserQuestion`: `Open/update PR` / `Push only` / `Nothing further`.
+One `AskUserQuestion`: `Open/update PR` / `Push only` / `Nothing further`. When `ck-lite-heavy scope auto
+T-05` finds heavy tests, the same call asks whether to run them
+([heavy-tests.md § At ship](../../references/heavy-tests.md#at-ship--one-question)). `Nothing further` ignores
+that answer.
 
 ### 4.0 Area check — before anything leaves the machine
 
@@ -171,11 +174,8 @@ say `Area check: skipped (no ## Commands)` and push:
 ck-lite-qa run ship --reuse test="$(ck-lite-affected auto --area --command '<test>' '<test-one>')"
 ```
 
-When `ck-lite commands` lists `test-e2e` or `test-integration` lines, add each one to the
-same call as its own label (`e2e='<test-e2e>'`, `e2e_mobile='<test-e2e-mobile>'`,
-`integration='<test-integration>'`, without the parenthetical note), after `test` and without
-`--parallel`: this is the one place those whole suites run, since a task runs only its own
-specs.
+Then run the heavy tests the user chose, if any, in their own `ck-lite-qa run heavy` call. This is
+the one place those suites run, since a task runs only its own specs.
 
 `<test>` and `<test-one>` come from `ck-lite commands` (no `test-one` → `<test>` twice). An
 area is a workspace package or a row of `## Areas`; the whole suite runs only for repo-root
@@ -229,6 +229,7 @@ If `gh` is unavailable, print the manual compare URL
 **Files:** <count>
 **PR:** <url — created | updated | skipped>
 **Area check:** <PASS | REUSED | skipped — no ## Commands>
+**Heavy tests:** <linked | affected | whole — PASS> | not run | none
 **Task:** T-NN → done | stays doing | standalone
 ```
 
@@ -253,6 +254,8 @@ Then point at the next step: `/ck-code-lite:build` for the next ready task.
 - **Never push without confirming** — Phase 4's question is mandatory.
 - **Never push a branch whose area check failed** (4.0) — the build checked only each task's
   reach; this is the one run that sees the whole area before the PR.
+- **Never push after a failed heavy run, never hide a skipped one** (the PR body says so), and never
+  run a heavy suite the user did not choose.
 - **Never amend or force-push** unless the user explicitly asks.
 - **Never block the commit because `gh` is missing** — degrade to commit-only.
 - **Never `Read` or `Edit` `tasks/PLAN.md`** — `ck-lite show` reads the task, `ck-lite set`

@@ -104,13 +104,14 @@ before it.
 ### 6. `test-e2e` and `test-integration` — slow suites, kept apart
 
 A declared e2e script (`test:e2e`, `e2e`, a Playwright or Cypress config) is recorded as its own
-`test-e2e` line, never chained into `test`: a task runs only its own specs, and the whole e2e
-suite runs once, at ship ([tdd-cycle.md](tdd-cycle.md#end-to-end-specs)).
+`test-e2e` line, never chained into `test`: a task runs only its own specs, and `ship` asks whether
+to run the suite ([heavy-tests.md](heavy-tests.md)). Each such line also gets its suite in
+`.ck-heavy-tests` (globs and command), the form the scripts read.
 
 A suite that needs a database, a container or a running server (`test:integration`,
 `test:db`, `test:e2e:db`, a Testcontainers or docker-compose test config) is a
 `test-integration` line on the same terms — never chained into `test`, a task runs only its
-own specs, ship runs it whole. Measured at 20–24 min a run when chained into every task's QA.
+own specs, and ship asks. Measured at 20–24 min a run when chained into every task's QA.
 Give it a `test-integration-one` line when its runner takes paths (`{files}`, as `test-one`).
 
 ## Writing the result

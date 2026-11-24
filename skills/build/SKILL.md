@@ -198,6 +198,10 @@ the e2e suite once through `ck-lite-qa`, then `ck-lite files T-05 <paths>` and
 `ck-lite note T-05 "e2e moved to the background: <paths>"`. It is not task scope, so it never
 counts toward QUICK's step-up.
 
+**Heavy tests.** `ck-lite-heavy detect && ck-lite-heavy list`, same call. `CANDIDATE` lines → declare the
+suites first. A declared suite never runs in the build: write and mark the spec, and run only the
+file you wrote or edited ([heavy-tests.md](../../references/heavy-tests.md)).
+
 Then open the session's task list: one `TaskCreate` per phase still ahead — RED, GREEN,
 cleanup, QA, complete (QUICK: change, check) — each with an `activeForm` (`Writing the failing test`). Flip each to
 `in_progress` when it starts and `completed` when it ends (`TaskUpdate`; `TodoWrite` only where
@@ -227,6 +231,7 @@ Delegate to `ck-code-lite:qa-validator`, supplying inline:
   ([tdd-cycle.md](../../references/tdd-cycle.md#running-tests)), never the bare `test`
 - the working directory, and `reuse: yes`
 - under a recorded test exception only, `exception: <reason>`
+- for a task that wrote a heavy spec only, `heavy: <file> — PASS` from its own run
 - for a UI task with a linked design only, `design: docs/design-system/index.md — <the recorded
   Design fidelity lines, or none>`
 - for a task citing an `S-NN` only, `replica: S-NN — <the recorded Fidelity line, or none>`
@@ -336,6 +341,8 @@ that command as the next step.
 - **Never let a test open a window in front of the user** — convert every
   `ck-lite-headless` hit before task code, never ask whether to, and never write a
   `ck-headless: allow` marker ([background-tests.md](../../references/background-tests.md)).
+- **Never run a heavy test the task did not write or edit**, and never hand one to QA — `ship` asks
+  once before the push ([heavy-tests.md](../../references/heavy-tests.md)).
 - **Never mark a task `done` without a `QA: PASS`** or an explicitly recorded ACCEPT AS-IS.
 - **Never skip the manual-test gate**, and never split its two questions into two calls.
 - **Never proceed past an `ISSUES` answer without re-running QA.**

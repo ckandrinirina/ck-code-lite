@@ -77,11 +77,10 @@ different slice of the same output is the most expensive habit this cycle can ha
 An e2e suite is minutes long and never the inner loop. When `## Commands` has a `test-e2e`
 line (or `test-e2e-*` or `test-integration` lines — an integration suite follows every rule
 here), a task runs **only its own specs**, by path, through `ck-lite-qa`
-(`e2e="npm run test:e2e -- e2e/export.spec.ts"`). Its closing run adds, on Playwright, the
-specs that import a changed file (`-- --only-changed=<base> --pass-with-no-tests`). The whole
-e2e suite never runs inside a task: `ship` runs it once with the area check, before the first
-push, so every spec still passes before the branch leaves the machine. A task that touches no
-spec and no file a spec imports runs no e2e at all.
+(`e2e="$(ck-lite-heavy command e2e only e2e/export.spec.ts)"`): the files it wrote or edited, one
+at a time, each marked `// ck-heavy: T-05`. Every other spec waits for `ship`, which asks once
+before the push. A task that writes no spec runs no e2e at all. Rules:
+[heavy-tests.md § In a task](heavy-tests.md#in-a-task).
 
 ## RED — the failing test comes first
 

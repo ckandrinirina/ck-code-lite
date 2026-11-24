@@ -100,6 +100,10 @@ A worktree sees only committed work, and a wave on a foreground suite opens the 
 peer's QA. A `blocked` return stops the run with its reason. Under `--auto` it still runs, with
 no question ([background-tests.md](../../../references/background-tests.md)).
 
+**Heavy suites, same call.** `ck-lite-heavy detect && ck-lite-heavy list`. `CANDIDATE` lines → declare them
+and commit on `$TARGET` before any wave. A declared suite adds the prompt's `Heavy:` line
+([heavy-tests.md](../../../references/heavy-tests.md)).
+
 ## P2 Plan the waves
 
 ```bash
@@ -206,9 +210,10 @@ dropped), `reuse: no`, the working directory — the branch's worktree path from
 `git worktree list` (fan-out) or `$ROOT` (solo) — and `exception: <reason>` for a task under a
 recorded test exception, `design: <$ROOT>/docs/design-system/index.md — <the verdict's Design fidelity
 lines, or none>` for a UI task with a linked design, and `replica: S-NN — <the verdict's fidelity line, or none>` for a task citing a
-replica screen.
+replica screen, and the verdict's `heavy:` lines.
 
-`reuse: no` always: an agent's own runs are never QA's evidence. A fan-out branch without
+`reuse: no` always: an agent's own runs are never QA's evidence, its own heavy spec excepted
+([heavy-tests.md](../../../references/heavy-tests.md)). A fan-out branch without
 `QA: PASS` is **held** — never merged and fixed later. A solo task without `QA: PASS` already
 sits on `$TARGET`; do not advance to the next wave past it, its dependents would build on
 broken code.
@@ -324,6 +329,7 @@ Context: CK_LITE_PLAN=<$ROOT>/tasks/PLAN.md CK_LITE_ARCH=<$ROOT>/docs/ARCHITECTU
 TDD rules: <absolute path of references/tdd-cycle.md>
 Design: <absolute path of $ROOT/docs/design-system/index.md and of references/design-system.md, tokensPath: pending|set>   ← UI task with a linked design only
 Replica: <absolute path of $ROOT/docs/replica/<slug>/REPLICA.md and of references/replicate.md>   ← task citing an S-NN only
+Heavy: <suite names> — run only the heavy file you write or edit, marked `ck-heavy: T-NN`; <absolute path of references/heavy-tests.md> § In a task   ← declared suites only
 Settled at P3: <the user's answer for this task, or "nothing">
 
 Return only the verdict block.

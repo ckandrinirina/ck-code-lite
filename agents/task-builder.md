@@ -86,6 +86,7 @@ remaining:    [<unmet criterion>, …]        # [] when status: done
 stack:        [<## Stack line for each dependency you added>, …]   # omit when none
 tokens:       <repo-relative path of the token file you wrote>      # omit unless you wrote it
 design:       [<"no design card: <component> — built from tokens">, …]   # omit when none
+heavy:        [<"<heavy spec you wrote or edited> — PASS | not run: <reason>">, …]   # omit when none
 fidelity:     [<"Design fidelity …" or "Fidelity S-NN: …" line>, …]   # Design: or Replica: tasks only
 ```
 
@@ -102,6 +103,8 @@ missing verdict is read as `partial`. The orchestrator verifies from git regardl
   never with a foreground window.
 - With a `Replica:` line, read the cited screens and build to them, then run `replicate.md`'s
   Fidelity loop once after the closing run — never more, never with a foreground window.
+- Never run a heavy test (a `Heavy:` line, a `.ck-heavy-tests` suite) you did not write or edit; mark
+  each one you did with `ck-heavy: <T-NN>`.
 - Never install a version from memory, and never look up a technology `## Stack` already lists.
 - Never edit or stage `tasks/PLAN.md` — the orchestrator is its only writer for the whole
   run, and on a solo run it holds the orchestrator's uncommitted status edits. Stage explicit

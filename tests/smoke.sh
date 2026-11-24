@@ -587,6 +587,24 @@ else
   echo "skip    node >= 22 not on PATH — skipping ck-lite-replicate checks"
 fi
 
+# ---- ck-lite-heavy ------------------------------------------------------------------------
+echo "=== ck-lite-heavy ==="
+HV="$(mktemp -d)"; ( cd "$HV" && git init -q && git config user.email t@t && git config user.name t )
+HVR() { ( cd "$HV" && ck-lite-heavy "$@" 2>&1 ); }
+( cd "$HV" && mkdir -p src db && echo '{"scripts":{"test":"vitest","test:db":"vitest --config vitest.config.db.ts"}}' >package.json &&
+  echo 'export const n = 1' >src/orders.ts && echo "import { n } from './orders'" >src/orders.spec.ts &&
+  printf '// ck-heavy: T-05\nimport { n } from "../src/orders"\n' >db/orders.e2e.spec.ts )
+has "heavy detect: a DB script is a candidate" 'script "test:db"' "$(HVR detect)"
+( cd "$HV" && echo 'db: db/**/*.e2e.spec.ts | npm run test:db -- {files}' >.ck-heavy-tests && git add -A && git commit -qm base && echo 'export const n = 2' >src/orders.ts )
+eq  "heavy: never in the affected tests" "src/orders.spec.ts" "$(cd "$HV" && ck-lite-affected HEAD --tests)"
+has "heavy scope: linked, affected, whole" "db linked=1 affected=1 whole=1" "$(HVR scope HEAD T-05)"
+eq  "heavy command: the task's own marked file" "npm run test:db -- 'db/orders.e2e.spec.ts'" "$(HVR command db linked HEAD T-05)"
+eq  "heavy command: T-5 is not T-05" ": no db tests" "$(HVR command db linked HEAD T-5)"
+eq  "heavy command: whole names every file" "npm run test:db -- 'db/orders.e2e.spec.ts'" "$(HVR command db whole HEAD)"
+( cd "$HV" && echo x >db/new.e2e.spec.ts )
+eq  "heavy unmarked: a new file without its task" "db/new.e2e.spec.ts" "$(HVR unmarked HEAD T-06)"
+rm -rf "$HV"
+
 # ---- ck-lite-headless ---------------------------------------------------------------------
 echo "=== ck-lite-headless ==="
 HQ="$(mktemp -d)"

@@ -112,6 +112,7 @@ when those commands pass.
 - Never write, edit or delete a test. The caller owns the tests; you only read and run them.
 - Never edit `tasks/PLAN.md` or anything under `docs/` — you read state, you never mutate it.
 - Never commit or push.
+- Never run a `.ck-heavy-tests` file or suite, and never fail a task because one did not run — `ship` asks for it ([`heavy-tests.md`](../references/heavy-tests.md)). A criterion only such a spec covers is `PASS` on its assertions, cited, when the caller reports the task's own run of that file.
 - Never add `--headed`, `--ui`, `--debug` or `PWDEBUG` to a command, and never run an e2e command outside `ck-lite-qa`, which runs it in the background. A test that opens a window in front of the user is a FAIL, cited at its launch line ([`background-tests.md`](../references/background-tests.md)).
 - Never return full build, test or lint output. The verdict line plus a one-line excerpt
   per failure, and any `lesson:` line `ck-lite-qa` printed (verbatim), is the entire budget.

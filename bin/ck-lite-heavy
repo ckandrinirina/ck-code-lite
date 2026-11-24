@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+# ck-lite-heavy — the suites too slow to run inside a build (database, container, e2e).
+#
+# Usage:
+#   ck-lite-heavy list                       suites: name, test files, command
+#   ck-lite-heavy files [<suite>]            their test files, relative to the repo root
+#   ck-lite-heavy detect                     slow suites the repo has and .ck-heavy-tests does not declare
+#   ck-lite-heavy scope <base> [<id>…]       per suite: linked, affected and whole counts
+#   ck-lite-heavy command <suite> linked|affected|whole <base> [<id>…]
+#   ck-lite-heavy command <suite> only <file>…
+#                                       the ready command, to run from the repo root
+#   ck-lite-heavy unmarked <base> [<id>]     heavy files changed since <base> with no marker (for <id>)
+#
+# .ck-heavy-tests, at the root of the code repository, one suite a line:
+#   db: prisma/tests/**/*.e2e.spec.ts | npm run test:e2e:db -- {files}
+# The name is a ck-qa label ([A-Za-z0-9_-]+), the globs are space separated (`*` crosses `/`,
+# `**/` also matches no folder), {files} takes the test files. A command that starts with
+# `cd <dir> && ` gets them relative to <dir>. `none` alone on a line: nothing here is heavy.
+#
+# A heavy test file names the stories that own it in a comment, ids separated by spaces:
+#   // ck-heavy: 69-03
+# An id given as a bare number (69) is an epic: it matches 69-01, 69-02… and epic-69.
+#
+# linked    files marked with an <id>, or added or changed since <base>
+# affected  linked, plus every heavy file an import chain ties to the change (ck-lite-affected)
+# whole     the suite
+# Ported from ck-code's scripts/ck-heavy.sh; self-contained, lite never depends on ck-code.
+
+set -uo pipefail
+set -f
+
+die() { echo "ck-lite-heavy: ERROR — $*" >&2; exit 2; }
+CMD="${1:-list}"; [ "$#" -eq 0 ] || shift
+HERE="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)"
+TOP="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not a git repository"
+cd "$TOP" || die "cannot enter $TOP"
+W="$(mktemp -d "${TMPDIR:-/tmp}/ck-lite-heavy.XXXXXX")" || die "no temp dir"
+trap 'rm -rf "$W"' EXIT
+
+# "name<TAB>globs<TAB>command" per valid line.
+: >"$W/suites"; DECLARED=no; NONE=no
+if [ -f .ck-heavy-tests ]; then
+  DECLARED=yes
+  grep -qE '^[[:space:]]*none[[:space:]]*$' .ck-heavy-tests && NONE=yes
+  awk '{ sub(/\r$/, "") }
+    /^[ \t]*(#.*)?$/ || /^[ \t]*none[ \t]*$/ { next }
+    { i = index($0, ":"); n = substr($0, 1, i - 1); r = substr($0, i + 1); gsub(/[ \t]/, "", n)
+      j = index(r, " | "); g = substr(r, 1, j - 1); c = substr(r, j + 3)
+      gsub(/^[ \t]+|[ \t]+$/, "", g); gsub(/^[ \t]+|[ \t]+$/, "", c); gsub(/[ \t]+/, " ", g)
+      if (i < 2 || j < 2 || g == "" || c == "" || n !~ /^[A-Za-z0-9_-]+$/ || (n in seen)) {
+        print "ck-lite-heavy: WARN — .ck-heavy-tests line " NR " ignored, expected a new `name: glob… | command`" >"/dev/stderr"; next }
+      seen[n] = 1; print n "\t" g "\t" c }' .ck-heavy-tests >"$W/suites"
+fi
+
+field() { awk -F'\t' -v n="$1" -v k="$2" '$1 == n { print $k; exit }' "$W/suites"; }
+known() { [ -n "$(field "$1" 1)" ] || die "no suite named $1 in .ck-heavy-tests"; }
+
+# "suite<TAB>file" for every heavy file, first matching suite wins.
+git ls-files --cached --others --exclude-standard | sort -u | awk -v S="$W/suites" '
+  function rx(g,   r, i, c) { r = "^"
+    for (i = 1; i <= length(g); i++) { c = substr(g, i, 1)
+      if (substr(g, i, 3) == "**/") { r = r "(.*/)?"; i += 2 }
+      else if (c == "*") { r = r ".*" } else if (c == "?") r = r "."
+      else if (index(".[]()+{}^$|\\", c)) r = r "\\" c; else r = r c }
+    return r "$" }
+  BEGIN { while ((getline l < S) > 0) { split(l, p, "\t"); m = split(p[2], g, " ")
+            for (i = 1; i <= m; i++) { k++; nm[k] = p[1]; re[k] = rx(g[i]) } } }
+  { for (i = 1; i <= k; i++) if ($0 ~ re[i]) { print nm[i] "\t" $0; next } }' |
+  while IFS= read -r l; do [ -e "${l#*	}" ] && printf '%s\n' "$l"; done >"$W/map"
+
+base_sha() {  # revision or `auto` → commit sha
+  local b="$1" t c
+  case "$b" in -*) die "<base> must be a revision, not $b" ;; esac
+  if [ "$b" = auto ]; then
+    t="$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null)"; b=HEAD
+    for c in $t main master develop; do
+      git rev-parse -q --verify "$c^{commit}" >/dev/null 2>&1 && { b="$(git merge-base HEAD "$c" 2>/dev/null)"; break; }
+    done
+  fi
+  git rev-parse -q --verify "$b^{commit}" 2>/dev/null || die "base $1 not found"
+}
+
+changed() {  # base → heavy files added or changed since it
+  { git diff --name-only --no-renames "$1" -- 2>/dev/null; git ls-files --others --exclude-standard; } |
+    sort -u | awk -F'\t' 'NR == FNR { h[$2] = 1; next } ($0 in h)' "$W/map" -
+}
+
+markers() {  # → "file<TAB>id" for every marker in a heavy file
+  [ -s "$W/map" ] || return 0
+  cut -f2 "$W/map" | tr '\n' '\0' | xargs -0 grep -HE 'ck-heavy:' -- /dev/null 2>/dev/null |
+    awk '{ i = index($0, ":"); f = substr($0, 1, i - 1); s = substr($0, i + 1)
+      sub(/^.*ck-heavy:/, "", s); m = split(s, a, /[ \t,]+/)
+      for (k = 1; k <= m; k++) if (a[k] ~ /^([0-9]+-[0-9]+|epic-[0-9]+|T-[0-9]+)$/) print f "\t" a[k] }'
+}
+
+marked() {  # id… → heavy files marked with one
+  [ "$#" -gt 0 ] || return 0
+  markers | awk -F'\t' -v I="$*" 'BEGIN { n = split(I, a, " ") }
+    { for (i = 1; i <= n; i++) { e = a[i]; sub(/^epic-/, "", e)
+        if ($2 == a[i] || (e ~ /^[0-9]+$/ && (index($2, e "-") == 1 || $2 == "epic-" e)) ) { print $1; break }
+        # A story id also owns what its whole epic owns.
+        if (a[i] ~ /^[0-9]+-[0-9]+$/) { e = a[i]; sub(/-.*/, "", e); if ($2 == "epic-" e) { print $1; break } } } }'
+}
+
+linked() { local b="$1"; shift; { changed "$b"; marked "$@"; } | sort -u; }
+
+affected() {
+  local b="$1" a; shift
+  { linked "$b" "$@"
+    for a in "$HERE/ck-affected.sh" "$HERE/ck-lite-affected"; do
+      [ -f "$a" ] && { bash "$a" "$b" --heavy --tests 2>/dev/null; break; }
+    done; } | sort -u
+}
+
+of_suite() { awk -F'\t' -v n="$1" 'NR == FNR { if ($1 == n) h[$2] = 1; next } ($0 in h)' "$W/map" -; }
+
+build() {  # suite, files on stdin → its command with them
+  local c d files; c="$(field "$1" 3)"; cat >"$W/in"
+  [ -s "$W/in" ] || { echo ": no $1 tests"; return; }
+  # A command without {files} always runs its whole suite.
+  case "$c" in *'{files}'*) ;; *) printf '%s\n' "$c"; return ;; esac
+  case "$c" in 'cd '*' && '*) d="${c#cd }"; d="${d%% && *}"; d="${d#./}"; d="${d%/}"
+    D="$d/" awk 'index($0, ENVIRON["D"]) == 1 { $0 = substr($0, length(ENVIRON["D"]) + 1) } { print }' "$W/in" >"$W/rel"; mv "$W/rel" "$W/in" ;; esac
+  # Every path is single-quoted: the command is run by a shell, and a file name is data.
+  files="$(sed -e 's|^-|./-|' -e "s/'/'\\\\''/g" -e "s/.*/'&'/" "$W/in" | tr '\n' ' ' | sed 's/ $//')"
+  printf '%s\n' "$c" | F="$files" awk '{ o = ""; s = $0
+    while ((i = index(s, "{files}")) > 0) { o = o substr(s, 1, i - 1) ENVIRON["F"]; s = substr(s, i + 7) }
+    print o s }'
+}
+
+count() { wc -l | tr -d ' '; }
+
+case "$CMD" in
+  list)
+    if [ "$DECLARED" = no ]; then echo "ck-lite-heavy: NONE — no .ck-heavy-tests"
+    elif [ ! -s "$W/suites" ]; then
+      [ "$NONE" = yes ] && echo "ck-lite-heavy: NONE — declared none" || echo "ck-lite-heavy: NONE — .ck-heavy-tests declares no suite"
+    else
+      while IFS='	' read -r n _ c; do
+        printf '%s\t%s files\t%s\n' "$n" "$(cut -f1 "$W/map" | grep -cxF -- "$n")" "$c"
+      done <"$W/suites"
+    fi ;;
+  files)
+    if [ -n "${1:-}" ]; then known "$1"; awk -F'\t' -v n="$1" '$1 == n { print $2 }' "$W/map"
+    else cut -f2 "$W/map"; fi ;;
+  detect)
+    if [ "$DECLARED" = yes ]; then echo "ck-lite-heavy: OK — .ck-heavy-tests is declared"; exit 0; fi
+    : >"$W/cand"
+    git ls-files --cached --others --exclude-standard | grep -E '(^|/)package\.json$' |
+      grep -vE '(^|/)node_modules/' | while IFS= read -r f; do
+        [ -f "$f" ] || continue
+        # One script a line, minified files included.
+        tr ',{}' '\n\n\n' <"$f" |
+          grep -E '^[[:space:]]*"(test|e2e|int|vitest|jest|playwright|cypress)[^"]*"[[:space:]]*:[[:space:]]*"' |
+          grep -E '^[^:]*"([^"]*[:_-])?(e2e|integration|testcontainers?|playwright|cypress|db)([:_-][^"]*)?"[[:space:]]*:' |
+          sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' |
+          while IFS= read -r l; do printf 'CANDIDATE %s script %s\n' "$f" "$l"; done
+      done >>"$W/cand"
+    git ls-files --cached --others --exclude-standard |
+      grep -E '(^|/)(playwright|cypress)\.config\.[cm]?[jt]s$|(^|/)(vitest|jest)[.-](config[.-])?(e2e|integration|db)[^/]*$|(^|/)jest-e2e\.json$' |
+      grep -vE '(^|/)node_modules/' | while IFS= read -r f; do
+        [ -f "$f" ] || continue
+        printf 'CANDIDATE %s config %s\n' "$f" "$(grep -oE '(include|testMatch|testDir|testRegex)["]?[[:space:]]*:.*' -- "./$f" 2>/dev/null | head -1 | sed 's/,[[:space:]]*$//')"
+      done >>"$W/cand"
+    git grep --untracked -lIiE 'testcontainers' -- '*pyproject.toml' '*requirements*.txt' '*go.mod' '*pom.xml' '*build.gradle*' '*Gemfile' '*Cargo.toml' 2>/dev/null |
+      sed 's/.*/CANDIDATE & dependency testcontainers/' >>"$W/cand"
+    if [ -s "$W/cand" ]; then cat "$W/cand"; echo "ck-lite-heavy: $(count <"$W/cand") undeclared"
+    else echo "ck-lite-heavy: OK — no slow suite found"; fi ;;
+  scope)
+    [ "$#" -ge 1 ] || die "scope needs <base> [<id>…]"
+    if [ ! -s "$W/suites" ]; then echo "ck-lite-heavy: NONE"; exit 0; fi
+    B="$(base_sha "$1")" || exit 2; shift
+    linked "$B" "$@" >"$W/l"; affected "$B" "$@" >"$W/a"; any=0
+    while IFS='	' read -r n _; do
+      l="$(of_suite "$n" <"$W/l" | count)"; a="$(of_suite "$n" <"$W/a" | count)"; any=$((any + a))
+      printf '%s linked=%s affected=%s whole=%s\n' "$n" "$l" "$a" "$(awk -F'\t' -v n="$n" '$1 == n' "$W/map" | count)"
+      of_suite "$n" <"$W/l" | sed 's/^/  /'
+    done <"$W/suites"
+    [ "$any" -gt 0 ] || echo "ck-lite-heavy: NONE — no heavy test is linked or affected" ;;
+  command)
+    [ "$#" -ge 2 ] || die "command needs <suite> linked|affected|whole <base> [<id>…], or <suite> only <file>…"
+    S="$1"; MODE="$2"; shift 2; known "$S"
+    case "$MODE" in
+      only)
+        [ "$#" -ge 1 ] || die "only needs a file"
+        for f in "$@"; do
+          case "$f" in "$TOP"/*) f="${f#"$TOP"/}" ;; ./*) f="${f#./}" ;; esac
+          printf '%s\n' "$f" | of_suite "$S" | grep -q . || die "$f is not a file of suite $S (paths are from the repo root)"
+          printf '%s\n' "$f"
+        done >"$W/only" || exit 2
+        build "$S" <"$W/only" ;;
+      whole) awk -F'\t' -v n="$S" '$1 == n { print $2 }' "$W/map" | build "$S" ;;
+      linked | affected)
+        [ "$#" -ge 1 ] || die "$MODE needs <base> [<id>…]"
+        B="$(base_sha "$1")" || exit 2; shift
+        "$MODE" "$B" "$@" | of_suite "$S" | build "$S" ;;
+      *) die "unknown scope $MODE (linked|affected|whole|only)" ;;
+    esac ;;
+  unmarked)
+    [ "$#" -ge 1 ] || die "unmarked needs <base> [<id>]"
+    B="$(base_sha "$1")" || exit 2
+    if [ -n "${2:-}" ]; then markers | awk -F'\t' -v i="$2" '$2 == i { print $1 }'; else markers | cut -f1; fi | sort -u >"$W/m"
+    changed "$B" | grep -vxF -f "$W/m" || true ;;
+  *) die "unknown command: $CMD (list|files|detect|scope|command|unmarked)" ;;
+esac
