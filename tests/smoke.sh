@@ -142,10 +142,10 @@ has "group: refuses a name that is not a slug" "lowercase letters" "$(ck-lite gr
 has "group: refuses the reserved linked- prefix" "reserved" "$(ck-lite group linked-x T-06 2>&1)"
 has "group: files and done keep the tag" "group: auth · files: src/login, src/x" "$(ck-lite files T-02 src/x >/dev/null; grep '^T-02' tasks/PLAN.md)"
 has "add: refuses a group that is not a slug" "group \"Bad\"" "$(gtask T-07 Bad — src/b Bad | ck-lite add 2>&1)"
-ck-lite set done T-01 >/dev/null; ck-lite set doing T-02 >/dev/null
+ck-lite set "done" T-01 >/dev/null; ck-lite set doing T-02 >/dev/null
 has "waves --group: a doing need leaves the rest unschedulable" "Unschedulable T-03 — needs T-02 (doing)" "$(ck-lite waves --group auth)"
 eq  "groups --next: skips a group with nothing ready" "linked-T-04" "$(ck-lite groups --next)"
-ck-lite set done T-02 T-03 T-04 T-05 T-06 >/dev/null
+ck-lite set "done" T-02 T-03 T-04 T-05 T-06 >/dev/null
 eq  "groups --next: nothing open prints nothing" "" "$(ck-lite groups --next)"
 has "waves --group with no name: nothing ready is refused" "no group has ready work" "$(ck-lite waves --group 2>&1)"
 has "waves --group: a finished group is refused" "no group named auth" "$(ck-lite waves --group auth 2>&1)"
@@ -260,6 +260,7 @@ eq  "report hook: a deliberate ERROR line is not a bug" "" "$(ev s2 'ck-lite ope
 eq  "report hook: a project script's crash is not ours" "" "$(ev s3 'npm test' '/p/run.sh: line 3: x: unbound variable' | XDG_CACHE_HOME="$RT/cache" ck-lite-report hook)"
 sig="$(printf '%s' "$out" | sed -n 's/.*Signature \([0-9a-f]*\)\..*/\1/p')"
 has "report show: keeps the details for the skill" "unbound variable" "$(XDG_CACHE_HOME="$RT/cache" ck-lite-report show "$sig")"
+# shellcheck disable=SC2088 # the literal ~ is the expected output
 has "report scrub: hides home, emails and tokens" "~/x <email> <token>" "$(printf '%s/x a@b.io ghp_abcdefghij123\n' "$HOME" | ck-lite-report scrub)"
 mkdir -p "$RT/bin"; printf '#!/bin/sh\nexit 1\n' >"$RT/bin/gh"; chmod +x "$RT/bin/gh"; printf 'body\n' >"$RT/b.md"
 mkdir -p "$RT/drafts"; cp "$RT/b.md" "$RT/drafts/b.md"
@@ -298,7 +299,7 @@ has "qa run: a hyphenated label is refused" "no hyphen" "$(QA run T-01 test-one=
 
 # ---- ck-lite-qa hygiene ------------------------------------------------------------------
 echo "=== ck-lite-qa hygiene ==="
-cd "$WORK/qa"
+cd "$WORK/qa" || exit 1
 touch -t 202001010000 "$QT/ck-lite-1-old-x.log"; touch "$QT/ck-macopt-other.log"; rm -f "$QT/ck-lite-qa-pruned"
 QA run T-09 t='true' >/dev/null
 eq "qa run: a log older than CK_QA_KEEP_DAYS is pruned" "no" "$([ -e "$QT/ck-lite-1-old-x.log" ] && echo yes || echo no)"
@@ -373,9 +374,9 @@ mkdir -p __pycache__; echo b >__pycache__/a.cpython.pyc
 has "qa --reuse: bytecode is not a code change" "test: REUSED" "$(QA2 run T-01 --reuse test='true')"
 QA2 run T-77 test='true' >/dev/null
 has "qa: runs are keyed per checkout" "no ck-lite-qa run for T-77" "$(cd "$WORK/qa" && QA wait T-77)"
-QSL="$QT/ck-cpu-slots"; mkdir -p "$QSL/1"; sleep 4 & QHOLD=$!; echo "$QHOLD" >"$QSL/1/pid"
+QSL="$QT/ck-cpu-slots"; mkdir -p "$QSL/1"; sleep 12 & QHOLD=$!; echo "$QHOLD" >"$QSL/1/pid"
 has "qa slots: a run waits while every CPU slot is held" "queued for a CPU slot" \
-  "$(CK_QA_SLOTS=1 CK_LITE_QA_WAIT=1 QA2 run T-05 b='echo "$CMAKE_BUILD_PARALLEL_LEVEL $CK_QA_JOBS" >"'"$QT"'/share"')"
+  "$(CK_QA_SLOTS=1 CK_LITE_QA_WAIT=4 QA2 run T-05 b='echo "$CMAKE_BUILD_PARALLEL_LEVEL $CK_QA_JOBS" >"'"$QT"'/share"')"
 wait "$QHOLD"
 has "qa slots: the queued run reports its wait" "for a CPU slot" "$(CK_LITE_QA_WAIT=20 QA2 wait T-05)"
 has "qa slots: a build tool gets the slot's share of the cores" "$(getconf _NPROCESSORS_ONLN) $(getconf _NPROCESSORS_ONLN)" "$(cat "$QT/share")"
@@ -551,7 +552,7 @@ if command -v node >/dev/null 2>&1 && [ "$(node -p 'process.versions.node.split(
   FP_OUT=$(CK_FIGMA_API="$FAPI" FIGMA_TOKEN="$FTOK" ck-lite-replicate figma pull "$FURL" --out "$RR/fig" --no-check 2>&1)
   has "ck-lite-replicate figma pull: one frame from a page link" "1 frames" "$FP_OUT"
   lacks "ck-lite-replicate figma pull: every render, SVG and image downloads (no token on asset hosts)" "missing" "$FP_OUT"
-  eq  "ck-lite-replicate figma pull: frame.png, index.html, spec.md, node.json" "4" "$(ls "$RR/fig/screens/settings" | grep -cE '^(frame\.png|index\.html|spec\.md|node\.json)$')"
+  eq  "ck-lite-replicate figma pull: frame.png, index.html, spec.md, node.json" "4" "$(find "$RR/fig/screens/settings" -maxdepth 1 | grep -cE '/(frame\.png|index\.html|spec\.md|node\.json)$')"
   eq  "ck-lite-replicate figma pull: the vector icon is an SVG asset" "OK" "$([ -s "$RR/fig/assets/1-5.svg" ] && echo OK)"
   eq  "ck-lite-replicate figma pull: the image fill is a sniffed .png asset" "OK" "$([ -s "$RR/fig/assets/0123456789abcdef0123456789abcdef01234567.png" ] && echo OK)"
   has "ck-lite-replicate figma pull: auto-layout becomes flex with the exact gap" "gap: 16px" "$(cat "$RR/fig/screens/settings/spec.md")"

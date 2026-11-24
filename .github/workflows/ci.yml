@@ -14,7 +14,8 @@ jobs:
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
       - name: Lint scripts
-        run: shellcheck -S warning bin/* tests/smoke.sh
+        # bin/ck-lite-replicate is a Node script: lint only the bash ones.
+        run: shellcheck -S warning $(grep -lE '^#!.*bash' bin/*) tests/smoke.sh
       - name: Run smoke tests
         run: bash tests/smoke.sh
 
