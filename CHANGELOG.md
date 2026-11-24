@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.24.0] — 2026-11-24
+
+### Added
+- **ck-lite-heavy** and `references/heavy-tests.md`: slow suites (database, container, e2e) declared in `.ck-heavy-tests` are dropped from every task, wave and area check. Each heavy spec names its task (`// ck-heavy: T-05`).
+
+### Changed
+- **ship**: no longer runs the whole e2e and integration suites on its own; the push question also asks whether to run this branch's specs, every affected one, the whole suite, or skip. A failed run pushes nothing; a skipped one is written in the PR body.
+- **build**: a task runs only the heavy spec file it wrote or edited (the closing run's Playwright `--only-changed` pass is gone); undeclared slow suites are declared by the first build.
+- **ck-lite-affected**: drops declared heavy files; `--heavy` lists only those.
+
 ## [1.23.2] — 2026-11-19
 
 ### Fixed
