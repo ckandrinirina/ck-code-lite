@@ -488,8 +488,8 @@ await_run() {
 # checkout of its own, so nobody waits for a suite and an edit can never disturb one. There is
 # one lane per repository, a locked detached worktree under CK_QA_LANE_DIR (~/.ck-qa/lanes),
 # kept warm between runs and freed by `lane-free`, or once unused for CK_QA_KEEP_DAYS.
-# Dependencies are cloned copy-on-write from the caller's checkout while its lockfiles are the
-# commit's, else installed. Runs queue; a newer run of the same commands replaces one still
+# Dependencies are copied (copy-on-write where the disk can) from the caller's checkout while its
+# lockfiles are the commit's, else installed. Runs queue; a newer run of the same commands replaces one still
 # queued. Each run leaves a record under <git dir>/ck-qa, which `gate` reads: the one place
 # that waits, before anything is shipped. `.ck-qa-lane` at the repo root adds
 # `setup: <command>` (after the dependencies, when they or this file change) or `off` (runs
@@ -526,11 +526,15 @@ lane_rm() {
 rec_get() { sed -n "s/^$2=//p" "$1/meta" 2>/dev/null | head -n 1; }   # record, field
 lane_anc() { git merge-base --is-ancestor "$1" "$2" 2>/dev/null; }
 # a pid file holds the pid and when that process started, so a reused pid is never taken for it
-lane_pid() { printf '%s\n%s\n' "$1" "$(ps -o lstart= -p "$1" 2>/dev/null)" >"$2"; }
+lane_born() {  # on Linux the kernel's start tick: there ps computes lstart anew, a second off
+  if [ -r "/proc/$1/stat" ]; then sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | cut -d ' ' -f 20
+  else ps -o lstart= -p "$1" 2>/dev/null; fi
+}
+lane_pid() { printf '%s\n%s\n' "$1" "$(lane_born "$1")" >"$2"; }
 lane_gone() {  # pid file → 0 when its process has ended
   local p; p="$(sed -n 1p "$1" 2>/dev/null)"
   [ -n "$p" ] && kill -0 "$p" 2>/dev/null || return 0
-  [ "$(sed -n 2p "$1")" != "$(ps -o lstart= -p "$p" 2>/dev/null)" ]
+  [ "$(sed -n 2p "$1")" != "$(lane_born "$p")" ]
 }
 lane_dead() { lane_gone "$1/pid"; }
 lane_recs() {  # record names, oldest first; -r newest first
@@ -551,13 +555,14 @@ lane_locks() {  # the lockfiles the lane's commit tracks, one per line
   git -C "$LANE" ls-files -- "${p[@]}"
 }
 
-# One copy-on-write copy of directory $1 at lane path $2: instant in space, never a real copy.
-# 1 when the disk cannot do it.
+# Copies directory $1 to lane path $2: copy-on-write where the disk can, else a plain copy, which
+# costs what an install would and needs no network. Never a hard link: a run may write in it.
 lane_clone() {
   case "$(uname -s)" in
     Darwin) /bin/cp -cR "$1" "$2" 2>/dev/null ;;
-    *) cp -a --reflink=always "$1" "$2" 2>/dev/null ;;
+    *) cp -a --reflink=auto "$1" "$2" 2>/dev/null ;;
   esac && return 0
+  lane_rm "$2"; cp -a "$1" "$2" 2>/dev/null && return 0
   lane_rm "$2"; return 1
 }
 

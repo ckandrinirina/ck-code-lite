@@ -93,7 +93,7 @@ before new work.
 
 One per repository under `~/.ck-qa/lanes` (`CK_QA_LANE_DIR`), a detached worktree locked as `ck-qa
 lane`, made and removed by the script alone: never a task's worktree. Its `node_modules` are
-copy-on-write clones; build output is real. It stays warm for the next run; `ck-lite-qa lane-free`
+copies, copy-on-write where the disk can; build output is real. It stays warm for the next run; `ck-lite-qa lane-free`
 removes it, as does 7 days without use.
 
 ## Rules
