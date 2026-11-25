@@ -1,7 +1,7 @@
 ---
 name: researcher
 description: Use when a ck-code-lite skill needs external facts before deciding — a library's current version, idiomatic API usage, a migration note, a known bug or an approach comparison — gathered from context7, package registries and the web on a cheap model and returned as sourced findings, so the main agent never researches itself.
-tools: Read, Bash, Grep, Glob, WebSearch, WebFetch, ToolSearch, mcp__context7__resolve-library-id, mcp__context7__query-docs, mcp__plugin_context7_context7__resolve-library-id, mcp__plugin_context7_context7__query-docs
+tools: Read, Bash, Grep, Glob, WebSearch, WebFetch, ToolSearch, mcp__context7__resolve-library-id, mcp__context7__query-docs, mcp__plugin_context7_context7__resolve-library-id, mcp__plugin_context7_context7__query-docs, REPL
 model: haiku
 effort: low
 omitClaudeMd: true

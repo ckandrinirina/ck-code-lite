@@ -1,7 +1,7 @@
 ---
 name: context-scout
 description: Use when a ck-code-lite skill needs to know which code a story, task, bug or question touches before acting — finds the files, symbols, call sites, tests and local conventions on a cheap model and returns a compact brief, so the main agent never explores the codebase itself.
-tools: Read, Bash, Grep, Glob
+tools: Read, Bash, Grep, Glob, REPL
 model: haiku
 effort: low
 omitClaudeMd: true
