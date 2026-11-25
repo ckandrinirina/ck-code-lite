@@ -24,7 +24,7 @@ All inline in the prompt:
 - The task ID, the placement (`worktree` or `solo on <TARGET>`)
 - The task's section, verbatim from `ck-lite show` — title, `files:`, acceptance criteria
 - `## Commands` as `test: … · test-one: … · build: … · lint: …`
-- A `Base:` SHA — the target before this wave, the `<base>` of the closing `ck-lite-affected` run
+- A `Base:` SHA — the target before this wave
 - A `Context:` line — the `ck-lite context` call to run
 - The absolute path of `tdd-cycle.md` — the RED / GREEN / cleanup rules you follow
 - Any clarification the orchestrator settled with the user for this task
@@ -55,12 +55,12 @@ If the criteria or the commands are missing, return `status: blocked` and say wh
    fidelity rules for every visual element — cards are read from the paths `index.md` lists,
    under that same absolute `docs/design-system/`. `tokensPath: pending` → this task writes the
    token file (its Token materialization section) and returns the path under `tokens:`. After
-   the closing run, run its Design fidelity loop and return each `Design fidelity` line under
+   the own check, run its Design fidelity loop and return each `Design fidelity` line under
    `fidelity:`.
 3. **Cycle.** Open a task list first — one `TaskCreate` each for RED, GREEN, cleanup and the
-   closing run, each with an `activeForm` — and flip each with `TaskUpdate` as it starts and
+   own check, each with an `activeForm` — and flip each with `TaskUpdate` as it starts and
    ends: the session's band shows your list live. `Read` the `tdd-cycle.md` path once and follow it whole: RED, GREEN, cleanup,
-   the closing run. Every command through `ck-lite-qa run <T-NN> …`. Touched paths go
+   the own check. Every command through `ck-lite-qa run <T-NN> …`. Touched paths go
    in your verdict, never into the plan. A dependency you add that `## Stack` does not list:
    research it per `stack-research.md` (beside `tdd-cycle.md`), install it without a
    remembered version, and return its `## Stack` line under `stack:`.
@@ -71,8 +71,8 @@ If the criteria or the commands are missing, return `status: blocked` and say wh
 
 An ambiguity that blocks progress is never guessed: return `status: blocked` with the question.
 `test: (none)` with no exception settled in your prompt is a block too. With one settled, skip
-RED and the closing run as tdd-cycle says, and report `done` when every criterion is
-implemented and `build`/`lint` pass.
+RED and the own tests as tdd-cycle says, and report `done` when every criterion is
+implemented and the own check's `lint` passes.
 
 ## Outputs
 
@@ -90,7 +90,7 @@ heavy:        [<"<heavy spec you wrote or edited> — PASS | not run: <reason>">
 fidelity:     [<"Design fidelity …" or "Fidelity S-NN: …" line>, …]   # Design: or Replica: tasks only
 ```
 
-`done` only when every criterion has a passing test and the closing run passed. A
+`done` only when every criterion has a passing test and the own check passed. A
 missing verdict is read as `partial`. The orchestrator verifies from git regardless.
 
 ## Constraints
@@ -102,7 +102,7 @@ missing verdict is read as `partial`. The orchestrator verifies from git regardl
   never improvise UI a card covers. Run the Design fidelity loop with at most 3 fix passes,
   never with a foreground window.
 - With a `Replica:` line, read the cited screens and build to them, then run `replicate.md`'s
-  Fidelity loop once after the closing run — never more, never with a foreground window.
+  Fidelity loop once after the own check — never more, never with a foreground window.
 - Never run a heavy test (a `Heavy:` line, a `.ck-heavy-tests` suite) you did not write or edit; mark
   each one you did with `ck-heavy: <T-NN>`.
 - Never install a version from memory, and never look up a technology `## Stack` already lists.
@@ -121,7 +121,9 @@ missing verdict is read as `partial`. The orchestrator verifies from git regardl
 - Never write a wait loop — `until`/`while … sleep`, a `pgrep`, a poll of a task's output
   file. `ck-lite-qa wait <T-NN>` in the foreground is the only way to wait; a loop outlives
   you and some never end.
-- Never delegate QA — the orchestrator runs `ck-code-lite:qa-validator` per task.
+- Never run the suite, the build or a whole-project lint, and never wait for one — they run in the
+  background on your commit, after you return. Never delegate QA. A resume carrying review findings
+  or a red background run: fix, own check, commit, return the verdict again.
 - Never run the manual-test gate or ship — both happen once per wave, on the target.
 - Never write code beyond the acceptance criteria.
 - Leave the tree clean when you return.

@@ -8,7 +8,7 @@ allowed-tools: Bash(git status*) Bash(git diff*) Bash(git log*) Bash(git branch*
 
 # Build — One Task, Test First
 
-Implements a task from `tasks/PLAN.md`: failing test, minimum code, cleanup, isolated QA,
+Implements a task from `tasks/PLAN.md`: failing test, minimum code, cleanup, background QA,
 manual sign-off, done. Four gates are non-negotiable and appear below in bold:
 **clarify**, **RED**, **QA**, **manual test**.
 
@@ -19,7 +19,8 @@ to a checklist in the final report, never dropped.
 
 **A cosmetic `S` task takes the [QUICK ROUTE](#quick-route)** — the same gates, less ceremony.
 **No test run ever opens a window in front of the user**
-([background-tests.md](../../references/background-tests.md)).
+([background-tests.md](../../references/background-tests.md)), **and no suite is ever waited on**
+([qa-lane.md](../../references/qa-lane.md)).
 
 **A single task never gets a worktree.** Phases 2–7 run inline, in the checkout this skill was
 invoked from, on a branch created in place. Isolation is cut only for tasks that run
@@ -125,7 +126,7 @@ gives the state:
   design map first, a `Screens` card, then each component's card, ported exactly. `tokensPath`
   `"pending"` → this task materializes the tokens
   ([§ Token materialization](../../references/design-system.md#token-materialization)). After
-  the closing run, run [§ Design fidelity loop](../../references/design-system.md#design-fidelity-loop)
+  the own check, run [§ Design fidelity loop](../../references/design-system.md#design-fidelity-loop)
   before Phase 5 — shoot, diff, up to 3 fix passes, `ck-lite note` the `Design fidelity` line.
 - **pending** → the design is being made at claude.ai/design. Add the design question to
   Phase 2.3's round — asked even when nothing else is ambiguous.
@@ -134,7 +135,7 @@ gives the state:
 **Replica — a task whose criteria cite an `S-NN`** ([replicate.md](../../references/replicate.md)):
 `Read` `docs/replica/<slug>/REPLICA.md` — its `## Tokens`, `## Components` and the cited
 `## Screens` rows — and those screens' reference screenshots, and build to them. After the
-closing run, run its [§ Fidelity loop](../../references/replicate.md#fidelity-loop) before
+own check, run its [§ Fidelity loop](../../references/replicate.md#fidelity-loop) before
 Phase 5.
 
 **Route — last step of 2.1.** Fix it from what `ck-lite context` printed and announce it in one
@@ -198,6 +199,9 @@ the e2e suite once through `ck-lite-qa`, then `ck-lite files T-05 <paths>` and
 `ck-lite note T-05 "e2e moved to the background: <paths>"`. It is not task scope, so it never
 counts toward QUICK's step-up.
 
+**Unfinished checks, same call.** `ck-lite-qa gate --base auto`: `RED` or `UNCHECKED` is work an
+earlier session left ([qa-lane.md § The gate](../../references/qa-lane.md#the-gate)).
+
 **Heavy tests.** `ck-lite-heavy detect && ck-lite-heavy list`, same call. `CANDIDATE` lines → declare the
 suites first. A declared suite never runs in the build: write and mark the spec, and run only the
 file you wrote or edited ([heavy-tests.md](../../references/heavy-tests.md)).
@@ -211,45 +215,46 @@ the session has no `TaskCreate`), never batched to the end.
 
 `Read` [tdd-cycle.md](../../references/tdd-cycle.md) and follow it whole: **RED** (no
 implementation file before an observed failing test), GREEN, the bounded cleanup pass, and the
-closing run (every test the task can reach). Inline, each touched path not yet in `files:` is recorded with
+own check (its tests and changed files, never the suite). Inline, each touched path not yet in `files:` is recorded with
 `ck-lite files T-05 <path>…`, and a dependency researched under GREEN gets its `## Stack`
 line `Edit`ed into `docs/ARCHITECTURE.md` here.
 
 `test: (none)` stops at RED. Ask (`AskUserQuestion`): name a test command — record it in
 `## Commands` and continue — or record a documented exception with `ck-lite note T-05
-"test exception: <reason>"` and proceed without RED or the closing run. Never pick the
+"test exception: <reason>"` and proceed without RED or the own tests. Never pick the
 exception on the user's behalf. Under that exception Phase 5 passes `exception: <reason>`.
 
-## PHASE 5: QA — isolated
+## PHASE 5: QA — in the background
 
-Delegate to `ck-code-lite:qa-validator`, supplying inline:
+Right after the own check, **in one message** ([qa-lane.md § Start
+it](../../references/qa-lane.md#start-it)):
 
-- the task ID and its acceptance criteria as literal text
-- its `files:` list
-- the `## Commands` as ordered `label=command` pairs — `test`, `build`, `lint`, dropping `(none)`;
-  `test` is the closing run's exact `$(ck-lite-affected auto --command …)` expression
-  ([tdd-cycle.md](../../references/tdd-cycle.md#running-tests)), never the bare `test`
-- the working directory, and `reuse: yes`
-- under a recorded test exception only, `exception: <reason>`
-- for a task that wrote a heavy spec only, `heavy: <file> — PASS` from its own run
-- for a UI task with a linked design only, `design: docs/design-system/index.md — <the recorded
-  Design fidelity lines, or none>`
-- for a task citing an `S-NN` only, `replica: S-NN — <the recorded Fidelity line, or none>`
+1. `ck-lite-qa start T-05 --at work --base auto …` with the `## Commands`, and its
+   `ck-lite-qa wait T-05 --end` as a background Bash call;
+2. the reviewer, `ck-code-lite:qa-validator`, supplied inline with:
+   - the task ID and its acceptance criteria as literal text
+   - its `files:` list, the directory, and the base to diff against
+   - under a recorded test exception only, `exception: <reason>`
+   - for a task that wrote a heavy spec only, `heavy: <file> — PASS` from its own run
+   - for a UI task with a linked design only, `design: docs/design-system/index.md — <the recorded
+     Design fidelity lines, or none>`
+   - for a task citing an `S-NN` only, `replica: S-NN — <the recorded Fidelity line, or none>`
 
-`reuse: yes` lets it report the closing `test` run as `REUSED` when not a byte of code changed
-since — those tests already passed on this exact state. Build and lint always run, and every
-criterion is still mapped to its covering test.
+Wait for neither: a review finding is fixed the moment it arrives, and Phase 6 is asked as soon as
+the review passes.
 
-**Iteration cap 3.** On `QA: FAIL`, fix the specific failure, re-run the task's tests and the
-closing run, and re-delegate. A `lesson:` line under the failure is a fix another project
+**Iteration cap 3.** On a review `QA: FAIL` or a red run ([§ When it
+ends](../../references/qa-lane.md#when-it-ends)), fix the specific failure, run the own check, and
+start Phase 5 again on the new state. A `lesson:` line under the failure is a fix another project
 already found: try it first. At the third failure, escalate (`AskUserQuestion`):
 
 - `FIX MANUALLY` — hand back, task stays `doing`
-- `ACCEPT AS-IS` — `ck-lite note T-05 "<the shortfall>"`, then continue
+- `ACCEPT AS-IS` — `ck-lite note T-05 "<the shortfall>"`, `ck-lite-qa waive T-05 "<the shortfall>"`
+  when the run is red, then continue
 - `ABORT` — `ck-lite set todo T-05` and stop
 
-Run the commands inline **only** on the [QUICK ROUTE](#quick-route), or when the qa-validator
-agent type is unregistered — still through `ck-lite-qa` — and say so.
+Review the diff in this context **only** on the [QUICK ROUTE](#quick-route), or when the
+qa-validator agent type is unregistered, and say so.
 
 ## QUICK ROUTE
 
@@ -278,21 +283,20 @@ cannot. One task only, never in PARALLEL MODE.
   write none — a test that pins a label catches no bug — and record
   `ck-lite note T-05 "quick: no test asserts <value>"`. A criterion that turns out to change
   behaviour gets a real RED test and ends QUICK. The cleanup pass is one read of the diff for
-  a restating comment or dead code. The closing run still runs.
-- **5** — inline, no agent: `ck-lite-qa run T-05 --reuse test="$(ck-lite-affected …)"
-  build='…' lint='…'`, the exact line the validator would get. The closing run on this tree
-  reports `REUSED`. `FAIL` enters the same fix loop and cap.
+  a restating comment or dead code. The own check still runs.
+- **5** — no agent: the same background run, and the diff read here against the criteria.
 - **6** — one or two steps that show the change: the screen, and what it should now read.
 
 **QUICK steps up to NORMAL by itself** the moment the change outgrows it: the diff (`tasks/`
 and the background conversion excluded) reaches more than 3 files or 40 changed lines, adds a
 file, touches a manifest, lockfile, config or migration, or needs a behaviour test. Say
 `Route: QUICK → NORMAL — <reason>` and finish on the normal path from where you are: full RED
-for the new behaviour, the cleanup pass, and Phase 5 delegated.
+for the new behaviour, the cleanup pass, and Phase 5 with its reviewer.
 
 ## PHASE 6: MANUAL TEST GATE
 
-QA proves the tests pass, not that the feature is usable. Present 2–4 concrete steps derived
+QA proves the tests pass, not that the feature is usable. Asked as soon as the review passes,
+while the background run goes on: the user tests while the suite does. Present 2–4 concrete steps derived
 from the criteria, plus one edge case worth poking:
 
 ```
@@ -308,13 +312,15 @@ Then **one `AskUserQuestion` carrying both questions** — "Manual test result?"
 `ISSUES`, and "Ship now?" `SHIP` / `SKIP` (used only on `PASS`).
 
 `ISSUES` → `ck-lite note T-05 "<what the user saw>"`, write a regression test that reproduces
-it, confirm it fails, apply the minimum fix, close with the closing run, then **re-run Phase
+it, confirm it fails, apply the minimum fix, run the own check, then **re-run Phase
 5** — QA is mandatory after every fix. Back to this gate. **Cap 3 cycles**, then escalate with
 Phase 5's three options.
 
 ## PHASE 7: COMPLETE
 
-QA `PASS` and manual `PASS` — every criterion is met:
+Review `QA: PASS`, manual `PASS` and the background run green — every criterion is met. The first
+two in and the run still going → say so in one line, keep the ship answer, and end the turn: the
+run's notification brings this phase back.
 
 ```bash
 ck-lite done T-05
@@ -337,13 +343,16 @@ that command as the next step.
   a QUICK value change that no test asserts, noted in the plan.
 - **Never take the QUICK ROUTE on a task that fails one eligibility condition** or in
   PARALLEL MODE, never stay on it past a step-up condition, and never skip its Phase 5
-  `ck-lite-qa` run or the manual gate — QUICK drops ceremony, never a check.
+  background run or the manual gate — QUICK drops ceremony, never a check.
 - **Never let a test open a window in front of the user** — convert every
   `ck-lite-headless` hit before task code, never ask whether to, and never write a
   `ck-headless: allow` marker ([background-tests.md](../../references/background-tests.md)).
 - **Never run a heavy test the task did not write or edit**, and never hand one to QA — `ship` asks
   once before the push ([heavy-tests.md](../../references/heavy-tests.md)).
-- **Never mark a task `done` without a `QA: PASS`** or an explicitly recorded ACCEPT AS-IS.
+- **Never mark an inline task `done` without a review `QA: PASS` and a green run**, or an explicitly
+  recorded ACCEPT AS-IS.
+- **Never wait on a suite, a build or a lint while there is other work** — start it, move on, act on
+  its notification ([qa-lane.md](../../references/qa-lane.md)).
 - **Never skip the manual-test gate**, and never split its two questions into two calls.
 - **Never proceed past an `ISSUES` answer without re-running QA.**
 - **Never ask more than one clarify round**, never more than 4 questions, and never ask
@@ -355,9 +364,8 @@ that command as the next step.
   cost is the same at any plan size and which keeps the row and meta line in step.
 - **Never run a test, build or lint command outside `ck-lite-qa`**, and never pipe one into
   `tail`/`grep` — the log already holds the output; a second run to slice it is pure waste.
-- **Never run the full suite in this context once QA is delegated** — beyond the one closing
-  run, the subagent absorbs that output. The closing run and QA's `test` are the
-  `ck-lite-affected` expression; the area backstop runs at the wave's merge and at ship.
+- **Never run the suite or the build in this context** — the background run does, once, scoped by
+  `ck-lite-affected`. The area backstop runs at the wave's merge and at ship.
 - **Never write code beyond the acceptance criteria.** Anything extra is a new task.
 - **Never search the codebase or research a technology in the main agent** — the
   `ck-code-lite:context-scout` and `ck-code-lite:researcher` sub-agents (haiku, low effort)

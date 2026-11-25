@@ -5,8 +5,12 @@
 # Usage:
 #   ck-lite-qa state
 #   ck-lite-qa run <id> [--parallel] [--reuse] [--rerun] <label>=<command> [<label>=<command>…]
-#   ck-lite-qa wait <id>
+#   ck-lite-qa wait <id> [--end]
 #   ck-lite-qa since <id> <label>
+#   ck-lite-qa start <id> [--at <commit>|work] [--base <commit>|auto] [--parallel] <label>=<command>…
+#   ck-lite-qa gate [<ref>] [--base <ref>|auto] [--again]
+#   ck-lite-qa waive <id> "<reason>"
+#   ck-lite-qa lane-free
 #   ck-lite-qa docker-free <worktree-path>…
 #   ck-lite-qa reap
 #
@@ -33,6 +37,18 @@
 #        It is refused when the label has no recorded run in this directory.
 # wait   waits up to CK_LITE_QA_WAIT seconds more on the run for <id> and prints its result,
 #        or RUNNING again. Once it has ended, wait prints that result again.
+#        --end waits without a limit, for a background Bash call of the main agent.
+# start  returns at once: the commands run in the background lane (a separate checkout of
+#        --at, default HEAD; `work` = the working copy as it stands), so editing goes on. A
+#        command may hold {base} (the last commit that passed it, never older than --base) and
+#        may start with @ (its output is the command to run, for a scope that must be computed
+#        in the lane). A newer start of the same commands replaces one still queued (its
+#        wait exits 4).
+# gate   GREEN or NONE (exit 0), RED (1), PENDING (3) or UNCHECKED (5) for <ref>, default
+#        HEAD, from the runs `start` recorded since --base (`auto`: where <ref> left the
+#        trunk). --again starts what is not green.
+# waive  records that the user accepted the failure of <id>'s last run.
+# lane-free  removes this repository's lane.
 # since  prints the snapshot commit of <label>'s last run for <id> in this directory, the
 #        ref a runner's --changed flag narrows a re-run against.
 # reap   stops the leftover hand-written wait loops (until/while … sleep on a QA run, a pgrep
@@ -100,9 +116,10 @@ stamp_of() { printf '%s\n%s\n%s\n' "$1" "$(pwd -P)" "$2" | git hash-object --std
 # >>> ck-cpu-slots — byte-identical in ck-code's ck-qa.sh and ck-code-lite's ck-lite-qa
 # (plugin-doctor compares the two). Every run on this machine — any project, any worktree,
 # either plugin — shares CPU_SLOTS slots, so three worktrees building at once queue instead
-# of each starting one job per core. A throttle, not a lock: a lost race costs one extra
+# of each starting one job per core (background lane runs queue among themselves, so a
+# builder's quick run never waits for one). A throttle, not a lock: a lost race costs one extra
 # concurrent run, never a wrong result. CK_QA_SLOTS=0 turns the queue off.
-SLOTS_DIR="$TMP/ck-cpu-slots"
+SLOTS_DIR="$TMP/ck-cpu-slots${CK_QA_POOL:+-$CK_QA_POOL}"   # the background lane has its own pool
 NCPU="$(getconf _NPROCESSORS_ONLN 2>/dev/null)"
 case "$NCPU" in ''|*[!0-9]*|0) NCPU=4 ;; esac
 CPU_SLOTS="${CK_QA_SLOTS:-$(( NCPU / 8 ))}"
@@ -436,17 +453,21 @@ qa_reap() {
 }
 # <<< ck-qa-reap
 
+# The run directory of id $1. <dir>.lane, when it is there, names the background run's record.
+run_dir() { printf '%s/%s' "$RUNS" "$1"; }
+
 # Waits on the run for $1 for up to CK_LITE_QA_WAIT seconds, then prints its result and exits
 # with its code, or prints RUNNING and exits 3 while it is still going.
 await_run() {
-  local d="$RUNS/$1" budget="${CK_LITE_QA_WAIT:-170}" t0=$SECONDS polls=0 q
+  local d p budget="${CK_LITE_QA_WAIT:-170}" t0=$SECONDS polls=0 q end="${2:-}"
+  d="$(run_dir "$1")"; p="$d.lane"; [ ! -f "$p" ] || d="$(cat "$p")"
   [ -f "$d/pid" ] || die "no ck-lite-qa run for $1 — start it with ck-lite-qa run $1 …"
   while [ ! -f "$d/rc" ]; do
-    if ! kill -0 "$(cat "$d/pid")" 2>/dev/null; then
+    if if [ -f "$d/meta" ]; then lane_dead "$d"; else ! kill -0 "$(cat "$d/pid")" 2>/dev/null; fi; then
       [ -f "$d/rc" ] && break
       die "the ck-lite-qa run for $1 stopped without a result — start it again with ck-lite-qa run"
     fi
-    if [ $((SECONDS - t0)) -ge "$budget" ]; then
+    if [ "$end" != --end ] && [ $((SECONDS - t0)) -ge "$budget" ]; then
       q=""; [ ! -f "$d/queued" ] || q=" (queued for a CPU slot — other runs hold all $CPU_SLOTS)"
       echo "ck-lite-qa: RUNNING — $1 has run $(( $(date +%s) - $(cat "$d/start") ))s$q; run 'cd $(pwd -P) && ck-lite-qa wait $1' to keep waiting (runs are per checkout), never start it again and never poll it with your own until/while loop"
       exit 3
@@ -454,14 +475,674 @@ await_run() {
     # quick polls first, so a sub-second suite is not billed a 2 s sleep
     polls=$((polls + 1)); if [ "$polls" -le 10 ]; then sleep 0.2; else sleep 2; fi
   done
+  # replaced by a newer run under the same id → that one is the answer
+  if [ "$end" = --end ] && [ "$(cat "$d/rc")" = 4 ] && [ -f "$p" ] && [ "$(cat "$p")" != "$d" ]; then
+    await_run "$1" --end
+  fi
   cat "$d/out"
   exit "$(cat "$d/rc")"
 }
 
+# >>> ck-qa-lane — byte-identical in ck-code's ck-qa.sh and ck-code-lite's ck-lite-qa
+# (plugin-doctor compares the two). The background lane: `start` checks one commit in a
+# checkout of its own, so nobody waits for a suite and an edit can never disturb one. There is
+# one lane per repository, a locked detached worktree under CK_QA_LANE_DIR (~/.ck-qa/lanes),
+# kept warm between runs and freed by `lane-free`, or once unused for CK_QA_KEEP_DAYS.
+# Dependencies are cloned copy-on-write from the caller's checkout while its lockfiles are the
+# commit's, else installed. Runs queue; a newer run of the same commands replaces one still
+# queued. Each run leaves a record under <git dir>/ck-qa, which `gate` reads: the one place
+# that waits, before anything is shipped. `.ck-qa-lane` at the repo root adds
+# `setup: <command>` (after the dependencies, when they or this file change) or `off` (runs
+# in the caller's checkout, which must then be left alone until the run ends).
+LANE_HOME="${CK_QA_LANE_DIR:-$HOME/.ck-qa/lanes}"
+LANE_LOCKS="package-lock.json npm-shrinkwrap.json pnpm-lock.yaml yarn.lock bun.lock bun.lockb uv.lock poetry.lock composer.lock requirements.txt"
+
+lane_init() {  # sets LANE, LANE_MAIN and LANE_REC; 1 outside a git repository with a commit
+  local gcd
+  # a git hook exports GIT_DIR and friends: they would aim the lane's git at the caller's checkout
+  # shellcheck disable=SC2046
+  unset $(git rev-parse --local-env-vars) 2>/dev/null
+  export GIT_TERMINAL_PROMPT=0
+  gcd="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
+  git rev-parse -q --verify HEAD >/dev/null 2>&1 || return 1
+  LANE_MAIN="$(dirname -- "$gcd")"; LANE_REC="$gcd/ck-qa"
+  if ! { mkdir -p "$LANE_HOME" && chmod 700 "$LANE_HOME" && [ -w "$LANE_HOME" ]; } 2>/dev/null; then
+    LANE_HOME="$TMP/ck-qa-lanes"; mkdir -p "$LANE_HOME" && chmod 700 "$LANE_HOME" || return 1
+  fi
+  LANE_HOME="$(CDPATH='' cd -- "$LANE_HOME" && pwd -P)"
+  LANE="$LANE_HOME/$(basename -- "$LANE_MAIN" | tr -c 'A-Za-z0-9._\n' '-')-$(printf '%s' "$gcd" | cksum | cut -d' ' -f1)"
+  mkdir -p "$LANE_REC"
+}
+
+# The one place a lane path is deleted: refuses anything that is not strictly inside LANE_HOME.
+lane_rm() {
+  local p
+  for p in "$@"; do
+    case "$p" in *..*) return 1 ;; "${LANE_HOME:?}"/?*) ;; *) return 1 ;; esac
+    rm -rf -- "${p:?}"
+  done
+}
+
+rec_get() { sed -n "s/^$2=//p" "$1/meta" 2>/dev/null | head -n 1; }   # record, field
+lane_anc() { git merge-base --is-ancestor "$1" "$2" 2>/dev/null; }
+# a pid file holds the pid and when that process started, so a reused pid is never taken for it
+lane_pid() { printf '%s\n%s\n' "$1" "$(ps -o lstart= -p "$1" 2>/dev/null)" >"$2"; }
+lane_gone() {  # pid file → 0 when its process has ended
+  local p; p="$(sed -n 1p "$1" 2>/dev/null)"
+  [ -n "$p" ] && kill -0 "$p" 2>/dev/null || return 0
+  [ "$(sed -n 2p "$1")" != "$(ps -o lstart= -p "$p" 2>/dev/null)" ]
+}
+lane_dead() { lane_gone "$1/pid"; }
+lane_recs() {  # record names, oldest first; -r newest first
+  local d
+  for d in "$LANE_REC"/r[0-9]*; do [ ! -d "$d" ] || echo "${d##*/}"; done | sort "$@"
+}
+lane_trunk() {  # ref → where it left the trunk, what `auto` means; nothing when there is none
+  local t
+  for t in origin/HEAD origin/main origin/master origin/develop main master develop; do
+    git rev-parse -q --verify "$t^{commit}" >/dev/null 2>&1 && git merge-base "$1" "$t" 2>/dev/null && return 0
+  done
+  return 1
+}
+lane_off() { git show "$1:.ck-qa-lane" 2>/dev/null | grep -qx 'off'; }   # commit
+lane_locks() {  # the lockfiles the lane's commit tracks, one per line
+  local f p=()
+  for f in $LANE_LOCKS; do p[${#p[@]}]="$f"; p[${#p[@]}]="*/$f"; done
+  git -C "$LANE" ls-files -- "${p[@]}"
+}
+
+# One copy-on-write copy of directory $1 at lane path $2: instant in space, never a real copy.
+# 1 when the disk cannot do it.
+lane_clone() {
+  case "$(uname -s)" in
+    Darwin) /bin/cp -cR "$1" "$2" 2>/dev/null ;;
+    *) cp -a --reflink=always "$1" "$2" 2>/dev/null ;;
+  esac && return 0
+  lane_rm "$2"; return 1
+}
+
+lane_run() {  # dir, command, what — runs a setup command; prints why when it fails
+  ( cd "$1" && run_capped "$2" "$LANE.setup.log" ) </dev/null \
+    || { echo "$3 failed: $(tail -n 1 "$LANE.setup.log")"; return 1; }
+}
+
+# The dependency folders of checkout $1: every node_modules, and a gitignored vendor/.
+lane_depdirs() {
+  find "$1" \( -name .git -o -path "$1/.claude/worktrees" \) -prune -o -type d -name node_modules -prune -print 2>/dev/null
+  [ ! -d "$1/vendor" ] || ! git -C "$1" check-ignore -q vendor || echo "$1/vendor"
+}
+
+# Brings the dependencies of commit $2 into the lane, from checkout $1 when its lockfiles are
+# the commit's. Prints why on failure.
+lane_deps() {
+  local src="$1" c="$2" key f d rel l same=1 have=0 locks
+  locks="$(lane_locks)"
+  key="$( { git -C "$LANE" ls-files -s -- '*.prisma' .ck-qa-lane
+            if [ -n "$locks" ]; then printf '%s\n' "$locks" | while IFS= read -r f; do git -C "$LANE" ls-files -s -- ":(literal)$f"; done
+            else git -C "$LANE" ls-files -s -- package.json '*/package.json'; fi; } | git hash-object --stdin)"
+  [ "$(cat "$LANE.deps" 2>/dev/null)" != "$key" ] || return 0
+  lane_rm "$LANE.deps"
+  while IFS= read -r d; do [ -z "$d" ] || lane_rm "$d"; done <<DIRS
+$(lane_depdirs "$LANE")
+DIRS
+  while IFS= read -r f; do
+    [ -z "$f" ] || [ "$(git -C "$LANE" rev-parse "$c:$f" 2>/dev/null)" = "$(git hash-object "$src/$f" 2>/dev/null)" ] || same=0
+  done <<LOCKS
+$locks
+LOCKS
+  if [ "$same" = 1 ] && [ -d "$src" ]; then
+    while IFS= read -r d; do
+      [ -n "$d" ] || continue
+      rel="${d#"$src"/}"
+      [ -d "$LANE/$(dirname -- "$rel")" ] || continue
+      lane_clone "$d" "$LANE/$rel" || { same=0; break; }
+      have=1
+      lane_rm "$LANE/$rel/.vite" "$LANE/$rel/.cache"
+      # a link to the caller's checkout would test the caller's code
+      find "$LANE/$rel" -type l -lname "$src/*" 2>/dev/null | while IFS= read -r l; do
+        f="$(readlink "$l")"; ln -sfn "$LANE/${f#"$src"/}" "$l"
+      done
+    done <<DIRS
+$(lane_depdirs "$src")
+DIRS
+  fi
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    rel="$(dirname -- "$f")"; l=""
+    if [ "$same" = 0 ] || [ "$have" = 0 ]; then
+      case "$(basename -- "$f")" in
+        pnpm-lock.yaml) l='pnpm install --frozen-lockfile --prefer-offline' ;;
+        package-lock.json|npm-shrinkwrap.json) l='npm ci --prefer-offline --no-audit --no-fund' ;;
+        yarn.lock) l='yarn install --frozen-lockfile --prefer-offline || yarn install --immutable' ;;
+        bun.lock|bun.lockb) l='bun install --frozen-lockfile' ;;
+        composer.lock) l='composer install -n -q' ;;
+      esac
+    fi
+    # a virtualenv holds absolute paths, so it is made here, never cloned
+    if [ -d "$src/$rel/.venv" ]; then
+      case "$(basename -- "$f")" in
+        uv.lock) l='uv sync --frozen' ;;
+        poetry.lock) l='POETRY_VIRTUALENVS_IN_PROJECT=1 poetry install -n' ;;
+        requirements.txt) [ -f "$LANE/$rel/uv.lock" ] || [ -f "$LANE/$rel/poetry.lock" ] \
+          || l='{ [ -d .venv ] || python3 -m venv .venv; } && .venv/bin/pip install -q -r requirements.txt' ;;
+      esac
+    fi
+    [ -z "$l" ] || lane_run "$LANE/$rel" "$l" "the install in $rel" || return 1
+  done <<LOCKS
+$locks
+LOCKS
+  l="$(sed -n 's/^setup:[[:space:]]*//p' "$LANE/.ck-qa-lane" 2>/dev/null)"
+  [ -z "$l" ] || lane_run "$LANE" "$l" "the .ck-qa-lane setup" || return 1
+  printf '%s' "$key" >"$LANE.deps"
+}
+
+# Copies the gitignored files a suite reads from checkout $1: every one ignored by itself (a
+# .env, a service-account key) up to 1 MB, and what .worktreeinclude names. An ignored folder
+# (dependencies, build output) is never walked into.
+lane_env() {
+  local src="$1" f
+  { git -C "$src" ls-files -o -i --exclude-standard --directory | grep -Ev '/$|\.(log|tsbuildinfo|pyc|tmp)$|(^|/)\.DS_Store$'
+    [ ! -f "$src/.worktreeinclude" ] || git -C "$src" ls-files -o -i --exclude-from="$src/.worktreeinclude" \
+      | grep -Ev '(^|/)(node_modules|\.venv|target)/'
+  } 2>/dev/null | grep -v '^\.claude/worktrees/' | while IFS= read -r f; do
+    [ -f "$src/$f" ] && [ ! -L "$src/$f" ] && git -C "$src" check-ignore -q -- "$f" || continue
+    [ -d "$LANE/$(dirname -- "$f")" ] && [ -z "$(find "$src/$f" -size +2048 2>/dev/null)" ] || continue
+    cp -p "$src/$f" "$LANE/$f"
+  done
+  return 0
+}
+
+# What log $1 says failed, with what moves from run to run taken out (colours, line and column
+# numbers, times, the lane's path), one sorted line each, repeats kept: every line naming a file or
+# a test, the passing ones and the wrappers' own ("Command failed", "Found 1 error") aside.
+lane_fails() {
+  LC_ALL=C sed -E $'s/\x1b\\[[0-9;]*m//g' "$1" 2>/dev/null | sed -E "s#${LANE}/?##g; s#\\([0-9]+,[0-9]+\\)##g; s#:[0-9]+(:[0-9]+)?##g; s#\\(?[0-9.]+ ?m?s\\)?([^a-zA-Z]|\$)#\\1#g; s#^[[:space:]]+##; s#[[:space:]]+\$##" \
+    | grep -E '[A-Za-z0-9_-]\.[A-Za-z]{1,6}([^A-Za-z]|$)|::|●|✕|✗|×|[Nn]ot ok|[Ee]rror|[Ff]ail' \
+    | grep -Evi '^(PASS|RUN|ok|✓|✔|√|stdout|stderr|at|❯|>|\$)([ |]|$)|^(Tests|Test Files|Test Suites|Snapshots|Time|Ran all|Start at|Duration)[: ]' \
+    | grep -Evi 'ELIFECYCLE|command failed|exit(ed)? (code|status)|with code [0-9]|^make(\[[0-9]+\])?: \*\*\*|found [0-9]+ (error|problem|file)|^npm (error|err!)|[0-9]+ (problems?|errors?)( |\()|[0-9]+ (failed|failing|passed)' \
+    | LC_ALL=C sort
+}
+
+# Runs label $2 of record $1 in the lane, its answer in <record>/$3res-<label> ("<verdict> <exit
+# code> <log>", then the tracked files it changed). The tree is the commit's again afterwards.
+lane_one() {
+  local r="$1" l="$2" d
+  rm -f "${r:?}/$3res-$l"
+  ( cd "$LANE/$(rec_get "$r" prefix)" 2>/dev/null && LANE_RES="$r/$3res" D="$r" "$SELF" __worker "$(rec_get "$r" id)${3:+.$3}" --reuse "$l=$(cat "$r/run-$l")" 2>&1 )
+  if d="$(lane_dirty)"; then
+    printf '%s\n' "$d" >>"$r/$3res-$l"
+    git -C "$LANE" checkout -q -f HEAD -- . >/dev/null 2>&1
+  fi
+}
+lane_res() { sed -n 1p "$1" 2>/dev/null | cut -d ' ' -f "$2"; }   # result file, field
+
+# Which of labels $3… of record $1 are no worse than on base commit $2? Runs them there, in the
+# lane, and prints each that failed there the same way, with no failure line of its own, or that
+# changes the same tracked files there. The answer is kept per (base, directory, command). A
+# chained command proves nothing: what fails first hides the rest.
+lane_baseline() {
+  local r="$1" b="$2" l k todo="" k2; shift 2
+  for l in "$@"; do
+    k="$LANE_REC/base-$( { echo "$b"; rec_get "$r" prefix; cat "$r/run-$l"; } | git hash-object --stdin)"
+    [ -f "$k" ] || todo="$todo $l"
+  done
+  if [ -n "$todo" ]; then
+    ( cd "$LANE_MAIN" && lane_prepare "$b" "$(rec_get "$r" src)" ) >/dev/null 2>&1 || return 0
+    for l in $todo; do
+      k="$LANE_REC/base-$( { echo "$b"; rec_get "$r" prefix; cat "$r/run-$l"; } | git hash-object --stdin)"
+      lane_one "$r" "$l" base >/dev/null
+      [ -s "$r/baseres-$l" ] || continue
+      case "$(lane_res "$r/baseres-$l" 1)" in
+        FAIL) lane_fails "$(sed -n 1p "$r/baseres-$l" | cut -d ' ' -f 3-)" >"$k" ;;
+        PASS|REUSED) : >"$k" ;;
+        *) continue ;;
+      esac
+      { lane_res "$r/baseres-$l" 2; sed 1d "$r/baseres-$l"; } >"$k.rc"
+    done
+  fi
+  for l in "$@"; do
+    k="$LANE_REC/base-$( { echo "$b"; rec_get "$r" prefix; cat "$r/run-$l"; } | git hash-object --stdin)"
+    [ -f "$k.rc" ] || continue
+    [ "$(sed 1d "$k.rc")" = "$(sed 1d "$r/res-$l")" ] || continue
+    if [ "$(lane_res "$r/res-$l" 1)" != FAIL ]; then echo "$l"; continue; fi   # same files changed, and it passed
+    case "$(cat "$r/run-$l")" in *'&&'*|*';'*|*'||'*) continue ;; esac
+    k2="$(lane_res "$r/res-$l" 2)"
+    [ "$k2" = "$(sed -n 1p "$k.rc")" ] && [ "${k2:-999}" -lt 124 ] || continue
+    lane_fails "$(sed -n 1p "$r/res-$l" | cut -d ' ' -f 3-)" >"$r/fails-$l"
+    # never without a failure line on both sides: silence proves nothing
+    [ -s "$k" ] && [ -s "$r/fails-$l" ] || continue
+    LC_ALL=C comm -23 "$r/fails-$l" "$k" >"$r/new-$l"
+    [ -s "$r/new-$l" ] || echo "$l"
+  done
+}
+
+# Drops everything a run left but the dependencies and the build trees that check their own
+# inputs (cargo, CMake): an old dist/ must never stand in for a build that fails.
+lane_clean() {
+  local x=(-e node_modules -e .venv -e vendor)
+  [ -z "$(git -C "$LANE" ls-files -- Cargo.toml '*/Cargo.toml')" ] || x[${#x[@]}]=--exclude=target
+  [ -z "$(git -C "$LANE" ls-files -- CMakeLists.txt)" ] || x[${#x[@]}]='--exclude=/build*'
+  git -C "$LANE" clean -fdxq "${x[@]}" >/dev/null 2>&1
+}
+
+lane_dirty() { git -C "$LANE" diff --name-only HEAD 2>/dev/null | grep .; }   # tracked files changed
+
+# Puts commit $1 in the lane, set up from checkout $2. Prints why on failure.
+lane_prepare() {
+  local c="$1" src="$2" p
+  [ -d "$src" ] || src="$LANE_MAIN"
+  # the lane itself, never a repository above it: what follows discards files
+  if [ -e "$LANE/.git" ] && [ "$(git -C "$LANE" rev-parse --show-toplevel 2>/dev/null)" = "$LANE" ]; then
+    git -c core.hooksPath=/dev/null -C "$LANE" checkout -q --detach -f "$c" >/dev/null 2>&1 \
+      && lane_clean || { echo "cannot check out $c in $LANE"; return 1; }
+  else
+    lane_rm "$LANE" "$LANE.deps"
+    git -c core.hooksPath=/dev/null -C "$LANE_MAIN" worktree add -f -f --detach "$LANE" "$c" >"$LANE.setup.log" 2>&1 \
+      || { echo "cannot create the lane checkout: $(tail -n 1 "$LANE.setup.log")"; return 1; }
+    git -C "$LANE_MAIN" worktree lock --reason "ck-qa lane" "$LANE" >/dev/null 2>&1
+  fi
+  if [ -f "$LANE/.gitmodules" ]; then
+    git config -f "$LANE/.gitmodules" --get-regexp '^submodule\..*\.path$' | while read -r _ p; do
+      [ -e "$LANE_MAIN/$p/.git" ] && [ ! -e "$LANE/$p/.git" ] \
+        && git -C "$LANE" submodule update --init --reference "$LANE_MAIN/$p" --dissociate -- "$p" >/dev/null 2>&1
+    done
+    lane_run "$LANE" 'git submodule update --init --recursive' "fetching its submodules" || return 1
+  fi
+  lane_deps "$src" "$c" && lane_env "$src" || return 1
+  # what the setup wrote over tracked files is not the commit
+  lane_dirty >/dev/null && git -C "$LANE" checkout -q -f "$c" -- . >/dev/null 2>&1
+  return 0
+}
+
+lane_lock() {  # waits for the lane; 1 when record $1 was replaced meanwhile
+  while ! mkdir "$LANE.lock" 2>/dev/null; do
+    [ ! -d "$1/claimed" ] || return 1
+    # taken over by one waiter at a time, the holder checked again inside
+    if lane_stale && mkdir "$LANE.lock.steal" 2>/dev/null; then
+      ! lane_stale || lane_rm "$LANE.lock"
+      lane_rm "$LANE.lock.steal"; continue
+    fi
+    [ -z "$(find "$LANE.lock.steal" -maxdepth 0 -mmin +2 2>/dev/null)" ] || lane_rm "$LANE.lock.steal"
+    : >"$1/queued"; sleep 1
+  done
+  lane_pid $$ "$LANE.lock/pid"
+}
+lane_stale() {  # the holder has ended, or never wrote its pid a minute ago
+  if [ -s "$LANE.lock/pid" ]; then lane_gone "$LANE.lock/pid"
+  else [ -n "$(find "$LANE.lock" -maxdepth 0 -mmin +1 2>/dev/null)" ]; fi
+}
+lane_mine() { [ "$(sed -n 1p "$LANE.lock/pid" 2>/dev/null)" = $$ ]; }
+lane_unlock() { ! lane_mine || lane_rm "$LANE.lock"; }
+
+# The newest commit that passed label key $1, lies between $2 and commit $3, and whose own check
+# reached back to $2 ("-": it had no base); $2 itself when there is none. Prints it, then the
+# base that check covered.
+lane_base() {
+  local g v
+  { [ ! -f "$LANE_REC/green-$1" ] || sed '1!G;h;$!d' "$LANE_REC/green-$1"; echo; } | while read -r g v; do
+    [ -n "$g" ] || { printf '%s %s' "${2:--}" "${2:--}"; break; }
+    lane_anc "$g" "$3" || continue
+    if [ -n "$2" ]; then
+      lane_anc "$2" "$g" || continue
+      [ "$v" = - ] || lane_anc "$v" "$2" || continue
+    fi
+    printf '%s %s' "$g" "$v"; break
+  done
+}
+
+# Is checkout $1 exactly commit $2 (tasks/ aside)? Only a run with the lane off asks.
+lane_at() {
+  [ "$(git -C "$1" rev-parse "$2^{tree}")" != "$(cd "$1" && state)" ] || return 0
+  git -C "$1" diff --quiet "$2" -- ':(exclude,top)tasks' \
+    && [ -z "$(git -C "$1" ls-files -o --exclude-standard -- ':(exclude,top)tasks')" ]
+}
+
+# The detached body of one lane run, for record $1.
+lane_work() {
+  local r="$1" c src pre l cmd b v x t bad="" where="" fails="" args=()
+  c="$(rec_get "$r" commit)"; src="$(rec_get "$r" src)"; pre="$(rec_get "$r" prefix)"
+  if lane_off "$c"; then
+    mkdir "$r/claimed" 2>/dev/null || return 4
+    where="$src"
+    lane_at "$src" "$c" || bad="the checkout is not at this commit any more (.ck-qa-lane is off)"
+  else
+    lane_lock "$r" || return 4
+    trap lane_unlock EXIT
+    mkdir "$r/claimed" 2>/dev/null || return 4
+    rm -f "${r:?}/queued"; : >"$LANE.used"; where="$LANE"
+    bad="$(lane_prepare "$c" "$src")"
+    [ -n "$bad" ] || lane_mine || bad="another run took the lane over"
+    # the caller's virtualenv would import the caller's code
+    x="${VIRTUAL_ENV:-}"; unset VIRTUAL_ENV PYTHONPATH NODE_PATH
+    if [ -n "$x" ]; then PATH="$(printf '%s' ":$PATH:" | sed "s#:$x/bin:#:#g; s#^:##; s#:\$##")"; fi
+    for x in "$LANE/.venv/bin" "$LANE/$pre.venv/bin"; do [ ! -d "$x" ] || PATH="$x:$PATH"; done
+    export PATH
+  fi
+  if [ -z "$bad" ] && ! cd "$where/$pre" 2>/dev/null; then bad="$pre does not exist at this commit"; fi
+  if [ -z "$bad" ]; then
+    for l in $(cat "$r/labels"); do
+      cmd="$(cat "$r/cmd-$l")"
+      read -r b v <<BASE
+$(lane_base "$(cat "$r/key-$l")" "$(rec_get "$r" base)" "$c")
+BASE
+      case "$cmd" in *'{base}'*) cmd="${cmd//\{base\}/$b}" ;; *) v=- ;; esac
+      printf '%s' "$v" >"$r/covers-$l"
+      case "$cmd" in @*)
+        printf '%s\n' "${cmd#@}" >"$r/scope.sh"
+        run_capped "bash '$r/scope.sh' >'$r/scope.out' 2>'$r/scope.err'" /dev/null; x="$?"
+        cmd="$(cat "$r/scope.out" 2>/dev/null)"
+        if [ "$x" != 0 ] || [ -z "${cmd//[[:space:]]/}" ]; then
+          bad="the $l scope command failed: $(tail -n 1 "$r/scope.err")"; break
+        fi ;;
+      esac
+      args[${#args[@]}]="$l=$cmd"; printf '%s' "$cmd" >"$r/run-$l"
+    done
+  fi
+  if [ -n "$bad" ]; then
+    for l in $(cat "$r/labels"); do echo SETUP >"$r/status-$l"; done
+    echo "$QA_TAG: FAIL — setup: $bad (no test ran, in $where)"
+    return 1
+  fi
+  # a pool of its own, at a lower priority: a background run never makes a foreground one queue;
+  # and one at a time on the machine, since nobody is waiting for it
+  export CK_QA_POOL=lane CK_QA_NICE="${CK_QA_NICE:-15}" CK_QA_SLOTS="${CK_QA_LANE_SLOTS:-1}" CK_QA_OVERFLOW=0
+  # one label after the other unless --parallel, and never stopped by a failed one: the answer
+  # is worth every label
+  if [ "$where" != "$LANE" ]; then
+    for x in "${args[@]}"; do LANE_RES="$r/res" D="$r" "$SELF" __worker "$(rec_get "$r" id)" "$x" 2>&1; done >"$r/body"
+    if ! lane_at "$src" "$c"; then
+      for l in $(cat "$r/labels"); do echo FAIL >"$r/status-$l"; done
+      cat "$r/body"; echo "$QA_TAG: FAIL — the checkout changed during the run (.ck-qa-lane is off): start it again and leave it alone"
+      return 1
+    fi
+  else
+    if [ "$(rec_get "$r" parallel)" = 1 ]; then
+      LANE_RES="$r/res" D="$r" "$SELF" __worker "$(rec_get "$r" id)" --reuse --parallel "${args[@]}" >"$r/body" 2>&1
+      # one of them changed a tracked file: which, and what did the others read? One by one, then
+      if lane_dirty >/dev/null; then git -C "$LANE" checkout -q -f HEAD -- . >/dev/null 2>&1; x=again; else x=""; fi
+    else x=again; fi
+    [ -z "$x" ] || for l in $(cat "$r/labels"); do lane_one "$r" "$l" ""; done >"$r/body"
+    lane_mine || { for l in $(cat "$r/labels"); do echo FAIL >"$r/status-$l"; done; echo "$QA_TAG: FAIL — another run took the lane over: start it again"; return 1; }
+  fi
+  for l in $(cat "$r/labels"); do
+    x="$(lane_res "$r/res-$l" 1)"
+    case "$x" in
+      PASS|REUSED)
+        if [ -z "$(sed 1d "$r/res-$l")" ]; then lane_green "$r" "$l" "$c"; continue; fi ;;
+      FAIL) ;;
+      *) echo FAIL >"$r/status-$l"; bad="$bad $l"; continue ;;   # a timeout, or no answer: never compared
+    esac
+    echo FAIL >"$r/status-$l"; bad="$bad $l"; fails="$fails $l"
+  done
+  # a test that timed out on a busy machine proves nothing: once more, when it is calm
+  if [ "$where" = "$LANE" ]; then
+    for l in $fails; do
+      [ "$(lane_res "$r/res-$l" 1)" = FAIL ] || continue
+      grep -Eiq 'timed? ?out|timeout|exceeded' "$(sed -n 1p "$r/res-$l" | cut -d ' ' -f 3-)" 2>/dev/null || continue
+      t=0; while x="$(load1)"; [ -n "$x" ] && [ "$x" -ge "$NCPU" ] && [ "$t" -lt 180 ]; do sleep 5; t=$((t + 5)); done
+      lane_one "$r" "$l" "" >"$r/again"
+      case "$(lane_res "$r/res-$l" 1)" in
+        PASS) if [ -z "$(sed 1d "$r/res-$l")" ]; then
+                lane_green "$r" "$l" "$c"; fails="${fails/ $l/}"; bad="${bad/ $l/}"; echo "$l" >>"$r/second"
+              fi ;;
+        FAIL) ;;
+        *) fails="${fails/ $l/}" ;;
+      esac
+    done
+  fi
+  # what already failed before this work is not its failure
+  b="$(rec_get "$r" base)"
+  if [ -n "$fails" ] && [ -n "$b" ] && [ "$b" != "$c" ] && [ "$where" = "$LANE" ]; then
+    # shellcheck disable=SC2086  # a word list of labels
+    for l in $(lane_baseline "$r" "$b" $fails); do
+      if [ "$(lane_res "$r/res-$l" 1)" = FAIL ]; then printf 'BASELINE\n%s\n' "$b" >"$r/status-$l"
+      else lane_green "$r" "$l" "$c"; fi
+      bad="${bad/ $l/}"
+    done
+  fi
+  # the worker's own text, without its verdicts: the ones below are the run's
+  grep -v "^$QA_TAG: \(FAIL\|PASS\)" "$r/body"
+  for l in $(cat "$r/labels"); do
+    case "$(head -n 1 "$r/status-$l")" in
+      PASS) x="passed"; ! grep -qx "$l" "$r/second" 2>/dev/null || x="PASS on a second run — the first one timed out"
+            [ "$x" = passed ] || echo "$l: $x" ;;
+      BASELINE) echo "$l: BASELINE — every failure is already there at ${b:0:9}, none is new" ;;
+      *) if [ -s "$r/new-$l" ]; then echo "--- $l: new since ${b:0:9} ---"; head -n 20 "$r/new-$l"
+         elif [ -n "$(sed 1d "$r/res-$l" 2>/dev/null)" ] && [ "$(lane_res "$r/res-$l" 1)" != FAIL ]; then
+           echo "$l: FAIL — it changes tracked files, so it cannot vouch for the commit (use its check form): $(sed 1d "$r/res-$l" | head -n 5 | tr '\n' ' ')"
+         fi ;;
+    esac
+  done
+  if [ -n "$bad" ]; then echo "$QA_TAG: FAIL —$bad"; return 1; fi
+  echo "$QA_TAG: PASS"
+}
+lane_green() {  # record, label, commit
+  echo PASS >"$1/status-$2"
+  echo "$3 $(cat "$1/covers-$2")" >>"$LANE_REC/green-$(cat "$1/key-$2")"
+}
+
+# start <id> [--at <commit>|work] [--base <commit>|auto] [--parallel] <label>=<command>…
+lane_start() {
+  local id="$1" at=HEAD base="" par=0 l labels="" c anchor br pre top r q o n sup="" x tmp; shift
+  case "$id" in ""|*/*|.|..|-*) die "start needs an id without / (got: $id)" ;; esac
+  lane_init || die "start needs a git repository with a commit"
+  top="$(git rev-parse --show-toplevel)"; pre="$(git rev-parse --show-prefix)"
+  tmp="$(mktemp -d "$TMP/ck-qa-start.XXXXXX")" || die "cannot create a temporary folder"
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --at) at="${2:-}"; shift ;;
+      --base) base="${2:-}"; shift ;;
+      --parallel) par=1 ;;
+      *=*) l="${1%%=*}"
+           case "$l" in ""|*[!A-Za-z0-9_]*) die "label must be [A-Za-z0-9_]+ (got: $l)" ;; esac
+           case " $labels " in *" $l "*) die "label $l is given twice" ;; esac
+           case "${1#*=}" in *[![:space:]]*) ;; *) die "label $l has an empty command" ;; esac
+           labels="$labels $l"; printf '%s' "${1#*=}" >"$tmp/cmd-$l"
+           printf '%s\n%s\n' "$pre" "${1#*=}" | git hash-object --stdin >"$tmp/key-$l" ;;
+      *) die "expected <label>=<command>, got: $1" ;;
+    esac
+    shift
+  done
+  [ -n "$labels" ] || die "no <label>=<command> given"
+  case "$base" in
+    "") ;;
+    auto) base="$(lane_trunk HEAD)" || die "--base auto: no trunk to compare with, pass a commit" ;;
+    *) x="$base"; base="$(git rev-parse -q --verify "$x^{commit}")" || die "--base: not a commit: $x" ;;
+  esac
+  [ -n "$base" ] || ! cat "$tmp"/cmd-* | grep -q '{base}' || die "a command holds {base}: pass --base <commit>"
+  anchor="$(git rev-parse HEAD)"; br="$(git branch --show-current)"
+  if [ "$at" = work ]; then
+    c="$(snapshot "$(state)")"; [ -n "$c" ] || die "cannot snapshot the working copy"
+  else
+    c="$(git rev-parse -q --verify "$at^{commit}")" || die "--at: not a commit: $at"
+    anchor="$c"
+  fi
+  lane_prune
+  # a queued run of the same commands on an older commit of this branch is replaced: this one
+  # covers it, since {base} reaches back to the last commit that passed
+  for o in $(lane_recs); do
+    q="$LANE_REC/$o"
+    if [ -f "$q/rc" ] || [ -d "$q/claimed" ] || lane_dead "$q"; then continue; fi
+    [ "$(rec_get "$q" branch)" = "$br" ] && [ "$(rec_get "$q" prefix)" = "$pre" ] || continue
+    lane_anc "$(rec_get "$q" anchor)" "$c" || continue
+    x=1; for l in $(cat "$q/labels"); do cmp -s "$q/cmd-$l" "$tmp/cmd-$l" || x=0; done
+    # its base must be one this run can reach back to
+    n="$(rec_get "$q" base)"
+    if [ -n "$n" ] && [ -n "$base" ] && ! lane_anc "$n" "$base" && ! lane_anc "$base" "$n"; then x=0; fi
+    [ "$x" = 1 ] && mkdir "$q/claimed" 2>/dev/null || continue
+    [ -z "$n" ] || [ -z "$base" ] || ! lane_anc "$n" "$base" || base="$n"
+    for l in $(cat "$q/labels"); do echo SUPERSEDED >"$q/status-$l"; done
+    echo "$QA_TAG: SUPERSEDED — $(rec_get "$q" id) was still queued; $id checks a newer commit with the same commands" >"$q/out"
+    echo 4 >"$q/rc"; sup="$sup $(rec_get "$q" id)"
+  done
+  # a run of these commands that has not passed is this run's to cover: reach back to its base
+  if [ -n "$base" ]; then
+    for l in $labels; do
+      for o in $(lane_recs -r); do
+        q="$LANE_REC/$o"; n=""
+        lane_anc "$(rec_get "$q" anchor)" "$c" || continue
+        for x in $(cat "$q/labels" 2>/dev/null); do cmp -s "$q/key-$x" "$tmp/key-$l" && n="$x"; done
+        [ -n "$n" ] || continue
+        case "$(head -n 1 "$q/status-$n")" in
+          SUPERSEDED) continue ;;
+          PASS|WAIVED|BASELINE) ;;
+          *) n="$(rec_get "$q" base)"; [ -z "$n" ] || ! lane_anc "$n" "$base" || base="$n" ;;
+        esac
+        break
+      done
+    done
+  fi
+  n="$(lane_recs | tail -n 1)"; n="${n#r}"; n=$((10#${n:-0} + 1))
+  while ! mkdir "$LANE_REC/$(printf 'r%08d' "$n")" 2>/dev/null; do n=$((n + 1)); done
+  r="$LANE_REC/$(printf 'r%08d' "$n")"
+  for l in $labels; do mv "$tmp/cmd-$l" "$tmp/key-$l" "$r/"; echo PENDING >"$r/status-$l"; done
+  echo "${labels# }" >"$r/labels"; date +%s >"$r/start"
+  printf 'id=%s\nbranch=%s\ncommit=%s\nanchor=%s\nbase=%s\nprefix=%s\nsrc=%s\nmain=%s\nparallel=%s\n' \
+    "$id" "$br" "$c" "$anchor" "$base" "$pre" "$top" "$LANE_MAIN" "$par" >"$r/meta"
+  R="$r" nohup bash -c '"$0" __lane "$R" >"$R/run" 2>&1; rc=$?
+    [ ! -f "$R/rc" ] || exit 0
+    mv "$R/run" "$R/out"; echo $rc >"$R/rc.tmp"; mv "$R/rc.tmp" "$R/rc"' "$SELF" </dev/null >/dev/null 2>&1 &
+  lane_pid $! "$r/pid"
+  mkdir -p "$(dirname -- "$(run_dir "$id")")"; printf '%s' "$r" >"$(run_dir "$id").lane"
+  [ -z "$sup" ] || echo "$QA_TAG: replaced the queued run(s):$sup"
+  if lane_off "$c"; then
+    echo "$QA_TAG: STARTED — $id in this checkout (.ck-qa-lane is off): leave it alone until the run ends"
+  else
+    echo "$QA_TAG: STARTED — $id on $(git rev-parse --short "$c") in the background lane; keep working"
+  fi
+  echo "result: '$QA_TAG wait $id --end' in a background Bash call"
+}
+
+# Old records (30 days), and lanes of other repositories nobody used for KEEP_DAYS.
+lane_prune() {
+  local l m
+  find "${LANE_REC:?}" -maxdepth 2 -path "$LANE_REC/r[0-9]*" -type f -mtime +30 -exec rm -f {} + 2>/dev/null
+  find "${LANE_REC:?}" -maxdepth 1 \( -name 'green-*' -o -name 'base-*' \) -mtime +30 -exec rm -f {} + 2>/dev/null
+  find "$LANE_HOME" -maxdepth 1 -name '*.used' -mtime +"$KEEP_DAYS" 2>/dev/null | while IFS= read -r l; do
+    l="${l%.used}"
+    [ "$l" != "$LANE" ] && [ ! -d "$l.lock" ] || continue
+    m="$(git -C "$l" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+    lane_remove "$l" "$(dirname -- "${m:-/nonexistent/x}")"
+  done
+}
+
+lane_remove() {  # lane, its main checkout (may be gone)
+  case "$1" in "${LANE_HOME:?}"/?*) ;; *) return 1 ;; esac
+  [ ! -d "$1" ] || dk_free "$1" 2>/dev/null
+  git -C "$2" worktree unlock "$1" >/dev/null 2>&1
+  git -C "$2" worktree remove --force "$1" >/dev/null 2>&1 || lane_rm "$1"
+  lane_rm "$1.lock" "$1.lock.steal" "$1.deps" "$1.used" "$1.setup.log"
+}
+
+lane_free() {
+  local o
+  lane_init || die "lane-free needs a git repository"
+  for o in $(lane_recs); do
+    [ -f "$LANE_REC/$o/rc" ] || lane_dead "$LANE_REC/$o" || { echo "$QA_TAG: lane kept — $(rec_get "$LANE_REC/$o" id) is still running"; return 1; }
+  done
+  [ -e "$LANE" ] || { echo "$QA_TAG: no lane"; return 0; }
+  lane_remove "$LANE" "$LANE_MAIN" && echo "$QA_TAG: lane freed — $LANE"
+}
+
+# gate [<ref>] [--base <ref>|auto] [--again] — may <ref> (HEAD) be shipped? The latest run of each
+# command on this line of work decides, the records reachable from --base excluded. --again
+# starts every command that is not green on <ref>.
+lane_gate() {
+  local ref=HEAD base="" br o r l k st c a id moved seen=" " bad="" pend="" unc="" any=0 again=0
+  while [ "$#" -gt 0 ]; do
+    case "$1" in --base) base="${2:-}"; shift ;; --again) again=1 ;; *) ref="$1" ;; esac; shift
+  done
+  lane_init || { echo "$QA_TAG: gate NONE — not a git repository"; return 0; }
+  ref="$(git rev-parse -q --verify "$ref^{commit}")" || die "gate: not a commit"
+  case "$base" in
+    "") ;;
+    auto) base="$(lane_trunk "$ref")" || base="" ;;
+    *) base="$(git rev-parse -q --verify "$base^{commit}")" || die "gate: --base is not a commit" ;;
+  esac
+  br="$(git branch --show-current)"
+  for o in $(lane_recs -r); do
+    r="$LANE_REC/$o"; c="$(rec_get "$r" commit)"; id="$(rec_get "$r" id)"
+    [ -n "$c" ] || continue
+    a="$(rec_get "$r" anchor)"; moved=0
+    if [ "$c" = "$a" ] && [ -n "$base" ] && lane_anc "$c" "$base"; then continue; fi
+    if ! lane_anc "$a" "$ref"; then
+      # an amend or a rebase replaced its commit: this branch's work still has to answer for it
+      [ -n "$br" ] && [ "$(rec_get "$r" branch)" = "$br" ] || continue
+      moved=1
+    elif [ "$c" != "$a" ] && [ "$(rec_get "$r" branch)" != "$br" ]; then
+      # a snapshot of uncommitted work on another branch, unless that branch's work is in ref
+      [ -n "$base" ] && ! lane_anc "$a" "$base" || continue
+    fi
+    for l in $(cat "$r/labels" 2>/dev/null); do
+      st="$(head -n 1 "$r/status-$l" 2>/dev/null)"; k="$(cat "$r/key-$l" 2>/dev/null)"
+      case "$seen" in *" $k "*) continue ;; esac
+      seen="$seen$k "; any=1
+      case "$st" in
+        SUPERSEDED) st=LOST ;;   # and the run that replaced it is not on this work any more
+        PENDING) if [ -f "$r/rc" ] || lane_dead "$r"; then st=LOST; fi ;;
+        FAIL|SETUP|'') [ "$moved" = 0 ] || st=LOST ;;
+        PASS|BASELINE|WAIVED) git diff --quiet "$c" "$ref" -- ':/' ':(exclude,top)tasks' ':(exclude,top)docs' ':(exclude,top,glob)**/*.md' 2>/dev/null || st=UNCHECKED ;;
+      esac
+      case "$st" in
+        PASS) ;;
+        BASELINE) echo "$l ($id): BASELINE — fails as it did at $(git rev-parse --short "$(sed -n 2p "$r/status-$l")"), nothing new" ;;
+        WAIVED) echo "$l ($id): WAIVED — $(sed -n 2p "$r/status-$l")" ;;
+        PENDING) echo "$l ($id): PENDING — $(( $(date +%s) - $(cat "$r/start") ))s on $(git rev-parse --short "$c")"; pend="$pend $id" ;;
+        UNCHECKED) echo "$l ($id): UNCHECKED — passed on $(git rev-parse --short "$c"), code changed since"; unc="$unc $o" ;;
+        LOST) echo "$l ($id): LOST — the run ended without a result"; unc="$unc $o" ;;
+        *) echo "$l ($id): RED — $st on $(git rev-parse --short "$c")"; bad="$bad $o" ;;
+      esac
+    done
+  done
+  if [ "$again" = 1 ]; then
+    [ -n "$bad$unc" ] || { echo "$QA_TAG: nothing to check again"; return 0; }
+    # shellcheck disable=SC2086  # two word lists of record names
+    for o in $(printf '%s\n' $bad $unc | sort -u); do lane_again "$LANE_REC/$o" "$ref"; done
+    return 0
+  fi
+  if [ -n "$bad" ]; then echo "$QA_TAG: gate RED"; return 1; fi
+  # shellcheck disable=SC2086
+  if [ -n "$pend" ]; then echo "$QA_TAG: gate PENDING — $(printf '%s\n' $pend | sort -u | tr '\n' ' ')"; return 3; fi
+  if [ -n "$unc" ]; then echo "$QA_TAG: gate UNCHECKED"; return 5; fi
+  if [ "$any" = 0 ]; then echo "$QA_TAG: gate NONE — no background run on this work"; return 0; fi
+  echo "$QA_TAG: gate GREEN"
+}
+
+lane_again() {  # record, ref — starts its commands again on ref
+  local r="$1" l b a=()
+  for l in $(cat "$r/labels"); do a[${#a[@]}]="$l=$(cat "$r/cmd-$l")"; done
+  b="$(rec_get "$r" base)"
+  if [ -n "$b" ]; then a[${#a[@]}]="--base"; a[${#a[@]}]="$b"; fi
+  [ "$(rec_get "$r" parallel)" != 1 ] || a[${#a[@]}]="--parallel"
+  ( cd "$(git rev-parse --show-toplevel)/$(rec_get "$r" prefix)" && lane_start "$(rec_get "$r" id)" --at "$2" "${a[@]}" )
+}
+
+# waive <id> <reason> — the user accepted this run's failure; the gate lets it through.
+lane_waive() {
+  local o r l
+  { [ -n "${1:-}" ] && [ -n "${2:-}" ]; } || die "waive needs <id> \"<reason>\""
+  lane_init || die "waive needs a git repository"
+  for o in $(lane_recs -r); do
+    r="$LANE_REC/$o"
+    [ "$(rec_get "$r" id)" = "$1" ] && [ -f "$r/rc" ] && [ "$(cat "$r/rc")" != 4 ] && lane_anc "$(rec_get "$r" anchor)" HEAD || continue
+    for l in $(cat "$r/labels"); do
+      case "$(head -n 1 "$r/status-$l")" in FAIL|SETUP) printf 'WAIVED\n%s\n' "$2" >"$r/status-$l" ;; esac
+    done
+    echo "$QA_TAG: $1 waived — $2"; return 0
+  done
+  die "waive: no ended run for $1"
+}
+# <<< ck-qa-lane
+
 CMD="${1:-}"
 case "$CMD" in
   state) state; exit 0 ;;
-  wait) [ -n "${2:-}" ] || die "wait needs an id"; await_run "$2" ;;
+  wait) [ -n "${2:-}" ] || die "wait needs an id"; await_run "$2" "${3:-}" ;;
+  start) shift; lane_start "$@"; exit $? ;;
+  gate) shift; lane_gate "$@"; exit $? ;;
+  waive) lane_waive "${2:-}" "${3:-}"; exit $? ;;
+  lane-free) lane_free; exit $? ;;
+  __lane) cd "$(rec_get "${2:-}" main)" 2>/dev/null && lane_init || die "no such run"; lane_work "$2"; exit $? ;;
   since) [ -n "${3:-}" ] || die "since needs an id and a label"
          last_field "$2" "$3" 1 || die "no recorded run of $3 for $2 in this directory — run the full command"
          exit 0 ;;
@@ -470,14 +1151,15 @@ case "$CMD" in
   docker-orphans) dk_orphans; exit 0 ;;
   reap) qa_reap; exit 0 ;;
   run|__worker) ;;
-  -h|--help|"") sed -n '4,44p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-  *) die "unknown command: $CMD (state|run|wait|since|reap)" ;;
+  -h|--help|"") sed -n '4,63p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  *) die "unknown command: $CMD (state|run|start|wait|gate|waive|since|reap|lane-free)" ;;
 esac
 shift
 ARGS=("$@")
 ID="${1:-}"; [ -n "$ID" ] || die "run needs an id (the task id, e.g. T-05)"; shift
 case "$ID" in */*|.|..) die "id must not contain / (got: $ID)" ;; esac
 
+RES_TO="${LANE_RES:-}"; unset LANE_RES   # never inherited by a command that runs ck-qa itself
 PARALLEL=0; REUSE=0; RERUN=0; LABELS=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -514,14 +1196,14 @@ full_of() { eval "printf '%s' \"\$FULL_$1\""; }
 # run: start the commands detached, so a run longer than one Bash call survives it, and
 # wait on it. An identical run already going is waited on, never started a second time.
 if [ "$CMD" = run ]; then
-  D="$RUNS/$ID"
+  D="$(run_dir "$ID")"
   KEY="$( { pwd -P; echo "$PARALLEL $REUSE $RERUN"; for l in $LABELS; do echo "$l=$(cmd_of "$l")"; done; } | git hash-object --stdin)"
   if [ -f "$D/pid" ] && [ ! -f "$D/rc" ] && kill -0 "$(cat "$D/pid")" 2>/dev/null; then
     [ "$(cat "$D/key" 2>/dev/null)" = "$KEY" ] \
       || die "a different ck-lite-qa run for $ID is still going — ck-lite-qa wait $ID first"
     echo "ck-lite-qa: $ID is already running — waiting on that run, not starting another"
   else
-    rm -rf "$D"; mkdir -p "$D" || die "cannot create $D"
+    rm -f "$D.lane"; rm -rf "$D"; mkdir -p "$D" || die "cannot create $D"
     echo "$KEY" >"$D/key"; date +%s >"$D/start"
     D="$D" nohup bash -c '"$0" __worker "$@" >"$D/out" 2>&1; echo $? >"$D/rc.tmp"; mv "$D/rc.tmp" "$D/rc"' \
       "$SELF" "${ARGS[@]}" </dev/null >/dev/null 2>&1 &
@@ -593,6 +1275,7 @@ for l in $TORUN; do
   rc_file="$(log_of "$l").rc"
   if [ ! -f "$rc_file" ]; then RESULT="$RESULT $l:SKIPPED"; continue; fi
   rc="$(cat "$rc_file")"; rm -f "$rc_file"
+  [ -z "$RES_TO" ] || echo "$rc" >"$(log_of "$l").code"
   [ -n "$SNAP" ] && printf '%s\n%s\n%s\n' "$SNAP" "$(pwd -P)" "$(full_of "$l")" >"$(last_of "$ID" "$l")"
   if [ "$rc" = 0 ]; then
     RESULT="$RESULT $l:PASS"
@@ -603,6 +1286,13 @@ for l in $TORUN; do
     RESULT="$RESULT $l:$v"; FAILED="$FAILED $l"
   fi
 done
+# the lane reads each label's verdict here, never from text a command could have printed
+if [ -n "$RES_TO" ]; then
+  for r in $RESULT; do
+    l="${r%%:*}"; rc="$(cat "$(log_of "$l").code" 2>/dev/null)"
+    printf '%s %s %s\n' "${r#*:}" "${rc:-0}" "$(log_of "$l")" >"$RES_TO-$l"
+  done
+fi
 
 [ -z "$DK_OUT" ] || echo "$DK_OUT"
 [ "$SLOT_WAITED" -lt 1 ] || echo "ck-lite-qa: waited ${SLOT_WAITED}s for a CPU slot ($CPU_SLOTS on this machine, CK_QA_SLOTS)$( [ "$SLOT_IDLE" = 0 ] || echo "; started beside them on a half-idle machine")"

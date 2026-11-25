@@ -5,7 +5,8 @@ Phase 1 menu. From here on this file is the procedure; the skill's Phases 2–7 
 this context.
 
 This context **decides, verifies and merges**. It never writes code, never runs a suite, and
-never opens a source file: the expensive work happens in agents whose contexts are discarded,
+never opens a source file, and never waits on a run ([qa-lane.md](../../../references/qa-lane.md), read
+before P6): the expensive work happens in agents whose contexts are discarded,
 and this one is re-paid on every turn. Every task is built by a `ck-code-lite:task-builder`
 agent, one-task waves included.
 
@@ -41,9 +42,10 @@ below is replaced by its default — the recommended answer — announced in one
 | P1/P8 stale agent worktrees | `RETIRE` — `ck-lite sweep "$TARGET"`; only merged, clean, idle ones go, so nothing can be lost |
 | P8 unmerged worktree     | `KEEP` (through `ck-lite-reclaim`) for any branch with commits; `DISCARD` only for a 🚫 blocked branch with an empty diff; never `MERGE NOW`                                                                                                                                             |
 
-Everything else is unchanged: QA with `reuse: no`, the integrity checks, the merged-suite
-verification, held branches never merged. A hard stop (dirty tree, drift, a failing merged
-suite, an unaccounted worktree) still ends the run — reported, never asked. A task-builder
+Everything else is unchanged: the review before any merge, the integrity checks, the wave's
+background run, held branches never merged. The run ends only once its last background run has
+(`ck-lite-qa wait wave-N` in the foreground). A hard stop (dirty tree, drift, the red-run cap, an
+unaccounted worktree) still ends the run — reported, never asked. A task-builder
 `blocked` verdict is excluded as usual and the run carries on.
 
 The final report adds a **Manual test checklist**: `ck-lite criteria <IDs completed this run>`,
@@ -99,6 +101,9 @@ one new commit, a clean tree outside the P1 exclusions, and `ck-lite-headless: O
 A worktree sees only committed work, and a wave on a foreground suite opens the window in every
 peer's QA. A `blocked` return stops the run with its reason. Under `--auto` it still runs, with
 no question ([background-tests.md](../../../references/background-tests.md)).
+
+**Unfinished checks, same call.** `ck-lite-qa gate --base auto`: `RED` or `UNCHECKED` is an earlier
+session's, and comes first ([§ The gate](../../../references/qa-lane.md#the-gate)).
 
 **Heavy suites, same call.** `ck-lite-heavy detect && ck-lite-heavy list`. `CANDIDATE` lines → declare them
 and commit on `$TARGET` before any wave. A declared suite adds the prompt's `Heavy:` line
@@ -162,11 +167,12 @@ merges at P7, so the session's task list follows the run.
 - **Fan-out (≥ 2)** — every task in a **single message**, one `Agent` call each with
   `isolation: "worktree"`, so they run concurrently. `Fan-out: N tasks → N worktree agents.`
 Record `git rev-parse HEAD` as the wave's `<base-sha>` first — the target before this wave,
-which every prompt's `Base:` line carries and the merged-result check scopes against.
+which every prompt's `Base:` line carries and the wave's background run scopes against.
 
 - **Solo (1)** — the baseline is that `<base-sha>`; then one `Agent` call with **no
   `isolation`**. `Solo: T-NN → 1 agent on <$TARGET> (no worktree).` Never edit files here, and
-  never have a fan-out wave in flight, while a solo agent runs.
+  never have a fan-out wave in flight, while a solo agent runs. A pending background run is no agent:
+  it has its own checkout.
 
 Model by reasoning difficulty, never by `size`: inherit by default, `haiku` for a mechanical
 change, `opus` for novel algorithms, concurrency, or a security-critical path.
@@ -202,21 +208,19 @@ The plan, the architecture docs and the design files (`docs/design-system`,
 `docs/design-brief.md`) are excluded from the solo clean check for the reason P1 gives: they may be dirty before the run, and this context writes the plan throughout. A solo agent that moved branch or left anything else uncommitted is
 a hard stop for the run, not a resume — its work is somewhere this context never authorised.
 
-## P6 QA — one validator per complete task
+## P6 Review — one reviewer per complete task
 
-One `ck-code-lite:qa-validator` per ✓ task, all in a single message, each with: the task ID
-and criteria, the returned `files:`, the `## Commands` as `label=command` pairs (`(none)`
-dropped), `reuse: no`, the working directory — the branch's worktree path from
-`git worktree list` (fan-out) or `$ROOT` (solo) — and `exception: <reason>` for a task under a
-recorded test exception, `design: <$ROOT>/docs/design-system/index.md — <the verdict's Design fidelity
-lines, or none>` for a UI task with a linked design, and `replica: S-NN — <the verdict's fidelity line, or none>` for a task citing a
-replica screen, and the verdict's `heavy:` lines.
+One `ck-code-lite:qa-validator` per ✓ task, as soon as it clears P5, each with: the task ID and
+criteria, the returned `files:`, the directory — the branch's worktree path from `git worktree
+list` (fan-out) or `$ROOT` (solo) — and `<base-sha>` to diff against, `exception: <reason>` for a
+task under a recorded test exception, `design: <$ROOT>/docs/design-system/index.md — <the verdict's
+Design fidelity lines, or none>` for a UI task with a linked design, `replica: S-NN — <the verdict's
+fidelity line, or none>` for a task citing a replica screen, and the verdict's `heavy:` lines. It
+runs no command: the wave's suite, build and lint run once, in the background, at P7.
 
-`reuse: no` always: an agent's own runs are never QA's evidence, its own heavy spec excepted
-([heavy-tests.md](../../../references/heavy-tests.md)). A fan-out branch without
-`QA: PASS` is **held** — never merged and fixed later. A solo task without `QA: PASS` already
-sits on `$TARGET`; do not advance to the next wave past it, its dependents would build on
-broken code.
+`QA: FAIL` → `SendMessage` the findings to the task's agent, then P5 and a new review; cap 3. A
+fan-out branch still without `QA: PASS` is **held**. A solo task still without it already sits on
+`$TARGET`; do not advance to the next wave past it.
 
 ## P7 Return to base, merge, sign off, complete
 
@@ -246,22 +250,26 @@ Whatever the sign-off says next, a merged task is finished on `$TARGET`, never i
 A `CONFLICT` or `DIRTY` branch (a path it changes is uncommitted here, typically a docs edit)
 is reported and kept, never force-merged; it gets the same `branch:` note as P5. Solo: `Merge: none needed (solo on <$TARGET>).`
 
-**Verify the merged result** (fan-out, two or more branches merged) — each branch passed QA
-alone; together they may not. One `ck-code-lite:qa-validator` on `$ROOT` with task ID `wave-N` (it names the run's logs, never
-a plan entry), the command list with `test` at **area scope** —
-`test=$(ck-lite-affected <base-sha> --area --command '<test>' '<test-one>')`, every test of
-each area the wave reaches and never one it does not — `reuse: no`, and the merged tasks'
-criteria. A `FAIL`
-ends the run: report which tasks merged, leave them `doing` for `/ck-code-lite:build T-NN`, and
-go straight to P8's reconcile — no later wave builds on a target that fails its own suite.
+**Start the wave's one background run**, on `$TARGET`'s HEAD, and go on at once ([qa-lane.md §
+Start it](../../../references/qa-lane.md#start-it)) — fan-out or solo:
 
-**Manual gate, once for the wave**, on `$TARGET` — the build skill's Phase 6 steps for every
+```bash
+ck-lite-qa start wave-N --base <base-sha> test="@ck-lite-affected {base} --area --command '<test>' '<test-one>'" build='<build>' lint='<lint>'
+```
+
+Every test of each area the wave reaches and never one it does not, on exactly what landed. It
+replaces the per-branch runs and the merged-suite check. Announce it: `QA: wave-N running in the
+background — going on.` A red one is fixed forward on `$TARGET`
+([§ When it ends](../../../references/qa-lane.md#when-it-ends)).
+
+**Manual gate, once for the wave**, on `$TARGET`, while the run goes on — the build skill's Phase 6 steps for every
 task, then one `AskUserQuestion` with one `PASS` / `ISSUES` question per task (at most 4, the
 wave width). No ship question here: the run ends pointing at `ship`. `ISSUES` → `ck-lite note T-NN "<what the
 user saw>"`, the task stays `doing`, and `/ck-code-lite:build T-NN` is named as the way to finish it.
 
 **Complete** each signed-off task in one call — ticks its boxes, appends the verdict's paths,
-flips it to done, verified by the script:
+flips it to done, verified by the script. The run may still be going: its dependents schedule, and
+a red run that reaches its cap sets the tasks it implicates back to `doing`:
 
 ```bash
 ck-lite done T-NN <paths from the verdict>
@@ -280,6 +288,9 @@ Record its ledger row and drop the wave's detail. Close the wave with the return
 
 ## P8 Next wave, then reconcile
 
+**Wave N+1 starts while wave N's run is pending; wave N+2 waits until it is green.**
+`ck-lite-qa gate --base auto` before each dispatch: RED → its fix first; more than the last wave
+pending → end the turn, the notification resumes it. Then
 `ck-lite waves --next <remaining scope>` (or `--next --all`) gives the next wave from the plan
 as it now stands; loop from P3. The remaining scope is the run's IDs not yet `done`; when none
 remain, there is no next wave — skip to the reconcile. Every third wave, run the P0 checkpoint
@@ -293,6 +304,8 @@ Then **stop leftover wait loops**: `ck-lite-qa reap` — every agent has returne
 this session still looping on a QA run is a leftover; put its `stopped N` line in the report.
 Then `ck-lite sweep "$TARGET" --list` once more, offered the P1 way, for agent worktrees that
 went stale since.
+
+When the gate is green, `ck-lite-qa lane-free`; with a run still pending, the report names it.
 
 Then **reconcile before reporting**: return to base, `ck-lite worktrees "$TARGET"`, and classify
 every worktree **this run created** (the ledger names each one):
@@ -391,14 +404,14 @@ One row per finished task, append-only, printed only at a checkpoint and at the 
 ```
 | W | Task | State | Commits | QA | Outcome |
 |---|---|---|---|---|---|
-| 1 | T-02 | ✓ | 3 | PASS | merged · worktree removed |
+| 1 | T-02 | ✓ | 3 | PASS · wave-1 | merged · worktree removed |
 | 1 | T-05 | ◐ | 1 | — | held 1/3 · wt ../wt-T-05 |
 | 2 | T-06 | ✓ | 2 | PASS | solo on batch/x · nothing to merge |
 ```
 
 Checkpoint: `Waves 1–3 done · 5 done · 1 held · 4 remain (T-07 … T-10)`, then the question.
 Final report: the ledger, then
-`Merged into <$TARGET> · N kept · 0 stale worktrees · next: /ck-code-lite:ship`. A `--group`
+`Merged into <$TARGET> · QA green | wave-N running · N kept · 0 stale worktrees · next: /ck-code-lite:ship`. A `--group`
 run adds `Next feature: <ck-lite groups --next> — /ck-code-lite:build --group <name> --auto`,
 or `no feature has ready work` when it prints nothing.
 
@@ -415,9 +428,11 @@ or `no feature has ready work` when it prints nothing.
   check the agent runs first.
 - **Never exceed a wave width of 4, skip the 3-wave checkpoint, or read a later wave's
   criteria.**
-- **Never trust a self-report** — done is a non-empty diff plus a `QA: PASS` with `reuse: no`.
+- **Never trust a self-report** — done is a non-empty diff, a review `QA: PASS` and a green background run.
 - **Never re-dispatch a ◐ partial from scratch** — resume it with `SendMessage`.
-- **Never merge a branch that failed QA or conflicted**, and never into a protected branch.
+- **Never go two waves ahead of a run that is not green**, and never report the run finished while
+  one is pending.
+- **Never merge a branch that failed its review or conflicted**, and never into a protected branch.
 - **Never skip the manual gate** — once per wave, on `$TARGET`. Under `--auto` it is deferred,
   never dropped: a pending note per task and the checklist in the final report.
 - **Never widen a `--group` or bare `--auto` run past its feature** — the scope is the one P2

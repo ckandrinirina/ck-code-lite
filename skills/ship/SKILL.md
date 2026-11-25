@@ -163,26 +163,31 @@ T-05` finds heavy tests, the same call asks whether to run them
 ([heavy-tests.md § At ship](../../references/heavy-tests.md#at-ship--one-question)). `Nothing further` ignores
 that answer.
 
-### 4.0 Area check — before anything leaves the machine
+### 4.0 Area check and QA gate — the one place that waits
 
-A build checks only the tests its task can reach, so before the first push the branch runs
-every test of each **area** it touches — never an area it does not. Only when `ck-lite
-commands` prints a `test` line other than `(none)`; with no `docs/ARCHITECTURE.md` (standalone)
-say `Area check: skipped (no ## Commands)` and push:
+A build checks only the tests its task can reach, so before the first push the branch runs every
+test of each **area** it touches — never an area it does not. It is **started right after 3.4's
+commit, before Phase 4's question**, so it runs while the user reads and answers. Only when
+`ck-lite commands` prints a `test` line other than `(none)`; with no `docs/ARCHITECTURE.md`
+(standalone) say `Area check: skipped (no ## Commands)`:
 
 ```bash
-ck-lite-qa run ship --reuse test="$(ck-lite-affected auto --area --command '<test>' '<test-one>')"
+ck-lite-qa start ship --base auto test="@ck-lite-affected {base} --area --command '<test>' '<test-one>'"
 ```
 
-Then run the heavy tests the user chose, if any, in their own `ck-lite-qa run heavy` call. This is
-the one place those suites run, since a task runs only its own specs.
+`<test>` and `<test-one>` come from `ck-lite commands` (no `test-one` → `<test>` twice). An area is
+a workspace package or a row of `## Areas`; the whole suite runs only for repo-root config, a
+lockfile alone, migrations, fixtures or env files. What already passed on this content is not run
+again.
 
-`<test>` and `<test-one>` come from `ck-lite commands` (no `test-one` → `<test>` twice). An
-area is a workspace package or a row of `## Areas`; the whole suite runs only for repo-root
-config, a lockfile alone, migrations, fixtures or env files. `REUSED` or `PASS` → push. On
-`RUNNING`, `ck-lite-qa wait ship` until it prints a result. `FAIL` → **do not push**: show the
-failing command and its excerpt, keep the commit, and point at `/ck-code-lite:build T-NN` (or a
-fix on this branch) before shipping again.
+Then, once the answer is in and unless it is `Nothing further`, the gate:
+`ck-lite-qa gate --base auto`, per [qa-lane.md § The gate](../../references/qa-lane.md#the-gate).
+`GREEN` or `NONE` → push. `PENDING` or `UNCHECKED` → prepare the PR text while it runs. `RED` →
+**do not push**: show the failing command and its excerpt, keep the commit, and point at
+`/ck-code-lite:build T-NN` (or a fix on this branch) before shipping again.
+
+Run the heavy tests the user chose, if any, in their own `ck-lite-qa run heavy` call. This is
+the one place those suites run, since a task runs only its own specs.
 
 ```bash
 git push -u origin "$(git branch --show-current)"
@@ -228,7 +233,7 @@ If `gh` is unavailable, print the manual compare URL
 **Message:** <subject>
 **Files:** <count>
 **PR:** <url — created | updated | skipped>
-**Area check:** <PASS | REUSED | skipped — no ## Commands>
+**QA gate:** <GREEN | NONE | WAIVED and BASELINE lines | skipped — no ## Commands>
 **Heavy tests:** <linked | affected | whole — PASS> | not run | none
 **Task:** T-NN → done | stays doing | standalone
 ```
@@ -252,8 +257,9 @@ Then point at the next step: `/ck-code-lite:build` for the next ready task.
 - **Never ask which base branch to target** — resolve it from the remote default.
 - **Never add `Closes #N` unless the user supplied the issue number.**
 - **Never push without confirming** — Phase 4's question is mandatory.
-- **Never push a branch whose area check failed** (4.0) — the build checked only each task's
-  reach; this is the one run that sees the whole area before the PR.
+- **Never push without `ck-lite-qa gate` GREEN or NONE** (4.0) — the build checked only each task's
+  reach; the area check is the one run that sees the whole area before the PR. Never read `PENDING`
+  as green, and never hide a `WAIVED` or `BASELINE` line from the PR body.
 - **Never push after a failed heavy run, never hide a skipped one** (the PR body says so), and never
   run a heavy suite the user did not choose.
 - **Never amend or force-push** unless the user explicitly asks.

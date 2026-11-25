@@ -268,7 +268,7 @@ pending (see the build skill's `parallel-mode.md` § P2).
 A Figma card runs this loop with the changes in [figma.md § Fidelity loop on a Figma card](figma.md#fidelity-loop-on-a-figma-card): Figma's own render is the reference, so step 2 copies it instead of shooting.
 
 Reading a card is not proof of matching it — only a rendered comparison is. Runs in every UI
-task with a linked design, after the closing run and before QA, for each `Screens` card in the
+task with a linked design, after the own check and before QA, for each `Screens` card in the
 design map (a task with no screen card compares the page that renders its components against
 their component cards). It uses `ck-lite-replicate`, the engine of
 [`replicate.md`](replicate.md); a card is shot from its local file, served over a throwaway

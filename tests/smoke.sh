@@ -399,6 +399,32 @@ has "qa deadline: a run past CK_QA_TIMEOUT fails as timed out" "t: FAIL — time
 has "qa deadline: the timed-out run reports FAIL" "ck-lite-qa: FAIL — t" "$QA_TO"
 [ -z "$(pgrep -f 'sleep 41')" ] && ok "qa deadline: the timed-out command's processes are stopped" || bad "qa deadline: the timed-out command's processes are stopped" "$(pgrep -fl 'sleep 41')"
 
+# ---- ck-lite-qa lane ----------------------------------------------------------------------
+echo "=== ck-lite-qa lane ==="
+LN="$(mktemp -d)"; LN="$(cd "$LN" && pwd -P)"; mkdir "$LN/repo" "$LN/tmp"
+( cd "$LN/repo" && git init -q -b main && git config user.email s@s && git config user.name s \
+  && mkdir -p tasks src && echo plan >tasks/PLAN.md && echo v1 >src/v && git add -A && git commit -qm one && git checkout -qb task/T-01-x )
+LQ() { ( cd "$LN/repo" && TMPDIR="$LN/tmp" CK_QA_LANE_DIR="$LN/lanes" CK_QA_DOCKER=0 ck-lite-qa "$@" 2>&1 ); }
+has "lane gate: no run yet is NONE" "gate NONE" "$(LQ gate --base auto)"
+echo wip >"$LN/repo/src/v"
+T0=$SECONDS
+has "lane start: returns at once" "STARTED — T-01" "$(LQ start T-01 --at work --base auto test='sleep 3; grep -q wip src/v' s='@echo "echo from {base}"')"
+[ $((SECONDS - T0)) -lt 3 ] && ok "lane start: without waiting" || bad "lane start: without waiting" "$((SECONDS - T0))s"
+echo later >"$LN/repo/src/v"
+has "lane gate: a running run is PENDING" "gate PENDING — T-01" "$(LQ gate --base auto)"
+has "lane: checks the working copy as it stood" "ck-lite-qa: PASS" "$(LQ wait T-01 --end)"
+has "lane: --base auto is where the branch left the trunk" "from $(git -C "$LN/repo" rev-parse main)" "$(cat "$LN"/tmp/ck-lite-*-T-01-s.log)"
+has "lane gate: later code is UNCHECKED once committed" "gate UNCHECKED" "$(cd "$LN/repo" && git commit -qam later; LQ gate --base auto)"
+( cd "$LN/repo" && echo wip >src/v && echo done >tasks/PLAN.md && git commit -qam same )
+has "lane gate: the checked content, committed, is GREEN whatever the plan says" "gate GREEN" "$(LQ gate --base auto)"
+LQ start T-02 --base auto test='exit 1' >/dev/null; LQ wait T-02 --end >/dev/null; rc=$?
+eq "lane wait --end: a red run exits 1" 1 "$rc"
+has "lane gate: RED" "gate RED" "$(LQ gate --base auto)"
+has "lane waive: named" "WAIVED — known" "$(LQ waive T-02 known >/dev/null; LQ gate --base auto)"
+eq "lane: ck-lite worktrees never lists the lane" "" "$(cd "$LN/repo" && ck-lite worktrees main)"
+has "lane-free" "lane freed" "$(LQ lane-free)"
+rm -rf "${LN:?}"
+
 # The prompt router is the mod's prompt.submit hook since 1.3.0: tests/mod/hooks.test.ts.
 
 # ---- ck-lite-affected ---------------------------------------------------------------------

@@ -168,7 +168,7 @@ stack's token file, and later tasks use it.
 
 ## Fidelity loop
 
-Runs inside a UI task whose acceptance criteria cite an `S-NN`, after the closing run and before QA.
+Runs inside a UI task whose acceptance criteria cite an `S-NN`, after the own check and before QA.
 It is a check, not a gate: findings are fixed in one pass, then recorded.
 
 1. **Reference.** `Read` the cited screen's row and its screenshots from the main checkout —
@@ -191,7 +191,7 @@ It is a check, not a gate: findings are fixed in one pass, then recorded.
    layout, spacing, type, color, radius, iconography or state — concrete (`header 64 px, ref
    56 px`), never "looks off".
 5. **Fix once.** Correct every listed difference through tokens and components, never with
-   one-off literals; repeat the closing run; shoot and diff once more.
+   one-off literals; repeat the own check; shoot and diff once more.
 6. **Record** one line — inline, `ck-lite note T-NN "<line>"`; a `task-builder` returns it
    as its verdict's `fidelity:` field and the orchestrator notes it:
    `Fidelity S-03: 18.4 % → 4.1 % (desktop), 9.0 % → 3.2 % (mobile); remaining: <diffs or none>`.

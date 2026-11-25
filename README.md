@@ -141,7 +141,7 @@ Waves come from the plan's own `needs` column (`ck-lite waves` works them out), 
 that declare the same file never run together. Every task in a wave is built by a dispatched
 `task-builder` agent — which carries only the TDD rules, not the whole skill — but the isolation
 follows the wave's width: two or more tasks each get their own worktree and merge back
-after an integrity check and a QA pass, while a wave holding a **single** task runs solo in
+after an integrity check and a review, while a wave holding a **single** task runs solo in
 the main checkout — no worktree to cut, no cold dependency install, nothing to merge. The
 manual sign-off runs once per wave either way.
 
@@ -275,7 +275,7 @@ folder up holding `tasks/` or `docs/`, so a `cd` into a subfolder keeps it.
   each with its subject and state (`◌` running, `✓` done, `✗` failed); a folded run of reads and
   searches is one line (`✓ ≡ 3 · ⌕ 2`), and the spinner says *Test-driving…*. Terminal only. The
   `theme` setting turns it off.
-- **Task board** — a task builder's own task list (RED, GREEN, cleanup, closing run) shows on the
+- **Task board** — a task builder's own task list (RED, GREEN, cleanup, own check) shows on the
   band while it runs: `◈ Build T-03 ▰▰▱▱ 2/4 ▸ Writing the failing test`. The build skill opens
   a task list in the session too, one task per phase, or one per dispatched task in waves.
 - **Compact after a wave run** — once two or more task builders have been dispatched since the
@@ -393,17 +393,24 @@ and three open ones costs what a three-task plan does — reads *and* writes, si
 change no longer needs the file loaded to edit it. The plan is never split: an archive would
 buy no tokens and add a lookup to every dependency check.
 
-**Fast without fewer checks.** RED and GREEN run only the task's own tests (the optional
-`test-one` command). After cleanup, the closing run covers every test the task can reach: the
-tests of each changed file, then of every file importing it — a service's test, the test of
-the controller that uses it, and on up the chain (C/C++ through `#include`). `ck-lite-affected` works that out with `git`
-and `grep`, at no token cost. A wave's merged result and `ship`, before the first push, run
-every test of each **area** the change touches — a workspace package or a row of `## Areas` —
-so a backoffice change never runs the client's suite. The whole suite runs only for repo-root
-config, a lockfile alone, migrations, fixtures or env files. Every test, build and lint run
-goes through `ck-lite-qa`, which prints one line per command and keeps the output in a log,
-and an inline QA pass reuses the closing run when not a byte of code changed since. A
-parallel wave's QA never reuses anything.
+**You never wait for a test run.** RED and GREEN run only the task's own tests (the optional
+`test-one` command), and the task ends with a check of its own files. Everything else runs **once,
+in the background**: `ck-lite-qa start` checks the code in a checkout of its own (the *lane*,
+`~/.ck-qa/lanes`, with copy-on-write `node_modules`) while the review, your manual test and the next
+wave go on — one wave ahead at most. You are told when it ends. A red run is fixed forward; a
+failure that was already there before the work is reported as `BASELINE`, not blamed on it, and a
+test that timed out on a busy machine runs once more when it is calm. The only place that waits is
+`ship`: nothing is pushed without `ck-lite-qa gate` green. A `.ck-qa-lane` file adds a `setup:`
+command, or `off` to run in your checkout.
+
+The run covers every test the task can reach: the tests of each changed file, then of every file
+importing it — a service's test, the test of the controller that uses it, and on up the chain
+(C/C++ through `#include`). `ck-lite-affected` works that out with `git` and `grep`, at no token
+cost. A wave and `ship`, before the first push, run every test of each **area** the change touches
+— a workspace package or a row of `## Areas` — so a backoffice change never runs the client's
+suite. The whole suite runs only for repo-root config, a lockfile alone, migrations, fixtures or
+env files. Every command goes through `ck-lite-qa`, which prints one line per command and keeps the
+output in a log.
 
 Past ~40 open tasks, `start` and `build` say once that the project has outgrown a flat plan
 and point at `/ck-code:migrate`. It is a notice, not a wall.

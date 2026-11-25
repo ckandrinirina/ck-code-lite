@@ -20,6 +20,9 @@ this file owns the rules.
 | `/ck-code-lite:build` — PARALLEL MODE, wave of exactly 1 (solo) | **Never** — main checkout on `$TARGET` |
 | `/ck-code-lite:build` — PARALLEL MODE, wave of ≥ 2 (fan-out) | **One per dispatched task** |
 
+The QA lane is not one of these: `ck-lite-qa` makes it, outside the repository, for its own
+background runs, and no agent ever works in it ([qa-lane.md](qa-lane.md#the-lane-itself)).
+
 Only the last row creates worktrees, only the `build` orchestrator creates them, and it
 creates them one way: by passing `isolation: "worktree"` to `Agent` when dispatching
 `ck-code-lite:task-builder`, so the harness owns the directory and its lifecycle.

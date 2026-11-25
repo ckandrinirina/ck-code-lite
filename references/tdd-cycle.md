@@ -15,9 +15,7 @@ ck-lite-qa run T-05 test="pnpm run test"
 
 Labels are letters, digits and `_` only — `one` for a `test-one` run, `test` for the full
 suite; a hyphenated label is refused. It prints one line per command, plus the last 40 lines of a failure; the full log stays at the
-printed path for a `Read` when 40 lines are not enough. It stamps every pass with the exact
-code state, which is what lets the QA pass that follows skip a run on code that has not
-changed since. Exit 3 prints `RUNNING`: the suite is still going, so continue it with the
+printed path for a `Read` when 40 lines are not enough. Exit 3 prints `RUNNING`: the suite is still going, so continue it with the
 `cd <dir> && ck-lite-qa wait T-05` line it prints (runs are per checkout) and never start it a
 second time. Give every `ck-lite-qa` call a 600000 ms Bash timeout. **`ck-lite-qa wait` is the
 only way to wait**, in the foreground — it returns on its own within 170 s, under the 180 s
@@ -39,9 +37,10 @@ volumes only they used) are removed once stopped. A `NOTE` lists any still runni
 left alone (`CK_QA_DOCKER=0` turns the Docker part off).
 
 **Inner loop = the task's own tests.** When `## Commands` has a `test-one` line, RED and GREEN
-run only the task's test files through it (`{files}` → the paths, space-separated). The
-[closing run](#close--every-test-the-task-can-reach-once) runs **once**, as the cycle's last
-step, so a break elsewhere surfaces before QA. With no `test-one`, every run is the full `test`.
+run only the task's test files through it (`{files}` → the paths, space-separated). The [own
+check](#own-check) ends the cycle. Every other test the task can reach runs **once, in the
+background**, after the cycle ([qa-lane.md](qa-lane.md)): a break elsewhere comes back from there.
+With no `test-one`, every run is the full `test`.
 
 **C/C++ lines, once per project, before RED.** A `test` line running `ctest` with neither `-j`
 nor `--parallel` and no serial note gets the one parallel check of
@@ -50,25 +49,7 @@ suite (`catch_discover_tests` in a `CMakeLists.txt`) with no `test-one` gets one
 Catch2 row, written into `## Commands` with `Edit`. Each is checked once — a line already
 there is never questioned again.
 
-**The closing run is the task's reach, never the whole suite by default.** `ck-lite-affected`
-works it out with `git` and `grep`, so no file is read to find it: the tests of every file
-the task changed, then the tests of every file importing those — a changed service's test,
-the test of the controller that uses it, and on up the chain. An area the change never
-reaches (the client, when only the backoffice changed) never runs. It prints `test` itself
-when the diff touches what imports cannot trace — repo-root config, a lockfile alone,
-migrations, fixtures, env files — and `: no affected tests` when nothing reaches a test.
-Hand `ck-lite-qa` the expression, never its output:
-
-```bash
-ck-lite-qa run T-05 test="$(ck-lite-affected <base> --command 'pnpm run test' 'pnpm run test -- {files}')"
-```
-
-`<base>` is the `Base:` the caller gave, else `auto` (where the branch left the trunk). The
-two quoted commands are `test` and `test-one` from `## Commands`; with no `test-one`, pass
-`test` twice. The expansion runs inside the call, so the stamp records the resolved command,
-and QA's identical expression on the same tree reports `REUSED`.
-
-Never run `build` or `lint` in the inner loop — QA runs both once. Never pipe a test command
+Never run `build`, or `lint` over the whole project, in the cycle — the background run does both. Never pipe a test command
 into `tail`, `grep` or `head`: the log already holds everything, and a second run to see a
 different slice of the same output is the most expensive habit this cycle can have.
 
@@ -90,7 +71,7 @@ asserts; a dispatched task-builder is never on it.
 
 **No test runner.** `test: (none)` stops the cycle. The caller presents the choice (name a
 test command, or record a documented exception) — never pick the exception, and never proceed
-as though RED happened. Under a recorded exception, RED and the Close run are skipped and
+as though RED happened. Under a recorded exception, RED and the own check's `own` are skipped and
 cleanup still applies; QA is told so with `exception: <reason>`.
 
 **Write the tests.** At least one per `### Acceptance` checkbox, following the nearest existing
@@ -98,8 +79,8 @@ test file — same framework, naming and layout. A test goes in the test file th
 file under test (`cart.ts` → `cart.test.ts`, `Clip.cpp` → `ClipTests.cpp`), created when
 missing: never append to a catch-all file (`App.test.tsx`, `misc.test.ts`), and never mount
 the root `App` to test one component unless the criterion is about the app shell.
-`ck-lite-affected` picks a test file by what it imports, so a file importing the whole app
-runs on every task. Add the obvious edge case per criterion (empty
+`ck-lite-affected`, which scopes the background run, picks a test file by what it imports, so a
+file importing the whole app runs on every task. Add the obvious edge case per criterion (empty
 input, missing resource, boundary value) where one exists. Assert observable behaviour, never
 implementation detail: a test that mirrors the code line for line passes a wrong one. An e2e
 test never opens a window in front of the user: follow [background-tests.md](background-tests.md)
@@ -155,10 +136,15 @@ the task's tests after each change — green stays green. Leave alone what the c
 deliberate: a boundary the architecture docs draw, or test setup repeated for readability.
 Anything larger than a few minutes is its own task, not cleanup.
 
-## Close — every test the task can reach, once
+## Own check
 
-Last step, after cleanup, with nothing left to edit: the `ck-lite-affected` run above. A
-failure here is a break the task's own tests did not see — fix it and run it again. Its pass is
-stamped on this exact code state; a code edit after it, however small, voids the stamp and QA
-runs it again. Plan writes (`ck-lite files`, `note`, `set`) are not code and never void
-it.
+Last step, after cleanup, with nothing left to edit — the cheap failures, never the suite:
+
+```bash
+ck-lite-qa run T-05 own="pnpm run test -- test/count.test.js" lint="npx eslint src/count.js"
+```
+
+`own` is `test-one` on the task's own test files. `lint` is the linter on the changed files; drop
+it when the linter takes no paths. Add `types` when `## Commands` or the project has a separate
+typecheck. Fix what is red and run it again. Never widen it to look for a regression elsewhere:
+that is the background run's, which starts as soon as the cycle is over.

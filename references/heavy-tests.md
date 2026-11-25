@@ -44,9 +44,9 @@ turns it off with `none`.
   Run it from the repo root. Re-run it only after a change meant to turn it green. A spec no
   run has passed leaves its criterion unmet. A spec that cannot run here (no Docker, no service)
   is reported as **not run**, never as passed.
-- **Never run another heavy file**, not as a regression check, at the closing run, or because
+- **Never run another heavy file**, not as a regression check, at the own check, or because
   a migration changed.
-- **QA, the wave check and ship's area check** take no heavy label. A criterion proved only by a
+- **The background run, the wave's and ship's area check** take no heavy label. A criterion proved only by a
   heavy spec passes on that spec's assertions, cited by `file:line`, plus the task's own run of it (`heavy: <file> — PASS` in the QA dispatch).
 
 ## At ship — one question
