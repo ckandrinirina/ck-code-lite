@@ -3,6 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import {
   celebration,
   isWaveRunOver,
+  runNotice,
   percent,
   progressBar,
   countsLine,
@@ -96,6 +97,20 @@ describe('ck-lite open', () => {
     const s = taskSuggestions('T-0', parseOpen(OPEN)!.tasks)
     expect(s.map(x => x.text)).toEqual(['T-01', 'T-02', 'T-03'])
     expect(taskSuggestions('X-0', parseOpen(OPEN)!.tasks)).toEqual([])
+  })
+})
+
+describe('the end-of-run notification', () => {
+  const run = { reason: 'answer', builders: 3, live: false, inProgress: 0, done: 5, total: 8, nouns: 'stories' }
+  test('finished, needing the person, or stopped by an error', async () => {
+    expect(runNotice(run)).toBe('Build run finished — 5/8 stories done')
+    expect(runNotice({ ...run, inProgress: 2 })).toBe('Build run needs you — 2 still in progress, 5/8 stories done')
+    expect(runNotice({ ...run, reason: 'error', live: true })).toContain('API error')
+  })
+  test('one builder, a live builder or an interrupt says nothing', async () => {
+    expect(runNotice({ ...run, builders: 1 })).toBe(undefined)
+    expect(runNotice({ ...run, live: true })).toBe(undefined)
+    expect(runNotice({ ...run, reason: 'aborted' })).toBe(undefined)
   })
 })
 

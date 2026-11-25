@@ -158,6 +158,29 @@ export function isWaveRunOver(run: {
   return run.reason === "answer" && run.builders >= 2 && run.inProgress === 0;
 }
 
+// Kept word for word in both plugins' mods. The desktop notification for the end of a build
+// run of two or more builders, or undefined: the run finished, stopped with work still in
+// progress (a failed QA, a held task, a question), or died on an API error. An interrupt is
+// the person's own, and a turn that ends with builders still live is not the end.
+export function runNotice(run: {
+  reason: string;
+  builders: number;
+  live: boolean;
+  inProgress: number;
+  done: number;
+  total: number;
+  nouns: string;
+}): string | undefined {
+  if (run.builders < 2) return undefined;
+  const score = `${run.done}/${run.total} ${run.nouns} done`;
+  if (run.reason === "error" || run.reason === "refusal")
+    return `Build run stopped by an API error — ${score}`;
+  if (run.reason !== "answer" || run.live) return undefined;
+  return run.inProgress === 0
+    ? `Build run finished — ${score}`
+    : `Build run needs you — ${run.inProgress} still in progress, ${score}`;
+}
+
 export const COMPACT_INSTRUCTIONS =
   "A ck-code-lite build run just finished. Keep every task built and its final state, " +
   "every branch named, the manual test checklist and any deferred manual tests word for " +

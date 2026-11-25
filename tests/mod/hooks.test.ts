@@ -145,6 +145,11 @@ test("compaction waits for background builders, then runs once", async ($, on) =
     return { value: { exitCode: 0, stdout, stderr: "", isStdoutTruncated: false, isStderrTruncated: false } };
   });
   on("ui.toast", () => ({ value: undefined }));
+  const sent: string[] = [];
+  on("ui.notify", (_$, e) => {
+    sent.push(e.text);
+    return { value: { isSent: true, channel: "client" } };
+  });
   on("session.compact", () => {
     compacted += 1;
     return { skip: "the test keeps its messages" };
@@ -162,6 +167,8 @@ test("compaction waits for background builders, then runs once", async ($, on) =
   await end("t1");
   await clock.advance(600);
   expect(compacted).toBe(0);
+  expect(sent.length).toBe(1);
+  expect(sent[0]).toContain("needs you");
 
   // Turn 2, a notification turn, dispatches none and ends with nothing doing.
   doing = false;
@@ -175,4 +182,5 @@ test("compaction waits for background builders, then runs once", async ($, on) =
   await end("t3");
   await clock.advance(600);
   expect(compacted).toBe(1);
+  expect(sent.length).toBe(1);
 });

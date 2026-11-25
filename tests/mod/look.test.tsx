@@ -14,7 +14,7 @@ function project(on: On, isOurs = true) {
   on('ui.render', () => ({ type: 'Text', props: {}, children: ['engine'] }))
   on('session.cwd', () => ({ value: '/p' }))
   on('fs.exists', (_$, e) => ({ value: isOurs && e.path === '/p/tasks/PLAN.md' }))
-  on('agent.list', () => ({ value: [{ id: 'a1', description: 'Build T-01', type: 'ck-code-lite:task-builder', status: 'running' }] }))
+  on('agent.list', () => ({ value: [{ id: 'a1', description: 'Build T-01', type: 'ck-code-lite:task-builder', status: 'running' }] }) as never)
   on('process.run', () => ({
     value: { exitCode: 0, stdout: OPEN, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
   }))

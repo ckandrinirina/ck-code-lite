@@ -10,6 +10,7 @@
 //   commands           /lite-status, /lite-waves, /lite-check with no model turn; /lite-band
 //   AbovePrompt band   a progress bar, the task in progress, the next build command
 //   toasts             a cheer when a task is done, a bigger one when the plan is
+//   ui.notify          a desktop notification when a build run finishes or needs the person
 //   session.compact    compacts the session once a wave run of builders has finished
 //   cost guard         caps effort at high, gates Fable on the user, cheap default subagent model
 //   look               flat-glyph tool rows and groups, workflow words (look.tsx, theme.ts)
@@ -36,6 +37,7 @@ import {
   percent,
   planWriteReason,
   progressBar,
+  runNotice,
   splitArgs,
   stripRouting,
   taskSuggestions,
@@ -63,10 +65,13 @@ const BAND_ACTIONS_MS = 8000;
 let updateOn = true;
 let bandOn = true;
 let compactOn = true;
+let notifyOn = true;
 let costGuardOn = true;
 // Task builders dispatched from the main loop since the last compaction. Not reset per turn:
 // background builders end in later notification turns, which dispatch none themselves.
 let builders = 0;
+// The builder count the last notification spoke for: one run is announced once.
+let noticed = 0;
 let routingCache: string | undefined;
 let tasks: OpenTask[] = [];
 let progress: Progress | undefined;
@@ -230,12 +235,22 @@ async function pruneBoard($: EngineInterface): Promise<void> {
   await update($, board, (old) => (old ?? []).filter((b) => live.has(b.agent)));
 }
 
+// Kept word for word in both plugins' mods. A desktop app holds it a few seconds and drops it
+// when the person is back first; a terminal raises it at once, by the person's own setting.
+async function notify($: EngineInterface, title: string, text: string): Promise<void> {
+  try {
+    await $.ui.notify(text, { title, key: "run", delayMs: 5000, untilBack: true });
+  } catch {
+    // No surface to notify on, or a Claude Code without $.ui.notify.
+  }
+}
+
 // Runs between turns: $.session.compact rejects while one runs, and a person who has already
 // typed the next prompt keeps the session as it is. The next command (ship, a held task's
 // build) starts from tasks/PLAN.md, not from the transcript. Background builders end in later
 // turns, so the count runs since the last compaction and every clean turn end checks it,
 // once no builder is still live. An interrupt or an error keeps the count for a later turn.
-async function compactAfterWaves(
+async function afterBuilders(
   $: EngineInterface,
   reason: string,
 ): Promise<void> {
@@ -246,14 +261,30 @@ async function compactAfterWaves(
         a.type === "ck-code-lite:task-builder" &&
         ["pending", "running", "waiting"].includes(a.status),
     );
-    if (live) return;
+    if (live && reason === "answer") return;
     const plan = parseOpen((await ckLite($, ["open"])).stdout);
     if (plan === null) return;
     const inProgress = plan.tasks.filter((t) => t.state === "doing").length;
-    if (!isWaveRunOver({ reason, builders, inProgress })) return;
+    if (notifyOn && noticed !== builders) {
+      const text = runNotice({
+        reason,
+        builders,
+        live,
+        inProgress,
+        done: plan.done,
+        total: plan.total,
+        nouns: "tasks",
+      });
+      if (text) {
+        noticed = builders;
+        await notify($, "ck-code-lite", text);
+      }
+    }
+    if (!compactOn || live || !isWaveRunOver({ reason, builders, inProgress })) return;
     const out = await $.session.compact({ instructions: COMPACT_INSTRUCTIONS });
     // Compacted, or skipped (the next prompt is typed): either way this run is spent.
     builders = 0;
+    noticed = 0;
     $.ui.toast(
       out.skip
         ? `ck-code-lite: not compacted, ${out.skip}`
@@ -267,6 +298,7 @@ async function compactAfterWaves(
 export const register: Register = (on, options) => {
   bandOn = options.band !== false;
   compactOn = options.compact_after_waves !== false;
+  notifyOn = options.notify !== false;
   costGuardOn = options.cost_guard !== false;
   themeOn = options.theme !== false;
   updateOn = options.update_check !== false;
@@ -310,8 +342,8 @@ export const register: Register = (on, options) => {
   });
 
   // ---- the cost guard: effort cap, the Fable gate, a cheap default subagent model ----
-  // Kept word for word in both plugins' mods. Runs in every project, not only adopted ones:
-  // it is a spending rule, not a workflow rule. Off with the cost_guard option.
+  // Kept word for word in both plugins' mods, but for ck-code's countTools (a module may hold
+  // only one unmatched turn.step). Runs in every project, not only adopted ones: it is a spending rule, not a workflow rule. Off with the cost_guard option.
 
   on("tool.call", { tool: "Agent" }, async ($, e, next) => {
     const g = costGuardOn ? guardDispatch(e) : undefined;
@@ -410,13 +442,13 @@ export const register: Register = (on, options) => {
     $.clock.after(50, () => void refreshBand($));
     await wakeBand($);
     void pruneBoard($);
-    if (compactOn && builders >= 2 && e.reason === "answer")
-      $.clock.after(500, () => void compactAfterWaves($, e.reason));
+    if ((compactOn || notifyOn) && builders >= 2 && e.reason !== "aborted")
+      $.clock.after(500, () => void afterBuilders($, e.reason));
     return out;
   });
 
   on("session.end", async ($, e, next) => {
-    if (e.reason === "clear") builders = 0;
+    if (e.reason === "clear") builders = noticed = 0;
     return next(e);
   });
 
