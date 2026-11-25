@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.25.0] — 2026-11-25
+
+### Added
+- **mod**: a desktop notification when a build run of two or more builders finishes, needs you or stops on an API error, once per run (`notify` setting).
+- **agents**: `context-scout`, `researcher` and `qa-validator` list `REPL`, so they can use Claude Code's experimental Code Mode. Without Code Mode the name is ignored.
+- **plugin.json**: `engines["claude-code"]` is `>=2.1.287`. Claude Code 2.0.15 to 2.1.75 cannot load a plugin that has it.
+
+### Changed
+- **README**: tested against Claude Code 2.1.330; Code Mode needs 2.1.327.
+
 ## [1.24.0] — 2026-11-24
 
 ### Added
