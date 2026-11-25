@@ -284,6 +284,10 @@ folder up holding `tasks/` or `docs/`, so a `cd` into a subfolder keeps it.
   built, the branches, the manual-test checklist and the next command. Skipped after an
   interrupt or an error, while a task is held, or once you have typed the next prompt. The
   `compact_after_waves` setting turns it off.
+- **Build-run notification** — a desktop notification when a run of two or more task builders
+  finishes (`Build run finished — 5/8 tasks done`), needs you (a failed QA, a held task) or stops
+  on an API error. Once per run; Desktop drops it if you are back within 5 s. The `notify` setting
+  turns it off.
 - **Commands with no model turn** — `/lite-status` (`ck-lite open`), `/lite-waves [T-NN…]`
   (the wave plan) and `/lite-check` (validates the plan) print at once, even mid-turn.
 - **The plan is written only through `ck-lite`** — a `Write` or `Edit` of `tasks/PLAN.md` is
@@ -420,8 +424,10 @@ mobile), which never installs a repo's plugins itself, it installs `ck-code-lite
 and asks you to type `/reload-plugins` once. Remote Control uses your own machine's plugins; an
 SSH session uses the remote host's, where the committed marketplace entry offers the install.
 
-Tested against Claude Code 2.1.299. The skills run on any recent release; [the mod](#the-mod)
-needs 2.1.287 or later.
+Tested against Claude Code 2.1.330 (its mod tests also pass on 2.1.323). [The mod](#the-mod) needs
+2.1.287 or later, which `plugin.json` states in `engines`. **Code Mode** (experimental, opt-in)
+needs 2.1.327: earlier releases refuse to start it beside a mod that hooks tool calls. The read-only
+agents list `REPL` so they can use it; it has not been exercised in a live Code Mode build yet.
 
 ## ck-code-lite or ck-code?
 
