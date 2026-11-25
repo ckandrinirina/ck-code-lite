@@ -415,7 +415,7 @@ has "lane gate: a running run is PENDING" "gate PENDING — T-01" "$(LQ gate --b
 has "lane: checks the working copy as it stood" "ck-lite-qa: PASS" "$(LQ wait T-01 --end)"
 has "lane: --base auto is where the branch left the trunk" "from $(git -C "$LN/repo" rev-parse main)" "$(cat "$LN"/tmp/ck-lite-*-T-01-s.log)"
 has "lane gate: later code is UNCHECKED once committed" "gate UNCHECKED" "$(cd "$LN/repo" && git commit -qam later; LQ gate --base auto)"
-( cd "$LN/repo" && echo wip >src/v && echo done >tasks/PLAN.md && git commit -qam same )
+( cd "$LN/repo" && echo wip >src/v && echo finished >tasks/PLAN.md && git commit -qam same )
 has "lane gate: the checked content, committed, is GREEN whatever the plan says" "gate GREEN" "$(LQ gate --base auto)"
 LQ start T-02 --base auto test='exit 1' >/dev/null; LQ wait T-02 --end >/dev/null; rc=$?
 eq "lane wait --end: a red run exits 1" 1 "$rc"

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.26.0] — 2026-11-25
+
+### Added
+- **ck-lite-qa start / gate / waive / lane-free** and `references/qa-lane.md`: the background lane. A suite runs once, on the code as it stood, in a checkout of its own, while the build goes on. `gate` says whether the work may be shipped. `wait --end` waits without a limit, for a background Bash call. Measured over three weeks: builders waited 58 h and QA agents 39 h in front of `ck-qa`, and the same suite ran two or three times per story.
+- **ck-lite-qa**: a red label is run again on the base commit. A failure that was already there is `BASELINE`, not red, and only new failure lines are listed. A label that timed out runs once more when the machine is calm. A newer run of the same commands replaces one still queued, and covers it.
+- **.ck-qa-lane**: an optional file, `setup: <command>` for a step the lane needs, or `off` to run in your checkout.
+
+### Changed
+- **build**: nobody waits for a test run. A task ends with a check of its own tests and changed files. One background run per task or wave replaces the closing run, the QA agent's run and the merged-suite check. The review and the manual test go on meanwhile, and the next wave starts, one wave ahead at most. An inline task is `done` once its run is green.
+- **ship**: the area check starts right after the commit, while you read the push question. Nothing is pushed without `ck-lite-qa gate` GREEN or NONE.
+- **qa-validator**: reviews the code against the criteria and the design; it runs no command.
+- **ck-lite-qa**: background runs have their own CPU slot, at a lower priority, so a builder's quick run never queues behind one.
+
 ## [1.25.0] — 2026-11-25
 
 ### Added
