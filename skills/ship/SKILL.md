@@ -238,7 +238,11 @@ If `gh` is unavailable, print the manual compare URL
 **Task:** T-NN → done | stays doing | standalone
 ```
 
-Then point at the next step: `/ck-code-lite:build` for the next ready task.
+Then point at the next step: `/ck-code-lite:build` for the next ready task. When a PR was
+opened or updated, add one line: `Watch it: type /steward — it fixes CI, conflicts and review
+comments until merge, never merges (Claude Code 2.1.330+, terminal; desktop app: the PR's
+Auto-fix)`. Never suggest the built-in `/ship` here: it commits every uncommitted file with no
+confirmation, the Excluded ones included.
 
 ## RULES
 
