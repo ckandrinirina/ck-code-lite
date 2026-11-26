@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.26.4] — 2026-11-26
+
+### Changed
+- **report hook**: reads the plugin manifest only when a Bash result looks like a crash, about 14 ms less on every Bash call.
+- **update check**: its timer is cancelled before being re-armed, so a repeated session start cannot stack checks.
+- **tests**: the smoke suite covers `ck-lite-reclaim` freeing build output while keeping source, tracked files and commits.
+
 ## [1.26.3] — 2026-11-26
 
 ### Fixed
