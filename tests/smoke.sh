@@ -513,6 +513,18 @@ CX="$(mktemp -d)"; (
 echo "=== reclaim ==="
 fresh reclaim; echo x >x; git add x; git commit -qm x
 has "reclaim: refuses the main checkout" "refused" "$(ck-lite-reclaim "$P" 2>&1)"
+printf 'target/\nnode_modules/\nbuild/\n' >.gitignore; mkdir -p build; echo keep >build/kept.txt
+git add .gitignore && git add -f build/kept.txt && git commit -qm ignore
+RW="$WORK/reclaim-wt"; git worktree add -q "$RW" -b reclaim-wt
+mkdir -p "$RW/target/debug" "$RW/web/node_modules/x" "$RW/src"
+echo bin >"$RW/target/debug/app"; echo m >"$RW/web/node_modules/x/i.js"; echo s >"$RW/src/main.rs"
+out="$(ck-lite-reclaim "$RW" 2>&1)"
+has "reclaim: frees the ignored build output" "2 build dir(s)" "$out"
+[ ! -e "$RW/target" ] && [ ! -e "$RW/web/node_modules" ] && ok "reclaim: target/ and a nested node_modules/ are gone" || bad "reclaim: target/ and a nested node_modules/ are gone" "$(ls -R "$RW")"
+[ -f "$RW/src/main.rs" ] && ok "reclaim: source is kept" || bad "reclaim: source is kept"
+[ -f "$RW/build/kept.txt" ] && ok "reclaim: a build-named folder holding a tracked file is kept" || bad "reclaim: a build-named folder holding a tracked file is kept"
+eq  "reclaim: the worktree's commits are untouched" "$(git rev-parse HEAD)" "$(git -C "$RW" rev-parse HEAD)"
+has "reclaim: a second pass finds nothing" "nothing to free" "$(ck-lite-reclaim "$RW" 2>&1)"
 
 # ---- ck-lite-release ----------------------------------------------------------------------
 echo "=== ck-lite-release: facts and lessons, offline ==="
