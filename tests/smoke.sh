@@ -423,6 +423,17 @@ has "lane gate: RED" "gate RED" "$(LQ gate --base auto)"
 has "lane waive: named" "WAIVED — known" "$(LQ waive T-02 known >/dev/null; LQ gate --base auto)"
 eq "lane: ck-lite worktrees never lists the lane" "" "$(cd "$LN/repo" && ck-lite worktrees main)"
 has "lane-free" "lane freed" "$(LQ lane-free)"
+# the Claude Code sandbox: nohup cannot detach, setpriority is refused, and a background process
+# dies with the Bash call that started it, so runs stay in the foreground there
+SB="$LN/sandbox-bin"; mkdir -p "$SB"
+printf '#!/bin/sh\necho "nohup: cannot detach from console" >&2; exit 127\n' >"$SB/nohup"
+printf '#!/bin/sh\necho "nice: setpriority: Operation not permitted" >&2; exit 1\n' >"$SB/nice"
+chmod +x "$SB/nohup" "$SB/nice"
+SBQ() { ( cd "$LN/repo" && PATH="$SB:$PATH" SANDBOX_RUNTIME=1 CK_LITE_QA_WAIT=0 TMPDIR="$LN/tmp" CK_QA_LANE_DIR="$LN/lanes" CK_QA_DOCKER=0 ck-lite-qa "$@" 2>&1 ); }
+has "sandbox run: waits in the foreground for its result" "ck-lite-qa: PASS" "$(SBQ run S-01 test='sleep 1; true')"
+has "sandbox start: runs in the foreground" "FINISHED — S-02" "$(SBQ start S-02 test='true')"
+has "sandbox start: its result is there at once" "ck-lite-qa: PASS" "$(SBQ wait S-02 --end)"
+eq "sandbox start: in the checkout, no lane worktree" "1" "$(git -C "$LN/repo" worktree list | wc -l | tr -d ' ')"
 rm -rf "${LN:?}"
 
 # The prompt router is the mod's prompt.submit hook since 1.3.0: tests/mod/hooks.test.ts.

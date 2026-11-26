@@ -42,6 +42,8 @@ ck-lite-qa wait T-05 --end      # Bash run_in_background: true — its end notif
   --fix"`) is replaced by its check form.
 - A newer start of the same commands replaces one still queued: `SUPERSEDED` (exit 4) is not a
   failure. `STARTED … leave it alone` (the lane is `off` here): do not edit until it ends.
+  `FINISHED … in the foreground` (Claude Code sandbox, where a background run dies with its Bash
+  call): the run already ended in this checkout; `wait --end` returns at once.
 - `start` refused (no git, no commit) → `ck-lite-qa run` with the same labels, and say so.
 
 ## While it runs

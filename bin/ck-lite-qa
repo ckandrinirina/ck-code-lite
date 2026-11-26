@@ -29,6 +29,8 @@
 #        under the 180 s after which Claude Code moves a sub-agent's Bash call to the background). A longer run prints
 #        `ck-lite-qa: RUNNING` (exit 3) and keeps going. The same run started again while it
 #        is going waits on it instead of starting a second copy.
+#        Under the Claude Code sandbox (SANDBOX_RUNTIME=1), which kills a background process
+#        with its Bash call, or with CK_QA_FOREGROUND=1, run and start stay in the foreground.
 #        Every command that ran on an unchanged tree also records its last run for
 #        (id, label, directory): a snapshot commit of the code state, and the full command.
 # --rerun  marks each <command> as a narrowed re-run of that label's last run here: the
@@ -127,6 +129,11 @@ case "$CPU_SLOTS" in ''|*[!0-9]*) CPU_SLOTS=1 ;; esac
 [ -n "${CK_QA_SLOTS:-}" ] || [ "$CPU_SLOTS" -ge 1 ] || CPU_SLOTS=1
 QA_NICE="${CK_QA_NICE:-10}"
 case "$QA_NICE" in ''|*[!0-9]*) QA_NICE=10 ;; esac
+# The Claude Code sandbox (SANDBOX_RUNTIME=1) kills every background process when the Bash call
+# that started it ends, and refuses setpriority: there a run stays in the foreground of its
+# call and is not niced. CK_QA_FOREGROUND=1 keeps runs in the foreground anywhere.
+qa_sandboxed() { [ "${SANDBOX_RUNTIME:-}" = 1 ]; }
+qa_foreground() { qa_sandboxed || [ "${CK_QA_FOREGROUND:-}" = 1 ]; }
 SLOT=""; SLOT_WAITED=0; SLOT_IDLE=0
 QA_TIMEOUT="${CK_QA_TIMEOUT:-3600}"
 case "$QA_TIMEOUT" in ''|*[!0-9]*) QA_TIMEOUT=3600 ;; esac
@@ -195,10 +202,11 @@ slot_free() { [ -z "$SLOT" ] || rm -rf "${SLOTS_DIR:?}/$SLOT"; SLOT=""; }
 # keeps its window hidden, and PWDEBUG (Playwright's headed inspector) never leaks in.
 # Returns the command's exit code, 124 on a timeout.
 run_capped() {
-  local pid wd="" rc
+  local pid wd="" rc pri=(nice -n "$QA_NICE")
+  ! qa_sandboxed || pri=()
   rm -f "$2.timeout"
   set -m
-  env -u PWDEBUG E2E_HEADLESS=1 nice -n "$QA_NICE" bash -c "$1" >"$2" 2>&1 &
+  env -u PWDEBUG E2E_HEADLESS=1 ${pri[@]+"${pri[@]}"} bash -c "$1" >"$2" 2>&1 &
   pid=$!
   set +m
   if [ "$QA_TIMEOUT" -gt 0 ]; then
@@ -549,6 +557,9 @@ lane_trunk() {  # ref → where it left the trunk, what `auto` means; nothing wh
   return 1
 }
 lane_off() { git show "$1:.ck-qa-lane" 2>/dev/null | grep -qx 'off'; }   # commit
+# runs in the caller's checkout: the lane is off, or the sandbox refuses the worktree (.git/worktrees)
+# and keeps the caller waiting in its Bash call until the run ends
+lane_here() { lane_off "$1" || qa_sandboxed; }
 lane_locks() {  # the lockfiles the lane's commit tracks, one per line
   local f p=()
   for f in $LANE_LOCKS; do p[${#p[@]}]="$f"; p[${#p[@]}]="*/$f"; done
@@ -806,7 +817,7 @@ lane_at() {
 lane_work() {
   local r="$1" c src pre l cmd b v x t bad="" where="" fails="" args=()
   c="$(rec_get "$r" commit)"; src="$(rec_get "$r" src)"; pre="$(rec_get "$r" prefix)"
-  if lane_off "$c"; then
+  if lane_here "$c"; then
     mkdir "$r/claimed" 2>/dev/null || return 4
     where="$src"
     lane_at "$src" "$c" || bad="the checkout is not at this commit any more (.ck-qa-lane is off)"
@@ -1004,18 +1015,29 @@ lane_start() {
   echo "${labels# }" >"$r/labels"; date +%s >"$r/start"
   printf 'id=%s\nbranch=%s\ncommit=%s\nanchor=%s\nbase=%s\nprefix=%s\nsrc=%s\nmain=%s\nparallel=%s\n' \
     "$id" "$br" "$c" "$anchor" "$base" "$pre" "$top" "$LANE_MAIN" "$par" >"$r/meta"
-  R="$r" nohup bash -c '"$0" __lane "$R" >"$R/run" 2>&1; rc=$?
+  mkdir -p "$(dirname -- "$(run_dir "$id")")"
+  # SIGHUP ignored by hand, never nohup: under the Claude Code sandbox nohup cannot detach (exit 127)
+  set -- bash -c 'trap "" HUP; "$0" __lane "$R" >"$R/run" 2>&1; rc=$?
     [ ! -f "$R/rc" ] || exit 0
-    mv "$R/run" "$R/out"; echo $rc >"$R/rc.tmp"; mv "$R/rc.tmp" "$R/rc"' "$SELF" </dev/null >/dev/null 2>&1 &
-  lane_pid $! "$r/pid"
-  mkdir -p "$(dirname -- "$(run_dir "$id")")"; printf '%s' "$r" >"$(run_dir "$id").lane"
+    mv "$R/run" "$R/out"; echo $rc >"$R/rc.tmp"; mv "$R/rc.tmp" "$R/rc"' "$SELF"
+  if qa_foreground; then
+    lane_pid $$ "$r/pid"; printf '%s' "$r" >"$(run_dir "$id").lane"
+    R="$r" "$@" </dev/null >/dev/null 2>&1
+  else
+    R="$r" "$@" </dev/null >/dev/null 2>&1 &
+    lane_pid $! "$r/pid"; printf '%s' "$r" >"$(run_dir "$id").lane"
+  fi
   [ -z "$sup" ] || echo "$QA_TAG: replaced the queued run(s):$sup"
-  if lane_off "$c"; then
+  if qa_foreground; then
+    echo "$QA_TAG: FINISHED — $id ran in the foreground: a background run cannot outlive its Bash call here (sandbox or CK_QA_FOREGROUND)"
+  elif lane_off "$c"; then
     echo "$QA_TAG: STARTED — $id in this checkout (.ck-qa-lane is off): leave it alone until the run ends"
   else
     echo "$QA_TAG: STARTED — $id on $(git rev-parse --short "$c") in the background lane; keep working"
   fi
-  echo "result: '$QA_TAG wait $id --end' in a background Bash call"
+  if qa_foreground; then echo "result: '$QA_TAG wait $id --end' (returns at once)"; else
+    echo "result: '$QA_TAG wait $id --end' in a background Bash call"
+  fi
 }
 
 # Old records (30 days), and lanes of other repositories nobody used for KEEP_DAYS.
@@ -1199,7 +1221,8 @@ done
 full_of() { eval "printf '%s' \"\$FULL_$1\""; }
 
 # run: start the commands detached, so a run longer than one Bash call survives it, and
-# wait on it. An identical run already going is waited on, never started a second time.
+# wait on it (in the foreground where nothing can be detached, see qa_foreground). An
+# identical run already going is waited on, never started a second time.
 if [ "$CMD" = run ]; then
   D="$(run_dir "$ID")"
   KEY="$( { pwd -P; echo "$PARALLEL $REUSE $RERUN"; for l in $LABELS; do echo "$l=$(cmd_of "$l")"; done; } | git hash-object --stdin)"
@@ -1210,9 +1233,14 @@ if [ "$CMD" = run ]; then
   else
     rm -f "$D.lane"; rm -rf "$D"; mkdir -p "$D" || die "cannot create $D"
     echo "$KEY" >"$D/key"; date +%s >"$D/start"
-    D="$D" nohup bash -c '"$0" __worker "$@" >"$D/out" 2>&1; echo $? >"$D/rc.tmp"; mv "$D/rc.tmp" "$D/rc"' \
-      "$SELF" "${ARGS[@]}" </dev/null >/dev/null 2>&1 &
-    echo $! >"$D/pid"
+    # SIGHUP ignored by hand, never nohup: under the Claude Code sandbox nohup cannot detach (exit 127)
+    set -- bash -c 'trap "" HUP; "$0" __worker "$@" >"$D/out" 2>&1; echo $? >"$D/rc.tmp"; mv "$D/rc.tmp" "$D/rc"' "$SELF" "${ARGS[@]}"
+    if qa_foreground; then
+      echo $$ >"$D/pid"; D="$D" "$@" </dev/null >/dev/null 2>&1
+    else
+      D="$D" "$@" </dev/null >/dev/null 2>&1 &
+      echo $! >"$D/pid"
+    fi
   fi
   await_run "$ID"
 fi
