@@ -3,7 +3,7 @@ name: release
 description: Use when a new version of the project should be released — bumping the version, tagging, and starting the build that publishes the installers or packages — or when a release stopped half way, or its build failed (an exhausted GitHub Actions budget, a missing secret, a build that never started). Argument is an optional version X.Y.Z or a bump (patch, minor, major).
 argument-hint: "[X.Y.Z | patch | minor | major]"
 effort: medium
-allowed-tools: Bash(ck-lite-release*) Bash(git status*) Bash(git diff*) Bash(git log*) Bash(git fetch*) Bash(git checkout*) Bash(git add*) Bash(git commit*) Bash(git push*) Bash(git tag*) Bash(git ls-remote*) Bash(git rev-parse*) Bash(gh pr*) Bash(gh workflow*) Bash(gh run*) Bash(gh release*) Bash(gh repo view*) Bash(date*) Skill
+allowed-tools: Bash(ck-lite-release*) Bash(git status*) Bash(git diff*) Bash(git log*) Bash(git fetch*) Bash(git checkout*) Bash(git add*) Bash(git commit*) Bash(git push*) Bash(git tag*) Bash(git ls-remote*) Bash(git rev-parse*) Bash(gh pr create*) Bash(gh pr list*) Bash(gh pr view*) Bash(gh workflow*) Bash(gh run*) Bash(gh release*) Bash(gh repo view*) Bash(date*) Skill
 ---
 
 # Release — Version, Tag, Build, Publish
@@ -62,7 +62,8 @@ never open workflows or docs to rediscover what they already say.
 
 Read `docs/RELEASE.md`. When a `lesson:` line contradicts it (the recipe builds `on-tag` in a
 repo the facts show `budget-blocked`, while a `releases-repo:` has a release workflow), the 2.3
-question also offers the corrected `Build:` line.
+question also offers the corrected `Build:` line. A recipe that says `Merge: auto` is read as
+`ask`, and the 2.3 question offers the corrected `Merge: ask` line in the same way.
 
 ### 2.2 No recipe yet — draft one
 
@@ -116,12 +117,13 @@ only, plus a new or corrected `docs/RELEASE.md`. Push, then open the PR to `Base
 
 ### 3.2 Merge
 
-- **`auto`** → `gh pr merge <n> --merge`. A refusal (branch protection, a required review, a
-  failing check) turns this step into `ask`.
-- **`ask`** → `AskUserQuestion`: "PR #n is ready to merge: <url>". Options: **I merged it**,
-  **Merge it for me** (only when gh allowed it), **Stop here**. Then check:
-  `gh pr view <n> --json state,mergeCommit -q '.state + " " + .mergeCommit.oid'`. Not `MERGED`
-  → say so and ask once more. A second miss stops with the resume line: `/ck-code-lite:release X.Y.Z`.
+Every merge is the person's. The skill never runs `gh pr merge` and never turns on GitHub
+auto-merge. A recipe that still says `Merge: auto` is read as `ask` (2.1).
+
+`AskUserQuestion`: "PR #n is ready to merge: <url>". Options: **I merged it**, **Stop here**.
+Then check:
+`gh pr view <n> --json state,mergeCommit -q '.state + " " + .mergeCommit.oid'`. Not `MERGED`
+→ say so and ask once more. A second miss stops with the resume line: `/ck-code-lite:release X.Y.Z`.
 
 Never wait for a person by polling or sleeping: ask, then check.
 
@@ -208,6 +210,8 @@ A lesson is general: never a secret, a token, or a URL with credentials in it.
   skill reached by a ck-code redirect BLOCKs instead of bouncing back.
 - **Never build where the recipe does not say** — a public build repo in the recipe means the
   private repo's CI is never waited on.
+- **Never merge a PR** — no `gh pr merge`, no GitHub auto-merge, not even when asked mid-run or
+  when a recipe says `Merge: auto`. The person merges; the skill checks.
 - **Never push a tag before its release PR is merged**, and never tag anything but the merge
   commit on `Base:`.
 - **Never wait for a person by polling or sleeping** — ask with `AskUserQuestion`, then check

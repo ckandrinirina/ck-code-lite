@@ -20,7 +20,7 @@ Changelog: <path> | none
 Check: <command that proves the bump is consistent> | none
 Base: <branch the release PR targets and the tag is cut from>
 Branch: chore/release-X.Y.Z
-Merge: auto | ask
+Merge: ask
 Tag: vX.Y.Z
 Build: dispatch <owner/repo> <workflow-file> -f <input>=vX.Y.Z | on-tag <owner/repo> <workflow-file> | none
 Verify: <command that shows the published release> | none
@@ -33,7 +33,7 @@ Expected failures: <run that fails on purpose, and why> | none
 |---|---|
 | `Version files` | Every tracked file that pins the version, with how to change it when it is not a plain string swap (`npm version X.Y.Z --no-git-tag-version`, `versionCode = M×10000 + m×100 + p`) |
 | `Check` | Runs on the release branch before the PR. A failure stops the release before anything is pushed |
-| `Merge` | `auto` — the skill merges the release PR (`gh pr merge --merge`). `ask` — the user merges it, the skill asks and then checks the PR state |
+| `Merge` | Always `ask` — the person merges the release PR; the skill asks, then checks the PR state. The skill never merges a PR. An older recipe's `auto` is read as `ask` and corrected |
 | `Build` | `dispatch` — the skill starts a workflow by hand after the tag is pushed (a public build repo, a manual-only workflow). `on-tag` — pushing the tag starts it. `none` — no CI; the skill runs `gh release create vX.Y.Z` in this repo |
 | `Verify` | Proves the release is live, for example `gh release view vX.Y.Z -R <owner/repo> --json assets -q '.assets[].name'` |
 | `Manual` | Steps only a person can do, such as a store upload. Asked once at the end, never waited on |
@@ -53,7 +53,7 @@ Changelog: CHANGELOG.md
 Check: npx vitest run test/release
 Base: main
 Branch: chore/release-X.Y.Z
-Merge: auto
+Merge: ask
 Tag: vX.Y.Z
 Build: dispatch ckandrinirina/ck-tiona-releases release.yml -f tag=vX.Y.Z
 Verify: gh release view vX.Y.Z -R ckandrinirina/ck-tiona-releases --json assets -q '.assets[].name'
