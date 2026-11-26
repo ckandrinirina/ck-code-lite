@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.26.2] — 2026-11-26
+
+### Changed
+- **release**: never merges a PR. The person always merges the release PR; the skill asks, then checks. A recipe's `Merge: auto` is read as `ask` and the corrected line is offered, the "Merge it for me" option is gone, and the skill no longer pre-approves `gh pr merge`.
+- **ship**: the `/steward` hint says to keep GitHub auto-merge off, which would otherwise merge the PR as soon as the watch turns it green. Every merge stays a human decision.
+
 ## [1.26.1] — 2026-11-26
 
 ### Changed
