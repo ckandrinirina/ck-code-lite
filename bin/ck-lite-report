@@ -32,8 +32,13 @@ STORE="${XDG_CACHE_HOME:-$HOME/.cache}/ck-report"
 DRAFTS="${CK_REPORT_DRAFTS:-$HOME/.claude/ck-reports}"
 
 field() { sed -n "s/^  \"$1\": \"\\(.*\\)\",\$/\\1/p" "$MANIFEST" 2>/dev/null | head -n 1; }
-PLUGIN="$(field name)"; VERSION="$(field version)"
-REPO="$(field repository | sed -e 's|^https://github.com/||' -e 's|\.git$||')"
+# read lazily: the hook runs after every Bash call and leaves on its first pattern test,
+# before any of these subprocesses would pay off
+PLUGIN=""; VERSION=""; REPO=""
+manifest() {
+  PLUGIN="$(field name)"; VERSION="$(field version)"
+  REPO="$(field repository | sed -e 's|^https://github.com/||' -e 's|\.git$||')"
+}
 die() { echo "${PLUGIN:-report}-report: ERROR — $*" >&2; exit 2; }
 
 # exit 0 when <dir> exists (created 0700 if missing), is a real directory, not a symlink, ours
@@ -100,9 +105,10 @@ sig_of() { printf '%s|%s' "$PLUGIN" "$1" | sed -E 's/[0-9]+/N/g' | cksum | awk '
 
 hook() {
   local raw text ev sid cmd hit sig bins b kept
-  raw="$(cat)"; [ -n "$raw" ] && [ -n "$PLUGIN" ] || return 0
+  raw="$(cat)"; [ -n "$raw" ] || return 0
   # the common case — no crash text at all — leaves after one pattern match
   case "$raw" in *": line "*|*Traceback*|*"awk: "*) ;; *) return 0 ;; esac
+  manifest; [ -n "$PLUGIN" ] || return 0
   ev="$(printf '%s' "$raw" | sed -n 's/.*"hook_event_name" *: *"\([A-Za-z]*\)".*/\1/p' | head -n 1)"
   case "$ev" in PostToolUse|PostToolUseFailure) ;; *) return 0 ;; esac
   sid="$(printf '%s' "$raw" | sed -n 's/.*"session_id" *: *"\([A-Za-z0-9_-]*\)".*/\1/p' | head -n 1)"
@@ -169,6 +175,7 @@ file_issue() {
   echo "open: https://github.com/$REPO/issues/new?labels=bug&title=$enc  (paste the draft as the body — gh is not installed or not signed in)"
 }
 
+[ "${1:-}" = hook ] || manifest
 case "${1:-}" in
   hook) hook; exit 0 ;;
   show) [ -n "${2:-}" ] || die "show needs a signature"
