@@ -91,6 +91,7 @@ export function updateToast(i: Install, want: string): string {
 
 let install: Install | null = null;
 let want: string | undefined;
+let checkTimer: { cancel: () => void } | undefined;
 
 async function fetchLatest($: EngineInterface, name: string): Promise<string | undefined> {
   const manifest = await $.http.fetch(MANIFEST_URL);
@@ -156,7 +157,8 @@ export async function startUpdateCheck($: EngineInterface, isOn: boolean): Promi
       version: version.join("."),
     };
     void check($, forced).catch(() => undefined);
-    $.clock.every(CHECK_MS, () => void check($, false).catch(() => undefined));
+    checkTimer?.cancel();
+    checkTimer = $.clock.every(CHECK_MS, () => void check($, false).catch(() => undefined));
   } catch {
     // No manifest to read: nothing to compare, nothing drawn.
   }
