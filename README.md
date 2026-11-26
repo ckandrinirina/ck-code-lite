@@ -28,7 +28,7 @@ scripted, so a run's cost tracks the work in front of it, not the age of the pro
 ### Releases that follow the project's own process
 
 `release` publishes a version the way **this project** does it. The steps are written once in
-`docs/RELEASE.md`: which files carry the version, how the release PR merges, where the build
+`docs/RELEASE.md`: which files carry the version, where the release PR goes (you merge it), where the build
 runs, and how to check what was published. The first run drafts that recipe from facts it
 gathers in one call and shows it for approval. Every later release follows it without asking,
 except for one version question. A step only you can do, such as a merge, a secret or a store
