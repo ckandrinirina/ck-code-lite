@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.27.3] — 2026-11-27
+
+### Fixed
+- **build**: a fresh project's first build no longer ends with its QA gate stuck. `start` leaves the plugin guard (`.claude/ck-code-lite-required.sh`, `.claude/settings.json`) uncommitted, and the gate counted it as unchecked code. The build now runs the new `ck-lite-bootstrap commit` right after it picks its branch. That commits the guard pair alone (never on `main`, `master`, `develop` or `release/*`), and P1's clean check no longer stops on it.
+- **ck-lite-qa**: under the Claude Code sandbox, where runs stay in the main checkout, the first wave of a fresh project failed with `FAIL — setup: the checkout is not at this commit any more`, because `start` leaves `docs/ARCHITECTURE.md` untracked. The checkout comparison now ignores what the gate never counts as code (`tasks/`, `docs/`, Markdown). An untracked code file still fails the check.
+
 ## [1.27.2] — 2026-11-27
 
 ### Changed
