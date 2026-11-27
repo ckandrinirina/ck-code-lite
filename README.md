@@ -13,7 +13,7 @@ scripted, so a run's cost tracks the work in front of it, not the age of the pro
 | Skill | Use it when | Produces |
 |---|---|---|
 | `/ck-code-lite:start` | A project needs its plan — new idea, existing codebase, or more tasks | `docs/ARCHITECTURE.md`, `tasks/PLAN.md` |
-| `/ck-code-lite:design` | A project with a UI should be designed first, in Claude Design or Figma — or you have a claude.ai/design or figma.com URL to link — or you want to see the linked design (`preview`), or an existing app replicated (`replicate <source>`) | `docs/design-brief.md`, `docs/design-system/`, `docs/replica/` |
+| `/ck-code-lite:design` | A project with a UI should be designed first, in Claude Design or Figma — or you have a claude.ai/design, claude.ai/artifact or figma.com URL to link — or you want to see the linked design (`preview`), or an existing app replicated (`replicate <source>`) | `docs/design-brief.md`, `docs/design-system/`, `docs/replica/` |
 | `/ck-code-lite:build` | Implementing one task end to end — or several at once, in waves | Code, tests, tasks marked `done` |
 | `/ck-code-lite:ship` | Committing finished work | A conventional commit, an area test check before the push, and a PR |
 | `/ck-code-lite:report` | ck-code-lite itself did something wrong — or its hook spotted a crash in one of its scripts | A scrubbed GitHub issue on this repo (or a comment on the existing one), filed after your one yes |
@@ -59,6 +59,7 @@ that make the result machine-readable. The brief is copied to your clipboard.
 /ck-code-lite:design "a habit tracker for runners"   # describe → brief (or let start chain it)
 # paste the brief at claude.ai/design, iterate, copy the project URL
 /ck-code-lite:design https://claude.ai/design/p/…    # link: tokens + every card cached in the repo
+/ck-code-lite:design https://claude.ai/artifact/…    # a design moved to claude.ai links the same way
 /ck-code-lite:build                                  # UI tasks port the cached components exactly
 ```
 
