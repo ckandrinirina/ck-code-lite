@@ -7,7 +7,8 @@
 #   ck-lite criteria <T-NN>…           acceptance criteria of those tasks, grouped by ID
 #   ck-lite context <T-NN>             ARCHITECTURE.md, the area docs the task's files touch, the task
 #   ck-lite commands                   the ## Commands lines of docs/ARCHITECTURE.md
-#   ck-lite waves [--next] <T-NN>…|--all|--group [<name>]   dependency-ordered waves (file-disjoint, width ≤ 4);
+#   ck-lite waves [--next] <T-NN>…|--all|--group [<name>]   dependency-ordered waves (file-disjoint, width ≤ 4,
+#                                      CK_LITE_WIDTH overrides);
 #                                      --group with no name takes the group `groups --next` names
 #   ck-lite groups [--next]            open work per feature group; --next names the one to run next
 #   ck-lite group <name>|- <T-NN>…     tag tasks with a feature group (- removes the tag)
@@ -52,7 +53,8 @@ if [ -z "${CK_LITE_PLAN:-}" ] && [ ! -f "$PLAN" ] && TOP="$(git rev-parse --show
     d="$(dirname "$d")"
   done
 fi
-WIDTH=4
+WIDTH="${CK_LITE_WIDTH:-4}"
+case "$WIDTH" in ""|*[!0-9]*|0) WIDTH=4 ;; esac
 STATUSES="todo doing done blocked"
 
 TMPS=""; LOCKED=""

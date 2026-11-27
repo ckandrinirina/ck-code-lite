@@ -101,6 +101,8 @@ fresh wide; ck-lite init W >/dev/null
 out="$(ck-lite waves --all)"
 has "waves: width capped at 4" "Wave 2 T-05" "$out"
 has "waves: count line" "waves 2 · scheduled 6" "$out"
+has "waves: CK_LITE_WIDTH widens a wave" "waves 1 · scheduled 6 · width cap 8" "$(CK_LITE_WIDTH=8 ck-lite waves --all)"
+has "waves: a bad CK_LITE_WIDTH falls back to 4" "width cap 4" "$(CK_LITE_WIDTH=x ck-lite waves --all)"
 fresh cyc; ck-lite init C >/dev/null
 has "add: refuses a cycle" "on a dependency cycle" "$( { task T-01 A S T-02 a; task T-02 B S T-01 b; } | ck-lite add 2>&1)"
 eq  "add: a refused cycle writes nothing" "0" "$(grep -c '^| T-' tasks/PLAN.md)"

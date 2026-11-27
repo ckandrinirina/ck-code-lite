@@ -54,7 +54,7 @@ the user finds there is a new task (`/ck-code-lite:start`), never a reopened one
 
 ## P0 Context budget — enforced, not advisory
 
-- **Wave width ≤ 4** — `ck-lite waves` applies it.
+- **Wave width ≤ 4** — `ck-lite waves` applies it (`CK_LITE_WIDTH` is for ck-oneshot; build never sets it).
 - **Criteria one wave at a time**, for that wave's IDs only (`ck-lite criteria`), never a
   later wave's.
 - **One ledger row per finished task**, then the wave's detail is dropped. Never re-print a
