@@ -441,6 +441,14 @@ has "sandbox run: waits in the foreground for its result" "ck-lite-qa: PASS" "$(
 has "sandbox start: runs in the foreground" "FINISHED — S-02" "$(SBQ start S-02 test='true')"
 has "sandbox start: its result is there at once" "ck-lite-qa: PASS" "$(SBQ wait S-02 --end)"
 eq "sandbox start: in the checkout, no lane worktree" "1" "$(git -C "$LN/repo" worktree list | wc -l | tr -d ' ')"
+# a fresh `start` leaves docs/ARCHITECTURE.md untracked: not code, as for the gate
+mkdir -p "$LN/repo/docs" && echo arch >"$LN/repo/docs/ARCHITECTURE.md" && echo notes >"$LN/repo/NOTES.md"
+SBQ start S-03 test='true' >/dev/null
+has "sandbox start: untracked docs and .md files are not a moved checkout" "ck-lite-qa: PASS" "$(SBQ wait S-03 --end)"
+echo code >"$LN/repo/src/new.ts"
+SBQ start S-04 test='true' >/dev/null
+has "sandbox start: an untracked code file still is" "setup" "$(SBQ wait S-04 --end)"
+rm -f "$LN/repo/src/new.ts"
 rm -rf "${LN:?}"
 
 # The prompt router is the mod's prompt.submit hook since 1.3.0: tests/mod/hooks.test.ts.
@@ -769,6 +777,17 @@ has "bootstrap: declares where ck-marketplace lives" '"repo": "ckandrinirina/ck-
 has "bootstrap: keeps an explicit enabledPlugins false" '"ck-code-lite@ck-marketplace": false' "$GSET"
 has "bootstrap: wires the guard as a SessionStart hook" "ck-code-lite-required.sh" "$GSET"
 eq  "bootstrap: --quiet is silent once current" "" "$(cd "$GB/repo" && ck-lite-bootstrap install --quiet 2>&1)"
+git -C "$GB/repo" -c user.email=s@s -c user.name=s commit -q --allow-empty -m base
+git -C "$GB/repo" checkout -q -b main 2>/dev/null || git -C "$GB/repo" checkout -q main
+has "bootstrap commit: refused on a trunk branch" "trunk" "$(cd "$GB/repo" && ck-lite-bootstrap commit 2>&1)"
+git -C "$GB/repo" checkout -q -b task/T-01-x
+echo dirty >"$GB/repo/other.txt"
+BC="$(cd "$GB/repo" && GIT_AUTHOR_NAME=s GIT_AUTHOR_EMAIL=s@s GIT_COMMITTER_NAME=s GIT_COMMITTER_EMAIL=s@s ck-lite-bootstrap commit 2>&1)"
+has "bootstrap commit: commits the guard pair" "committed" "$BC"
+eq  "bootstrap commit: the guard is tracked" "0" "$(git -C "$GB/repo" ls-files --error-unmatch .claude/ck-code-lite-required.sh >/dev/null 2>&1; echo $?)"
+eq  "bootstrap commit: only the guard pair is in the commit" ".claude/ck-code-lite-required.sh|.claude/settings.json" "$(git -C "$GB/repo" show --name-only --format= HEAD | sort | paste -sd'|' -)"
+eq  "bootstrap commit: other dirty files stay uncommitted" "?? other.txt" "$(git -C "$GB/repo" status --porcelain -- other.txt)"
+eq  "bootstrap commit: nothing to do is silent" "" "$(cd "$GB/repo" && ck-lite-bootstrap commit 2>&1)"
 printf '#!/bin/sh\necho "$*" >> "%s/calls"\n[ -f "%s/fail" ] && exit 1\nexit 0\n' "$GB" "$GB" > "$GB/stub/claude"
 chmod +x "$GB/stub/claude"
 guard() { (cd "$GB/repo" && env -i HOME="$GB" PATH="$GB/stub:/usr/bin:/bin" CLAUDE_CONFIG_DIR="$GB/cfg" CLAUDE_PROJECT_DIR="$GB/repo" "$@" bash .claude/ck-code-lite-required.sh); }

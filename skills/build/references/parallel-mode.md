@@ -67,7 +67,7 @@ the user finds there is a new task (`/ck-code-lite:start`), never a reopened one
 ## P1 Freeze the target
 
 ```bash
-git status --porcelain -- . ':!tasks/PLAN.md' ':!docs/ARCHITECTURE.md' ':!docs/areas' ':!docs/design-system' ':!docs/design-brief.md' && git branch --show-current && git rev-parse --show-toplevel
+git status --porcelain -- . ':!tasks/PLAN.md' ':!docs/ARCHITECTURE.md' ':!docs/areas' ':!docs/design-system' ':!docs/design-brief.md' ':!.claude/ck-code-lite-required.sh' ':!.claude/settings.json' && git branch --show-current && git rev-parse --show-toplevel
 ```
 
 Anything else uncommitted, or a detached HEAD, stops the run: a worktree is cut from the last
@@ -80,6 +80,11 @@ their `Context` and `Design` lines, never from their worktree. The branch become
 run drifted to, which is what the checks exist to catch. On `main`, `master`, `develop` or
 `release/*`, create `batch/<slug>` in place (`git checkout -b`) and announce it; that branch is
 `$TARGET`, and merged work never lands on a protected branch.
+
+Then `ck-lite-bootstrap commit` on `$TARGET`. `start` leaves the plugin guard
+(`.claude/ck-code-lite-required.sh`, `.claude/settings.json`) uncommitted; it commits that pair
+alone, so it is not stray code in every later clean check and gate. Silent when there is nothing
+to commit; relay its line when it commits.
 
 List worktrees left by earlier runs — `ck-lite worktrees "$TARGET"` — then
 `ck-lite sweep "$TARGET" --list`. Its `stale` lines are earlier runs' agent worktrees (under

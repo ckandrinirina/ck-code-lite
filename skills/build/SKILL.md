@@ -163,7 +163,9 @@ Leaving another task's branch with uncommitted changes would carry its work into
 `/ck-code-lite:ship T-MM` first.
 
 Announce it in one line: `Branch: task/T-05-missing-file (created from main)`. Nothing else
-moves the working tree for the rest of the run.
+moves the working tree for the rest of the run. Then `ck-lite-bootstrap commit`: it commits the
+plugin guard `start` left uncommitted, alone, on this branch, so the gate never counts it as
+unchecked code. Silent when there is nothing to commit; relay its line when it commits.
 
 ### 2.3 Clarify — HARD GATE, only on genuine ambiguity
 

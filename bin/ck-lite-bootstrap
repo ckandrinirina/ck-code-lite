@@ -13,8 +13,10 @@
 # install; in a cloud session (CLAUDE_CODE_REMOTE=true), which never installs the plugins a
 # repo enables, it installs the plugin itself and asks for /reload-plugins.
 #
-# Usage: ck-lite-bootstrap install [--quiet] | check
-#   --quiet prints only when something was written. Exit 0 ok, 1 not written, 2 usage.
+# Usage: ck-lite-bootstrap install [--quiet] | check | commit
+#   --quiet prints only when something was written.
+#   commit  commits the guard pair, and nothing else, when either is uncommitted — on the build's
+#           own branch, never on a trunk (main, master, develop, release/*). Silent with nothing to do. Exit 0 ok, 1 not written, 2 usage.
 # Settings are merged with python3; without it the lines to merge by hand are printed.
 set -u
 
@@ -152,8 +154,26 @@ cmd_check() {
   echo "guard: v$had, wired and committed"
 }
 
+# A build that starts on an uncommitted guard would carry it as unchecked code into every gate,
+# and the clean checks would stop on it: the build commits it first, on its own branch.
+cmd_commit() {
+  local br paths=""
+  [ -n "$(git -C "$ROOT" status --porcelain -- "$GUARD_REL" "$SETTINGS_REL" 2>/dev/null)" ] || return 0
+  br="$(git -C "$ROOT" branch --show-current)"
+  case "$br" in
+    main|master|develop|release/*|'') echo "guard: not committed — $br is a trunk branch; the build commits it on its own branch" >&2; return 1 ;;
+  esac
+  [ -e "$ROOT/$GUARD_REL" ] && paths="$GUARD_REL"
+  [ -e "$ROOT/$SETTINGS_REL" ] && paths="$paths $SETTINGS_REL"
+  # shellcheck disable=SC2086
+  git -C "$ROOT" add -- $paths && git -C "$ROOT" commit -q -m "chore: require ck-code-lite in this project" -- $paths \
+    || { echo "guard: commit failed" >&2; return 1; }
+  echo "guard: committed on $br — $GUARD_REL, $SETTINGS_REL"
+}
+
 case "${1:-}" in
   install) shift; [ "${1:-}" = --quiet ] && QUIET=1; cmd_install ;;
   check) cmd_check ;;
-  *) echo "usage: ck-lite-bootstrap install [--quiet] | check" >&2; exit 2 ;;
+  commit) cmd_commit ;;
+  *) echo "usage: ck-lite-bootstrap install [--quiet] | check | commit" >&2; exit 2 ;;
 esac

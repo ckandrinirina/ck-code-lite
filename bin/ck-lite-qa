@@ -806,11 +806,13 @@ lane_base() {
   done
 }
 
-# Is checkout $1 exactly commit $2 (tasks/ aside)? Only a run with the lane off asks.
+# Is checkout $1 exactly commit $2, apart from what the gate never counts as code (tasks/, docs/,
+# Markdown — a fresh plan leaves them uncommitted)? Only a run with the lane off asks.
 lane_at() {
   [ "$(git -C "$1" rev-parse "$2^{tree}")" != "$(cd "$1" && state)" ] || return 0
-  git -C "$1" diff --quiet "$2" -- ':(exclude,top)tasks' \
-    && [ -z "$(git -C "$1" ls-files -o --exclude-standard -- ':(exclude,top)tasks')" ]
+  set -- "$1" "$2" ':(exclude,top)tasks' ':(exclude,top)docs' ':(exclude,top,glob)**/*.md'
+  git -C "$1" diff --quiet "$2" -- "${@:3}" \
+    && [ -z "$(git -C "$1" ls-files -o --exclude-standard -- "${@:3}")" ]
 }
 
 # The detached body of one lane run, for record $1.
