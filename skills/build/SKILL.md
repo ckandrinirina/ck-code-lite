@@ -376,6 +376,6 @@ that command as the next step.
 - **Never create a file under `tasks/` other than `PLAN.md`.**
 - **Never write a literal visual value a linked design defines a token for, and never build a
   component a cached card covers without reading the card** — the design is the spec.
-- **Never call `DesignSync` here** except through `/ck-code-lite:design` after the user pasted a
+- **Never call `DesignSync` or `Artifact` here** except through `/ck-code-lite:design` after the user pasted a
   URL — UI builds from the committed cache.
 - **Never commit or push here** — that is `/ck-code-lite:ship`.

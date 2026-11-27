@@ -1,9 +1,9 @@
 ---
 name: design
-description: Use when a UI project should be designed before building, in Claude Design or in Figma, when a finished Claude Design project or Figma file should be linked from its URL or refreshed, when the linked design should be previewed in a browser, or when an existing app (website, desktop or mobile app, CLI) should be copied. Also when the user pastes a claude.ai/design or figma.com URL. Argument is an optional idea, spec path, design URL, `figma [idea]`, `preview`, or `replicate <source>`.
-argument-hint: "[idea | path/to/spec.md | claude.ai/design or figma.com URL | figma [idea] | preview | link | replicate <url|app|cli cmd|path>]"
+description: Use when a UI project should be designed before building, in Claude Design or in Figma, when a finished Claude Design project or Figma file should be linked by URL or refreshed, when the linked design should be previewed in a browser, or when an existing app (website, desktop or mobile app, CLI) should be copied. Also when a claude.ai/design, claude.ai/artifact or figma.com URL is pasted. Argument is an optional idea, spec path, design URL, `figma [idea]`, `preview`, or `replicate <source>`.
+argument-hint: "[idea | path/to/spec.md | claude.ai/design, claude.ai/artifact or figma.com URL | figma [idea] | preview | link | replicate <url|app|cli cmd|path>]"
 effort: high
-allowed-tools: Bash(git rev-parse*) Bash(ls*) Bash(grep*) Bash(mkdir*) Bash(shasum*) Bash(cp*) Bash(ck-lite*) Bash(pbcopy*) Bash(wl-copy*) Bash(xclip*) DesignSync Skill
+allowed-tools: Bash(git rev-parse*) Bash(ls*) Bash(grep*) Bash(mkdir*) Bash(shasum*) Bash(cp*) Bash(ck-lite*) Bash(pbcopy*) Bash(wl-copy*) Bash(xclip*) DesignSync Artifact Skill
 ---
 
 # Design — Design First, in Claude Design or Figma
@@ -20,7 +20,7 @@ One command, five modes, chosen from the argument and the project state:
 | Mode          | When                                               | Writes                     |
 | ------------- | -------------------------------------------------- | -------------------------- |
 | **BRIEF**     | no design linked, no URL given; `figma [idea]`      | `docs/design-brief.md`     |
-| **LINK**      | a claude.ai/design or figma.com URL, a uuid, `link` | `docs/design-system/`      |
+| **LINK**      | a claude.ai/design, claude.ai artifact or figma.com URL, a uuid, `link` | `docs/design-system/` |
 | **REFRESH**   | `docs/design-system/` exists, no argument          | changed cards only         |
 | **PREVIEW**   | `preview`                                          | nothing                    |
 | **REPLICATE** | `replicate <source>`                               | `docs/replica/<slug>/`     |
@@ -39,6 +39,8 @@ This skill never branches, commits, or creates a worktree, and never reads or ed
 - **Starts with `replicate`** → REPLICATE; the rest is the source.
 - **Is `preview`** → PREVIEW.
 - **Contains a `figma.com` URL** → LINK, Figma.
+- **Contains a `claude.ai/artifact/` or `claude.ai/code/artifact/` URL** → LINK, artifact —
+  checked before the uuid rule, since a `code/artifact` uuid is not a `DesignSync` id.
 - **Starts with `figma`** (no URL) → BRIEF with target **Figma**; the rest is the idea or spec path.
 - **Contains a uuid**, or is `link` → LINK (`link` alone opens the project picker).
 - **A path that exists** → BRIEF, with that file as the requirement source.
@@ -54,7 +56,7 @@ A full ck-code project — `tasks/VERSION.md` listed, or `docs/architecture` lis
 [Redirect](../../references/plugin-redirect.md) before any read, write or command:
 
 - `replicate <source>` → `ck-code:design replicate <source>`
-- a uuid, claude.ai/design or figma.com URL → `ck-code:design ds <url>`
+- a uuid, claude.ai/design, claude.ai artifact or figma.com URL → `ck-code:design ds <url>`
 - `preview` → `ck-code:design ds preview`; `figma [idea]` → `ck-code:spec <idea>` (it offers Figma)
 - `link`, or empty with `docs/design-system` listed → `ck-code:design ds`
 - anything else → `ck-code:spec <text or path>` (it writes the Claude Design brief)
@@ -166,6 +168,11 @@ source pairs or replaces exactly as below (step 2). Then steps 3–4, with the `
 `<file name> (<fileKey>) · figma <exact|mcp>`; a frame whose rebuild matched under 98 % is
 named in the report. No `DesignSync` is needed.
 
+**A claude.ai artifact URL** → [§ Link from an artifact](../../references/design-system.md#link-from-an-artifact),
+`mkdir -p docs/design-system/cards` first; it pairs or replaces as in step 2, then steps 3–4
+with `Project:` reading `<name> (<projectId>) · design · artifact`. It needs `Artifact`, not
+`DesignSync`, so step 1 is skipped.
+
 1. **Tool check.** `DesignSync` unavailable → print the one line from
    [§ When DesignSync is unavailable](../../references/design-system.md#when-designsync-is-unavailable)
    and stop.
@@ -193,7 +200,8 @@ The cache ships with the next `/ck-code-lite:ship`.
 
 A Figma project (`projectType: figma` in `manifest.json`) refreshes by re-running its import
 ([figma.md § Import](../../references/figma.md#import--exact-tier)) with `figmaSource` — one call when
-its version is unchanged. Otherwise: tool check as in LINK, then [§ Freshness](../../references/design-system.md#freshness) from
+its version is unchanged. A manifest with `artifactUrl` refreshes from that artifact by
+[§ Freshness](../../references/design-system.md#freshness), never `DesignSync`. Otherwise: tool check as in LINK, then [§ Freshness](../../references/design-system.md#freshness) from
 Tier 0 (Tier 1 for a design project) — for each linked project — announcing the starting tier. Report `up to date — 1 call`, or the added / changed /
 removed cards and any token that changed value — a changed token touches every screen, so name
 it.
@@ -251,7 +259,7 @@ Pack:    docs/replica/<slug>/  (screenshots are git-ignored; REPLICA.md has the 
   ([replicate.md § Copy policy](../../references/replicate.md#copy-policy)).
 - **Never run in a full ck-code project** — Phase 0 hands it to `/ck-code:design ds` or
   `/ck-code:spec`, once; never bounce a request ck-code just redirected here.
-- **Never call a `DesignSync` write method** — pull-only. Never write to a linked Figma file;
+- **Never call a `DesignSync` write method, or `Artifact` `publish`/`delete`** — pull-only. Never write to a linked Figma file;
   the only Figma write is a new file the user asked for ([figma.md](../../references/figma.md#rules)).
 - **Never ask for, type or echo a Figma token** — the user saves it ([figma.md § Token setup](../../references/figma.md#token-setup)).
 - **Never ask more than one question round in BRIEF**, never more than 4 questions, and never
