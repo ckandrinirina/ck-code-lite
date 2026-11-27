@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.27.1] — 2026-11-27
+
+### Changed
+- **design**: links a Claude Design project that moved to claude.ai as a Migrated Design artifact (`claude.ai/artifact/<id>`, `claude.ai/code/artifact/<uuid>`) — read through the `Artifact` tool (`project/compat.json`, then every `project/*` file in one read), never `DesignSync`; the manifest records `artifactUrl` and a refresh re-reads the artifact and compares sha256. Pull-only: nothing is published to the design.
+
 ## [1.27.0] — 2026-11-27
 
 ### Added
