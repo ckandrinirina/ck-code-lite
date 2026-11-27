@@ -194,6 +194,11 @@ eq  "commands: the ## Commands lines" "test: pnpm run test|test-one: pnpm run te
 has "stats: areas counted" "areas 2" "$(ck-lite stats)"
 out="$(cd /tmp && CK_LITE_PLAN="$P/tasks/PLAN.md" CK_LITE_ARCH="$P/docs/ARCHITECTURE.md" ck-lite context T-01)"
 has "context: env paths from another directory find the area doc" "# billing area" "$out"
+out="$(cd /tmp && ck-lite --root "$P" context T-01)"
+has "context: --root from another directory finds the section" "T-01" "$out"
+has "context: --root finds the area doc" "# billing area" "$out"
+has "criteria: --root reads that checkout's plan" "T-01" "$(cd /tmp && ck-lite --root "$P/" criteria T-01)"
+has "--root: a missing directory is refused" "--root needs a directory" "$(ck-lite --root /nope context T-01 2>&1)"
 
 # ---- worktrees ----------------------------------------------------------------------
 echo "=== worktrees ==="

@@ -232,7 +232,7 @@ it](../../references/qa-lane.md#start-it)):
 1. `ck-lite-qa start T-05 --at work --base auto …` with the `## Commands`, and its
    `ck-lite-qa wait T-05 --end` as a background Bash call;
 2. the reviewer, `ck-code-lite:qa-validator`, supplied inline with:
-   - the task ID and its acceptance criteria as literal text
+   - the task ID and a `Criteria:` line — `ck-lite criteria T-05`, run by the reviewer
    - its `files:` list, the directory, and the base to diff against
    - under a recorded test exception only, `exception: <reason>`
    - for a task that wrote a heavy spec only, `heavy: <file> — PASS` from its own run

@@ -22,9 +22,10 @@ its later turns. You read it in a cheap throwaway context and return only the ve
 
 ## Inputs
 
-The caller supplies all of these inline. You never open `tasks/PLAN.md` to find them.
+The caller supplies all of these. You never open `tasks/PLAN.md` to find them.
 
-- The task ID and its acceptance criteria as literal text
+- The task ID, and its acceptance criteria — as a `Criteria:` line to run
+  (`ck-lite --root <root> criteria T-NN`), or as literal text
 - The task's `files:` list — the paths the implementation claims to have touched
 - The directory to read in, and the base to diff against (`git diff <base>`, or the working copy)
 - Optionally `exception: <reason>` — the user recorded that this task has no automated test
@@ -55,14 +56,17 @@ If the criteria are missing, say so and stop. Do not go looking.
    it lists that a replica token or component would fix is a finding too.
 ## Outputs
 
-One section per acceptance criterion:
+Judge every acceptance criterion, but reply with only the ones that need work — the caller is a
+long-lived orchestrator, and every line you send stays in its context for the rest of the run:
 
-- `PASS` — the code meets it and a test asserts it. Cite both as `file:line`.
 - `FAIL` — the code does not meet it, or its test asserts something else. Cite `file:line` and why.
 - `NOT-COVERED` — no test exercises this criterion. Name the test file that should
   have contained it.
+- Each `Design fidelity` finding (step 3–4).
 
-End the reply with exactly one line, nothing after it:
+A criterion that passes is not listed. A review with nothing to report is the single line
+`QA: PASS`. Otherwise the findings come first, and the reply ends with exactly one line, nothing
+after it:
 
 ```
 QA: PASS

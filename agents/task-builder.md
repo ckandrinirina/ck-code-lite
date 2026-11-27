@@ -21,8 +21,8 @@ below. The orchestrator picks your model per dispatch, by reasoning difficulty.
 
 All inline in the prompt:
 
-- The task ID, the placement (`worktree` or `solo on <TARGET>`)
-- The task's section, verbatim from `ck-lite show` — title, `files:`, acceptance criteria
+- The task ID and title, the placement (`worktree` or `solo on <TARGET>`) — the section itself
+  (`files:`, acceptance criteria) is printed by your `Context:` line, never pasted in the prompt
 - `## Commands` as `test: … · test-one: … · build: … · lint: …`
 - A `Base:` SHA — the target before this wave
 - A `Context:` line — the `ck-lite context` call to run
@@ -35,7 +35,8 @@ All inline in the prompt:
 - Task citing an `S-NN` only: a `Replica:` line — the absolute path of the main checkout's
   `docs/replica/<slug>/REPLICA.md` and of `replicate.md`
 
-If the criteria or the commands are missing, return `status: blocked` and say what is missing.
+If the `Context:` line prints no section, or the commands are missing, return `status: blocked`
+and say what is missing.
 
 ## Procedure
 
@@ -44,8 +45,8 @@ If the criteria or the commands are missing, return `status: blocked` and say wh
    your first edit run `git rev-parse --abbrev-ref HEAD`; if it does not print the branch named
    in your prompt, return `status: blocked` with the branch you found and change nothing. A
    worktree of a repo with a `.gitmodules` has empty submodules: run
-   `ck-lite submodules <root>` once — `<root>` is the folder before `/tasks/PLAN.md` in your
-   `Context:` line —, before any
+   `ck-lite submodules <root>` once — `<root>` is the `--root` directory in your `Context:`
+   line —, before any
    build — it clones each one against the main checkout's copy, far faster than N fresh clones.
 2. **Context.** Run the `Context:` line from your prompt exactly as given — it points `ck-lite`
    at the main checkout's plan and docs (your worktree's copies are the last commit). It prints

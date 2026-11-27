@@ -210,15 +210,17 @@ a hard stop for the run, not a resume — its work is somewhere this context nev
 
 ## P6 Review — one reviewer per complete task
 
-One `ck-code-lite:qa-validator` per ✓ task, as soon as it clears P5, each with: the task ID and
-criteria, the returned `files:`, the directory — the branch's worktree path from `git worktree
+One `ck-code-lite:qa-validator` per ✓ task, as soon as it clears P5, each with: the task ID, a
+`Criteria:` line — `ck-lite --root <$ROOT> criteria T-NN`, run by the
+reviewer (never the criteria pasted) —, the returned `files:`, the directory — the branch's worktree path from `git worktree
 list` (fan-out) or `$ROOT` (solo) — and `<base-sha>` to diff against, `exception: <reason>` for a
 task under a recorded test exception, `design: <$ROOT>/docs/design-system/index.md — <the verdict's
 Design fidelity lines, or none>` for a UI task with a linked design, `replica: S-NN — <the verdict's
 fidelity line, or none>` for a task citing a replica screen, and the verdict's `heavy:` lines. It
 runs no command: the wave's suite, build and lint run once, in the background, at P7.
 
-`QA: FAIL` → `SendMessage` the findings to the task's agent, then P5 and a new review; cap 3. A
+The reviewer replies with only `QA: PASS`, or with only the failing findings and the
+`QA: FAIL` line. `QA: FAIL` → `SendMessage` those findings, as they came, to the task's agent, then P5 and a new review; cap 3. A
 fan-out branch still without `QA: PASS` is **held**. A solo task still without it already sits on
 `$TARGET`; do not advance to the next wave past it.
 
@@ -332,13 +334,10 @@ A run may end with a worktree standing only through an explicit `KEEP`. Then pri
 ## Dispatch prompt
 
 ```
-Task T-NN · placement: worktree            ← solo: "placement: solo on <TARGET>"
-
-<ck-lite show T-NN output, verbatim>
-
+Task T-NN — <title> · placement: worktree            ← solo: "placement: solo on <TARGET>"
 Commands: test: <cmd> · test-one: <cmd or (none)> · build: <cmd> · lint: <cmd>
 Base: <base-sha>
-Context: CK_LITE_PLAN=<$ROOT>/tasks/PLAN.md CK_LITE_ARCH=<$ROOT>/docs/ARCHITECTURE.md ck-lite context T-NN
+Context: ck-lite --root <$ROOT> context T-NN
 TDD rules: <absolute path of references/tdd-cycle.md>
 Design: <absolute path of $ROOT/docs/design-system/index.md and of references/design-system.md, tokensPath: pending|set>   ← UI task with a linked design only
 Replica: <absolute path of $ROOT/docs/replica/<slug>/REPLICA.md and of references/replicate.md>   ← task citing an S-NN only
@@ -348,7 +347,9 @@ Settled at P3: <the user's answer for this task, or "nothing">
 Return only the verdict block.
 ```
 
-The `tdd-cycle.md` path is this skill's base directory + `../../references/tdd-cycle.md`,
+Never paste the task's section, its criteria or a doc into the prompt: the `Context` line prints
+them in the agent's own context, and every line written here stays in this one for the rest of
+the run. The `tdd-cycle.md` path is this skill's base directory + `../../references/tdd-cycle.md`,
 resolved to an absolute path once per run; `design-system.md` sits beside it. The `Context` line points `ck-lite` at the main
 checkout's files, which hold this run's status edits; a worktree's own copy is the last commit.
 

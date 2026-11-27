@@ -33,12 +33,20 @@
 # same at 5 tasks or 500. Writes hold a lock, build the new plan in a temp file, and replace
 # the plan only when that adds no defect `check` would report — a refused write changes
 # nothing. Exit 0 ok, 1 defect found, 2 usage error.
+# --root <dir> before the command reads <dir>/tasks/PLAN.md and <dir>/docs/ARCHITECTURE.md (a
+# worktree agent reading the main checkout's files): the same as setting the two variables below,
+# in a call that starts with ck-lite, so an allow rule for ck-lite matches it.
 # Paths: CK_LITE_PLAN (tasks/PLAN.md), CK_LITE_ARCH (docs/ARCHITECTURE.md), relative to the
 # repository top when run from a subdirectory; area docs resolve against the directory above
 # the ARCHITECTURE.md folder. CRLF plans are read as LF and written back as LF. Bash 3.2, BWK awk.
 
 set -uo pipefail
 
+if [ "${1:-}" = --root ]; then
+  [ -n "${2:-}" ] && [ -d "$2" ] || { echo "ck-lite: ERROR — --root needs a directory" >&2; exit 2; }
+  : "${CK_LITE_PLAN:=${2%/}/tasks/PLAN.md}"; : "${CK_LITE_ARCH:=${2%/}/docs/ARCHITECTURE.md}"
+  shift 2
+fi
 PLAN="${CK_LITE_PLAN:-tasks/PLAN.md}"
 ARCH="${CK_LITE_ARCH:-docs/ARCHITECTURE.md}"
 # Run from a subdirectory: the defaults resolve against the nearest directory up to the
