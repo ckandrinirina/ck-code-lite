@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.27.2] — 2026-11-27
+
+### Changed
+- **build**: a parallel run's main session carries less. The dispatch prompt no longer pastes the task's section (about a thousand tokens per task), because the builder's `Context:` line already prints it. The reviewer runs `ck-lite criteria` itself instead of being given the criteria as pasted text.
+- **qa-validator**: replies with only the failing criteria and design-fidelity findings, and a clean review is the single line `QA: PASS`. Passing lines no longer sit in the orchestrator's context for the rest of the run.
+- **task-builder**: reads its section from the `Context:` line.
+
+### Fixed
+- **ck-lite**: new `--root <dir>` reads another checkout's `tasks/PLAN.md` and `docs/ARCHITECTURE.md`. Builder and reviewer prompts now call `ck-lite --root <main checkout> context|criteria T-NN` instead of `CK_LITE_PLAN=… CK_LITE_ARCH=… ck-lite …`. A command that starts with variables matches no `ck-lite` allow rule, so every builder used to stop at an approval prompt, and the pasted section hid it. Verified live: three tasks built and reviewed with no criteria pasted, no review findings forwarded, builder prompts about 600 characters (from 1,200–1,360) and reviewer prompts about 350 (from 660–840).
+
 ## [1.27.1] — 2026-11-27
 
 ### Changed
