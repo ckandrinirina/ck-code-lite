@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.27.0] — 2026-11-27
+
+### Added
+- **ck-lite waves**: `CK_LITE_WIDTH` overrides the wave width cap of 4 (digits only, anything else falls back to 4). `build` never sets it; ck-oneshot uses it for its wider no-worktree waves.
+
 ## [1.26.4] — 2026-11-26
 
 ### Changed
